@@ -1,0 +1,1851 @@
+package tw.nekomimi.nekogram;
+
+import static org.telegram.messenger.LocaleController.getString;
+
+import android.content.Context;
+import android.graphics.Canvas;
+import android.os.Bundle;
+import android.text.TextUtils;
+import android.view.Gravity;
+import android.view.MotionEvent;
+import android.view.View;
+import android.view.ViewGroup;
+import android.widget.CheckBox;
+import android.widget.EditText;
+import android.widget.FrameLayout;
+import android.widget.TextView;
+
+import com.google.android.exoplayer2.util.Log;
+import org.telegram.messenger.BuildVars;
+
+import static android.view.View.MeasureSpec;
+
+import androidx.annotation.NonNull;
+import androidx.recyclerview.widget.DefaultItemAnimator;
+import androidx.recyclerview.widget.LinearLayoutManager;
+import androidx.recyclerview.widget.RecyclerView;
+
+import org.telegram.messenger.AndroidUtilities;
+import org.telegram.messenger.ChatObject;
+import org.telegram.messenger.ContactsController;
+import org.telegram.messenger.LocaleController;
+import org.telegram.messenger.MessagesController;
+import org.telegram.messenger.MessagesStorage;
+import org.telegram.messenger.R;
+import org.telegram.messenger.UserConfig;
+import org.telegram.messenger.UserObject;
+import org.telegram.tgnet.TLRPC;
+import org.telegram.ui.ActionBar.ActionBar;
+import org.telegram.ui.ActionBar.ActionBarMenu;
+import org.telegram.ui.ActionBar.ActionBarMenuItem;
+import org.telegram.ui.ActionBar.ActionBarMenuSubItem;
+import org.telegram.ui.ActionBar.ActionBarPopupWindow;
+import org.telegram.ui.ActionBar.AlertDialog;
+import org.telegram.ui.ActionBar.BaseFragment;
+import org.telegram.ui.ActionBar.Theme;
+import org.telegram.ui.Components.AvatarDrawable;
+import org.telegram.ui.Components.BackupImageView;
+import org.telegram.ui.Components.BlurredRecyclerView;
+import org.telegram.ui.Components.BulletinFactory;
+import org.telegram.ui.Components.CheckBox2;
+import org.telegram.ui.Components.CubicBezierInterpolator;
+import org.telegram.ui.Components.LayoutHelper;
+import org.telegram.ui.Components.RecyclerListView;
+import org.telegram.ui.Components.ShareAlert;
+import org.telegram.ui.Components.SizeNotifierFrameLayout;
+import org.telegram.ui.Components.ViewPagerFixed;
+import org.telegram.ui.LaunchActivity;
+import org.telegram.ui.ChatActivity;
+import org.telegram.messenger.browser.Browser;
+
+import tw.nekomimi.nekogram.helpers.PasscodeHelper;
+
+import java.util.ArrayList;
+import java.util.LinkedList;
+
+import tw.nekomimi.nekogram.BackButtonMenuRecent;
+
+public class ChatHistoryActivity extends BaseFragment {
+
+    private static final String NAX = "ChatHistoryActivity";
+
+    // Chat categories
+    public enum ChatCategory {
+        ALL(0, "All"),
+        CHANNELS(1, "Channels"),
+        GROUPS(2, "Groups"),
+        USERS(3, "Users"),
+        BOTS(4, "Bots");
+
+        public final int id;
+        public final String title;
+
+        ChatCategory(int id, String title) {
+            this.id = id;
+            this.title = title;
+        }
+    }
+
+    // UI Components
+    private ViewPagerFixed viewPager;
+    private ViewPagerFixed.TabsView tabsView;
+
+    // Data
+    private ArrayList<HistoryItem> allHistoryItems = new ArrayList<>();
+    private ArrayList<HistoryItem> filteredHistoryItems = new ArrayList<>();
+
+    // Search
+    private boolean isSearchMode = false;
+    private String searchQuery = "";
+    private ActionBarMenuItem searchItem;
+
+    // State preservation - save search state and current tab
+    private boolean savedSearchMode = false;
+    private String savedSearchQuery = "";
+    private int savedCurrentTab = 0; // Save current selected tab index
+    private boolean isOpeningChat = false; // Flag indicating whether opening chat
+    private boolean hasBeenInitialized = false; // Flag indicating whether initialized
+    private boolean isRestoringSearchState = false; // Flag to prevent exitSearchMode during restoration
+
+    // Multi-selection mode
+    private boolean isMultiSelectMode = false;
+    private ArrayList<HistoryItem> selectedItems = new ArrayList<>();
+    private ActionBarMenuItem deleteItem;
+
+    @Override
+    public boolean onFragmentCreate() {
+        super.onFragmentCreate();
+        loadHistoryItems();
+        return true;
+    }
+
+    @Override
+    public void onFragmentDestroy() {
+        super.onFragmentDestroy();
+        saveState();
+    }
+
+    /**
+     * Save current state (search state and current tab)
+     */
+    private void saveState() {
+        // Save search state
+        // Do not preserve search state if query is empty to avoid inconsistent UI on return
+        if (isSearchMode && !android.text.TextUtils.isEmpty(searchQuery)) {
+            savedSearchMode = true;
+            savedSearchQuery = searchQuery;
+        } else {
+            savedSearchMode = false;
+            savedSearchQuery = "";
+        }
+        
+        // Save current tab index
+        if (viewPager != null) {
+            savedCurrentTab = viewPager.getCurrentPosition();
+        }
+        
+        if (BuildVars.LOGS_ENABLED) Log.d(NAX, "Save state: searchMode=" + savedSearchMode + ", query=" + savedSearchQuery + ", currentTab=" + savedCurrentTab);
+    }
+
+    /**
+     * Restore previously saved state (search state and current tab)
+     */
+    private void restoreState() {
+        if (BuildVars.LOGS_ENABLED) Log.d(NAX, "Start restoring state: searchMode=" + savedSearchMode + ", query=" + savedSearchQuery + ", currentTab=" + savedCurrentTab);
+        
+        // Restore current tab first
+        if (viewPager != null && savedCurrentTab >= 0 && savedCurrentTab < ChatCategory.values().length) {
+            viewPager.setPosition(savedCurrentTab); // Restore tab position without animation
+            // Also update the tab bar selection to match the content without scroll animation
+            if (tabsView != null) {
+                tabsView.selectTabWithId(savedCurrentTab, 1.0f, false);
+            }
+            if (BuildVars.LOGS_ENABLED) Log.d(NAX, "Tab restored to position: " + savedCurrentTab);
+        }
+        
+        // Restore search state
+        if (savedSearchMode && !android.text.TextUtils.isEmpty(savedSearchQuery)) {
+            isSearchMode = true;
+            searchQuery = savedSearchQuery;
+            
+            // Update title
+            updateTitle();
+            
+            // Restore search field state
+            if (searchItem != null) {
+                searchItem.postDelayed(() -> {
+                    searchItem.openSearch(false); // No animation
+                    if (searchItem.getSearchField() != null) {
+                        searchItem.getSearchField().setText(savedSearchQuery);
+                    }
+                }, 50);
+            }
+            
+            // Execute search
+            performSearch(savedSearchQuery);
+            if (BuildVars.LOGS_ENABLED) Log.d(NAX, "Search state restored");
+        }
+    }
+
+
+
+    @Override
+    public View createView(Context context) {
+        // Setup ActionBar
+        actionBar.setBackButtonImage(R.drawable.ic_ab_back);
+        actionBar.setAllowOverlayTitle(true);
+        updateTitle();
+
+        actionBar.setActionBarMenuOnItemClick(new ActionBar.ActionBarMenuOnItemClick() {
+            @Override
+            public void onItemClick(int id) {
+                if (id == -1) {
+                    finishFragment();
+                } else if (id == 2) {
+                    showOptionsMenu();
+                } else if (id == 4) { // Delete button
+                    showDeleteSelectedDialog();
+                }
+            }
+        });
+
+        // Create menu (clear existing menu first)
+        actionBar.createMenu().clearItems();
+        ActionBarMenu menu = actionBar.createMenu();
+
+        // Add search button
+        searchItem = menu.addItem(3, R.drawable.ic_ab_search).setIsSearchField(true).setActionBarMenuItemSearchListener(new ActionBarMenuItem.ActionBarMenuItemSearchListener() {
+            @Override
+            public void onSearchExpand() {
+                isSearchMode = true;
+                searchQuery = "";
+                updateTitle();
+                performSearch("");
+            }
+
+            @Override
+            public void onSearchCollapse() {
+                // Ignore programmatic collapses during multi-select/restoration
+                if (isRestoringSearchState || isMultiSelectMode) {
+                    return;
+                }
+                exitSearchMode();
+            }
+
+            @Override
+            public void onTextChanged(EditText editText) {
+                searchQuery = editText.getText().toString();
+                performSearch(searchQuery);
+            }
+        });
+
+        // Add options button (settings icon for menu)
+        ActionBarMenuItem settingsItem = menu.addItem(2, R.drawable.msg_settings);
+        settingsItem.setLongClickEnabled(false);
+
+        // Create main layout
+        fragmentView = new SizeNotifierFrameLayout(context);
+        fragmentView.setBackgroundColor(Theme.getColor(Theme.key_windowBackgroundGray));
+
+        // Create ViewPager with tabs
+        createViewPager(context, (SizeNotifierFrameLayout) fragmentView);
+
+        // Mark as initialized
+        hasBeenInitialized = true;
+
+        // Restore saved state (only when returning from chat)
+        if (isOpeningChat) {
+            fragmentView.post(() -> restoreState());
+        }
+
+        return fragmentView;
+    }
+
+    private void createViewPager(Context context, SizeNotifierFrameLayout fragmentView) {
+        // Create ViewPager with page change handling
+        viewPager = new ViewPagerFixed(context) {
+            @Override
+            protected void onTabPageSelected(int position) {
+                super.onTabPageSelected(position);
+                // Exit multi-select mode when switching tabs
+                if (isMultiSelectMode) {
+                    exitMultiSelectMode();
+                }
+            }
+            
+            @Override
+            public boolean onTouchEvent(MotionEvent ev) {
+                // Disable swipe when in multi-select mode
+                if (isMultiSelectMode) {
+                    return false;
+                }
+                return super.onTouchEvent(ev);
+            }
+            
+            @Override
+            public boolean onInterceptTouchEvent(MotionEvent ev) {
+                // Disable swipe when in multi-select mode
+                if (isMultiSelectMode) {
+                    return false;
+                }
+                return super.onInterceptTouchEvent(ev);
+            }
+        };
+        viewPager.setAdapter(new CategoryPagerAdapter());
+
+        // Create tabs
+        tabsView = viewPager.createTabsView(true, 3);
+        tabsView.setBackgroundColor(Theme.getColor(Theme.key_windowBackgroundWhite));
+
+        // Add tabs and viewpager to main view
+        fragmentView.addView(tabsView,
+            LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, 48, Gravity.TOP));
+        fragmentView.addView(viewPager,
+            LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT, Gravity.TOP, 0, 48, 0, 0));
+
+        // Update tabs
+        updateTabs();
+    }
+
+    private void updateTabs() {
+        if (tabsView != null) {
+            tabsView.removeTabs();
+            for (int i = 0; i < ChatCategory.values().length; i++) {
+                ChatCategory category = ChatCategory.values()[i];
+                tabsView.addTab(i, getTabTitle(category));
+            }
+            tabsView.finishAddingTabs();
+        }
+    }
+
+    private String getTabTitle(ChatCategory category) {
+        int count = getCategoryCount(category);
+        String baseTitle = getCategoryDisplayName(category);
+        return count > 0 ? baseTitle + " (" + count + ")" : baseTitle;
+    }
+
+    private int getCategoryCount(ChatCategory category) {
+        int count = 0;
+        for (HistoryItem item : allHistoryItems) {
+            if (shouldIncludeItem(item, category)) {
+                count++;
+            }
+        }
+        return count;
+    }
+
+    private boolean shouldIncludeItem(HistoryItem item, ChatCategory category) {
+        // Filter out official Telegram chats (Saved Messages, Replies, etc.)
+        if (item.user != null) {
+            // Skip official Telegram users (like Replies bot, Saved Messages)
+            if (item.user.id == 777000 || // Telegram service notifications
+                item.user.id == 708513 ||  // Replies bot
+                item.user.id == UserConfig.getInstance(currentAccount).getClientUserId()) { // Self
+                return false;
+            }
+        }
+
+        if (category == ChatCategory.ALL) {
+            return true;
+        }
+
+        if (item.user != null) {
+            // User dialog
+            if (item.user.bot) {
+                return category == ChatCategory.BOTS;
+            } else {
+                return category == ChatCategory.USERS;
+            }
+        } else if (item.chat != null) {
+            // Chat dialog
+            if (item.chat.broadcast) {
+                return category == ChatCategory.CHANNELS;
+            } else {
+                return category == ChatCategory.GROUPS;
+            }
+        }
+        return false;
+    }
+
+    private void loadHistoryItems() {
+        allHistoryItems.clear();
+
+        try {
+            // Get recent dialogs from BackButtonMenuRecent
+            java.lang.reflect.Method getRecentDialogsMethod = BackButtonMenuRecent.class.getDeclaredMethod("getRecentDialogs", int.class);
+            getRecentDialogsMethod.setAccessible(true);
+
+            @SuppressWarnings("unchecked")
+            LinkedList<Long> recentDialogIds = (LinkedList<Long>) getRecentDialogsMethod.invoke(null, currentAccount);
+
+            for (Long dialogId : recentDialogIds) {
+                // Skip official/system dialogs
+                if (isOfficialDialog(dialogId)) {
+                    continue;
+                }
+
+                HistoryItem item = new HistoryItem();
+                item.dialogId = dialogId;
+
+                if (dialogId > 0) {
+                    // User dialog
+                    item.user = MessagesController.getInstance(currentAccount).getUser(dialogId);
+                    // If user is null, try to load it from database
+                    if (item.user == null) {
+                        try {
+                            java.util.ArrayList<Long> userIds = new java.util.ArrayList<>();
+                            userIds.add(dialogId);
+                            java.util.ArrayList<TLRPC.User> users = MessagesStorage.getInstance(currentAccount).getUsers(userIds);
+                            if (!users.isEmpty()) {
+                                item.user = users.get(0);
+                                // Put it in memory cache for future use
+                                MessagesController.getInstance(currentAccount).putUser(item.user, true);
+                            }
+                        } catch (Exception ex) {
+                            ex.printStackTrace();
+                        }
+                    }
+
+                    // Skip if user is still null (couldn't load from database either)
+                    if (item.user == null) {
+                        continue;
+                    }
+                } else {
+                    // Chat dialog
+                    long chatId = -dialogId;
+                    item.chat = MessagesController.getInstance(currentAccount).getChat(chatId);
+                    // If chat is null, try to load it from database
+                    if (item.chat == null) {
+                        try {
+                            java.util.ArrayList<Long> chatIds = new java.util.ArrayList<>();
+                            chatIds.add(chatId);
+                            java.util.ArrayList<TLRPC.Chat> chats = MessagesStorage.getInstance(currentAccount).getChats(chatIds);
+                            if (!chats.isEmpty()) {
+                                item.chat = chats.get(0);
+                                // Put it in memory cache for future use
+                                MessagesController.getInstance(currentAccount).putChat(item.chat, true);
+                            }
+                        } catch (Exception ex) {
+                            ex.printStackTrace();
+                        }
+                    }
+
+                    // Skip if chat is still null (couldn't load from database either)
+                    if (item.chat == null) {
+                        continue;
+                    }
+                }
+
+                allHistoryItems.add(item);
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+
+        // Initialize filtered data
+        if (isSearchMode) {
+            performSearch(searchQuery);
+        } else {
+            filteredHistoryItems.clear();
+            filteredHistoryItems.addAll(allHistoryItems);
+        }
+
+        // Update tabs after loading data
+        updateTabs();
+    }
+
+    private boolean isOfficialDialog(long dialogId) {
+        if (dialogId > 0) {
+            // User dialog - filter official/system users
+            TLRPC.User user = MessagesController.getInstance(currentAccount).getUser(dialogId);
+            if (user != null) {
+                // Filter special users: self, replies, official bots
+                if (UserObject.isUserSelf(user) || UserObject.isReplyUser(user)) {
+                    return true;
+                }
+                // Filter official verified or support accounts if desired
+                // Uncomment the next line if you want to hide verified accounts too
+                // if (user.verified || user.support) return true;
+            }
+
+            // Filter specific official user IDs
+            if (dialogId == 777000 || // Telegram service notifications
+                dialogId == 429000 || // Stickers bot
+                dialogId == 136817688) { // @BotFather
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private void updateTitle() {
+        if (isSearchMode) {
+            actionBar.setTitle(getString(R.string.Search));
+        } else {
+            actionBar.setTitle(getString(R.string.RecentChats));
+        }
+    }
+
+    private void exitSearchMode() {
+        // Do not exit/clear while we are programmatically toggling search UI (e.g., entering/exiting multi-select)
+        if (isRestoringSearchState) {
+            return;
+        }
+        isSearchMode = false;
+        searchQuery = "";
+        
+        // Clear saved search state only when user actively exits search (not during multi-select transitions)
+        if (!isMultiSelectMode) {
+            savedSearchMode = false;
+            savedSearchQuery = "";
+        }
+
+        updateTitle();
+        refreshAllPages();
+    }
+
+    private void performSearch(String query) {
+        filteredHistoryItems.clear();
+
+        if (TextUtils.isEmpty(query)) {
+            // In empty search, show all items (browse mode)
+            filteredHistoryItems.addAll(allHistoryItems);
+        } else {
+            String lowerQuery = query.toLowerCase();
+            for (HistoryItem item : allHistoryItems) {
+                if (matchesSearchQuery(item, lowerQuery)) {
+                    filteredHistoryItems.add(item);
+                }
+            }
+        }
+
+        refreshAllPages();
+    }
+
+    private boolean matchesSearchQuery(HistoryItem item, String query) {
+        // Search in user/chat name
+        String name = "";
+        if (item.user != null) {
+            name = ContactsController.formatName(item.user.first_name, item.user.last_name);
+        } else if (item.chat != null) {
+            name = item.chat.title;
+        }
+
+        if (name.toLowerCase().contains(query)) {
+            return true;
+        }
+
+        // Search in username (prefer public username, fallback to local fields)
+        String username = "";
+        if (item.user != null) {
+            username = UserObject.getPublicUsername(item.user);
+            if (TextUtils.isEmpty(username)) {
+                username = UserObject.getUserName(item.user);
+            }
+        } else if (item.chat != null) {
+            username = ChatObject.getPublicUsername(item.chat);
+            if (TextUtils.isEmpty(username)) {
+                username = item.chat.title;
+            }
+        }
+
+        if (!TextUtils.isEmpty(username) && username.toLowerCase().contains(query)) {
+            return true;
+        }
+
+        return false;
+    }
+
+    private boolean shouldShowAccountSwitch() {
+        // Don't show if only one account
+        if (UserConfig.getActivatedAccountsCount() <= 1) {
+            return false;
+        }
+
+        // Check if any accounts are hidden by passcode
+        // If all other accounts are hidden, don't show the switch button
+        int visibleAccounts = 0;
+        for (int i = 0; i < UserConfig.MAX_ACCOUNT_COUNT; i++) {
+            if (UserConfig.getInstance(i).isClientActivated() && !PasscodeHelper.isAccountHidden(i)) {
+                visibleAccounts++;
+            }
+        }
+
+        return visibleAccounts > 1;
+    }
+
+    private void showOptionsMenu() {
+        // Create popup menu items
+        ArrayList<String> items = new ArrayList<>();
+        ArrayList<Integer> icons = new ArrayList<>();
+        ArrayList<Runnable> actions = new ArrayList<>();
+
+        // Add account switch option (only if multiple accounts and not hidden by passcode)
+        if (shouldShowAccountSwitch()) {
+            items.add(getString(R.string.SwitchAccountNax));
+            icons.add(R.drawable.left_status_profile);
+            actions.add(() -> showAccountSwitchDialog());
+        }
+
+        // Add clear history option
+        items.add(getString(R.string.ClearRecentChats));
+        icons.add(R.drawable.msg_delete);
+        actions.add(() -> showClearHistoryDialog());
+
+        // Create and show popup
+        ActionBarPopupWindow.ActionBarPopupWindowLayout popupLayout = new ActionBarPopupWindow.ActionBarPopupWindowLayout(getParentActivity());
+        ActionBarPopupWindow popupWindow = new ActionBarPopupWindow(popupLayout, LayoutHelper.WRAP_CONTENT, LayoutHelper.WRAP_CONTENT);
+
+        for (int i = 0; i < items.size(); i++) {
+            ActionBarMenuSubItem subItem = new ActionBarMenuSubItem(getParentActivity(), i == 0, i == items.size() - 1);
+            subItem.setTextAndIcon(items.get(i), icons.get(i));
+            final int index = i;
+            subItem.setOnClickListener(v -> {
+                popupWindow.dismiss();
+                actions.get(index).run();
+            });
+            popupLayout.addView(subItem);
+        }
+        popupWindow.setPauseNotifications(true);
+        popupWindow.setDismissAnimationDuration(220);
+        popupWindow.setOutsideTouchable(true);
+        popupWindow.setClippingEnabled(true);
+        popupWindow.setAnimationStyle(R.style.PopupContextAnimation);
+        popupWindow.setFocusable(true);
+        popupLayout.measure(View.MeasureSpec.makeMeasureSpec(AndroidUtilities.dp(1000), View.MeasureSpec.AT_MOST), View.MeasureSpec.makeMeasureSpec(AndroidUtilities.dp(1000), View.MeasureSpec.AT_MOST));
+        popupWindow.setInputMethodMode(ActionBarPopupWindow.INPUT_METHOD_NOT_NEEDED);
+        popupWindow.getContentView().setFocusableInTouchMode(true);
+
+        // Show popup at the right position
+        View anchor = actionBar.createMenu().getChildAt(actionBar.createMenu().getChildCount() - 1);
+        if (anchor != null) {
+            popupWindow.showAsDropDown(anchor, -popupLayout.getMeasuredWidth() + AndroidUtilities.dp(14), -AndroidUtilities.dp(18));
+        }
+    }
+
+    private void showAccountSwitchDialog() {
+        if (!shouldShowAccountSwitch()) {
+            return;
+        }
+
+        AlertDialog.Builder builder = new AlertDialog.Builder(getParentActivity());
+        builder.setTitle(getString(R.string.SwitchAccountNax));
+
+        ArrayList<String> accounts = new ArrayList<>();
+        ArrayList<Integer> accountIds = new ArrayList<>();
+
+        for (int i = 0; i < UserConfig.MAX_ACCOUNT_COUNT; i++) {
+            if (UserConfig.getInstance(i).isClientActivated() && !PasscodeHelper.isAccountHidden(i)) {
+                TLRPC.User user = UserConfig.getInstance(i).getCurrentUser();
+                if (user != null) {
+                    String name = ContactsController.formatName(user.first_name, user.last_name);
+                    if (i == currentAccount) {
+                        name += " (" + getString(R.string.CurrentNax) + ")";
+                    }
+                    accounts.add(name);
+                    accountIds.add(i);
+                }
+            }
+        }
+
+        builder.setItems(accounts.toArray(new String[0]), (dialog, which) -> {
+            int selectedAccount = accountIds.get(which);
+            if (selectedAccount != currentAccount) {
+                switchToAccount(selectedAccount);
+            }
+        });
+
+        builder.setNegativeButton(getString(R.string.Cancel), null);
+        showDialog(builder.create());
+    }
+
+    private void switchToAccount(int accountId) {
+        currentAccount = accountId;
+        
+        // Clear saved state when switching accounts
+        clearSavedState();
+        
+        updateTitle();
+        loadHistoryItems();
+        refreshAllPages();
+    }
+
+    private void showClearHistoryDialog() {
+        AlertDialog.Builder builder = new AlertDialog.Builder(getParentActivity());
+        builder.setTitle(getString(R.string.ClearRecentChats));
+        builder.setMessage(getString(R.string.ClearRecentChatAlert));
+
+        builder.setPositiveButton(getString(R.string.Clear), (dialog, which) -> {
+            clearHistory();
+        });
+
+        builder.setNegativeButton(getString(R.string.Cancel), null);
+        showDialog(builder.create());
+    }
+
+    private void clearHistory() {
+        try {
+            java.lang.reflect.Method clearRecentDialogsMethod = BackButtonMenuRecent.class.getDeclaredMethod("clearRecentDialogs", int.class);
+            clearRecentDialogsMethod.setAccessible(true);
+            clearRecentDialogsMethod.invoke(null, currentAccount);
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+
+        // Clear saved state
+        clearSavedState();
+
+        // Immediately refresh the interface
+        loadHistoryItems();
+        refreshAllPages();
+        BulletinFactory.of(this).createSimpleBulletin(R.raw.ic_delete, getString(R.string.ClearRecentChats)).show();
+    }
+
+    /**
+     * Clear saved search state
+     */
+    private void clearSavedState() {
+        savedSearchMode = false;
+        savedSearchQuery = "";
+        isOpeningChat = false;
+    }
+
+    @Override
+    public void onResume() {
+        super.onResume();
+        
+        if (BuildVars.LOGS_ENABLED) Log.d(NAX, "onResume: isOpeningChat=" + isOpeningChat + ", hasBeenInitialized=" + hasBeenInitialized + ", savedSearchMode=" + savedSearchMode);
+        
+        // If returning from chat page
+        if (isOpeningChat && hasBeenInitialized) {
+            if (BuildVars.LOGS_ENABLED) Log.d(NAX, "Returning from chat");
+            isOpeningChat = false; // Reset flag
+            
+            // If user was in search mode, restore search state without refreshing
+            if (savedSearchMode && !android.text.TextUtils.isEmpty(savedSearchQuery)) {
+                if (BuildVars.LOGS_ENABLED) Log.d(NAX, "Restoring search state, no list refresh");
+                restoreState();
+                return; // Don't refresh list, keep search results
+            }
+            
+            // If search mode was opened with empty query, exit search mode on return and close search UI
+            if (isSearchMode && android.text.TextUtils.isEmpty(searchQuery)) {
+                if (BuildVars.LOGS_ENABLED) Log.d(NAX, "Exiting empty search mode on return");
+                try {
+                    if (actionBar != null && actionBar.isSearchFieldVisible()) {
+                        actionBar.closeSearchField(false);
+                    }
+                } catch (Exception ignore) { }
+                exitSearchMode();
+            }
+            
+            // If not in search mode, restore tab state and update list order
+            if (BuildVars.LOGS_ENABLED) Log.d(NAX, "Not in search mode, updating list order and restoring tab state");
+            
+            // Reload data first
+            loadHistoryItems();
+            
+            // Refresh pages but preserve tab state
+            if (viewPager != null) {
+                // Store current tab before refresh
+                int currentTab = savedCurrentTab;
+                
+                // Clear cache and recreate adapter
+                clearViewPagerCache();
+                viewPager.setAdapter(new CategoryPagerAdapter());
+                updateTabs();
+                
+                // Restore tab position immediately without animation
+                if (currentTab > 0 && currentTab < ChatCategory.values().length) {
+                    // Set position directly without scrolling animation
+                    viewPager.setPosition(currentTab);
+                    // Update tab bar state immediately without scroll animation
+                    if (tabsView != null) {
+                        tabsView.selectTabWithId(currentTab, 1.0f, false);
+                    }
+                }
+            }
+            
+            return; // Don't execute the general refresh logic below
+        }
+        
+        // Reset flag
+        isOpeningChat = false;
+        
+        // General reload for normal resume (not returning from chat)
+        if (hasBeenInitialized) {
+            if (BuildVars.LOGS_ENABLED) Log.d(NAX, "General resume, reloading data");
+            loadHistoryItems();
+            refreshAllPages();
+        }
+    }
+
+    @Override
+    public boolean onBackPressed() {
+        if (isMultiSelectMode) {
+            exitMultiSelectMode();
+            return false;
+        }
+        if (isSearchMode) {
+            try {
+                if (actionBar != null && actionBar.isSearchFieldVisible()) {
+                    actionBar.closeSearchField(false);
+                }
+            } catch (Exception ignore) { }
+            exitSearchMode();
+            return false;
+        }
+        return true; // Allow the back press to be handled by the system
+    }
+
+    private void refreshAllPages() {
+        if (viewPager != null) {
+            // Clear all cached views to prevent old content from showing
+            clearViewPagerCache();
+
+            // Force refresh all pages by recreating the adapter
+            viewPager.setAdapter(new CategoryPagerAdapter());
+            updateTabs();
+        }
+    }
+
+    private void clearViewPagerCache() {
+        if (viewPager != null) {
+            try {
+                // Force ViewPager to clear its view cache
+                viewPager.removeAllViews();
+
+                // Request layout to ensure proper refresh
+                viewPager.requestLayout();
+
+                // Small delay to ensure views are properly cleared
+                viewPager.post(() -> {
+                    if (viewPager != null) {
+                        viewPager.invalidate();
+                    }
+                });
+            } catch (Exception e) {
+                // Ignore any exceptions during cache clearing
+            }
+        }
+    }
+
+    // ViewPager Adapter
+    private class CategoryPagerAdapter extends ViewPagerFixed.Adapter {
+        @Override
+        public int getItemCount() {
+            return ChatCategory.values().length;
+        }
+
+        @Override
+        public String getItemTitle(int position) {
+            return getTabTitle(ChatCategory.values()[position]);
+        }
+
+        @Override
+        public View createView(int viewType) {
+            Context context = getContext();
+            if (context == null) return new View(getParentActivity());
+
+            // Create a container to ensure proper isolation between pages
+            FrameLayout container = new FrameLayout(context) {
+                @Override
+                protected void onMeasure(int widthMeasureSpec, int heightMeasureSpec) {
+                    super.onMeasure(widthMeasureSpec, heightMeasureSpec);
+                    // Ensure container fills the entire available space
+                    setMeasuredDimension(MeasureSpec.getSize(widthMeasureSpec), MeasureSpec.getSize(heightMeasureSpec));
+                }
+            };
+            container.setBackgroundColor(Theme.getColor(Theme.key_windowBackgroundWhite));
+
+            // Create RecyclerView for this category
+            BlurredRecyclerView listView = new BlurredRecyclerView(context);
+            listView.setLayoutManager(new LinearLayoutManager(context, LinearLayoutManager.VERTICAL, false));
+            listView.setVerticalScrollBarEnabled(false);
+            
+            // Configure ItemAnimator for click animations
+            DefaultItemAnimator itemAnimator = new DefaultItemAnimator();
+            itemAnimator.setChangeDuration(350);
+            itemAnimator.setInterpolator(CubicBezierInterpolator.EASE_OUT_QUINT);
+            itemAnimator.setDelayAnimations(false);
+            itemAnimator.setSupportsChangeAnimations(false);
+            listView.setItemAnimator(itemAnimator);
+
+            // Add RecyclerView to container
+            container.addView(listView, new FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                FrameLayout.LayoutParams.MATCH_PARENT
+            ));
+
+            return container;
+        }
+
+        @Override
+        public void bindView(View view, int position, int viewType) {
+            if (view instanceof FrameLayout) {
+                FrameLayout container = (FrameLayout) view;
+
+                // Find the RecyclerView inside the container
+                BlurredRecyclerView listView = null;
+                for (int i = 0; i < container.getChildCount(); i++) {
+                    View child = container.getChildAt(i);
+                    if (child instanceof BlurredRecyclerView) {
+                        listView = (BlurredRecyclerView) child;
+                        break;
+                    }
+                }
+
+                if (listView != null) {
+                    // Clear any existing adapter to prevent data mixing
+                    listView.setAdapter(null);
+
+                    // Create fresh adapter with current data
+                    CategoryListAdapter adapter = new CategoryListAdapter(getContext(), position);
+                    listView.setAdapter(adapter);
+
+                    // Set click listener
+                    listView.setOnItemClickListener((itemView, itemPosition) -> {
+                        adapter.onItemClick(itemView, itemPosition);
+                    });
+                    
+                    // Set long click listener for multi-select mode
+                    listView.setOnItemLongClickListener((itemView, itemPosition) -> {
+                        if (itemPosition >= 0 && itemPosition < adapter.categoryItems.size()) {
+                            if (!isMultiSelectMode) {
+                                enterMultiSelectMode();
+                            }
+                            HistoryItem item = adapter.categoryItems.get(itemPosition);
+                            HistoryCell cell = (HistoryCell) itemView;
+                            toggleItemSelection(item, cell);
+                            return true;
+                        }
+                        return false;
+                    });
+
+                    // Scroll to top
+                    listView.scrollToPosition(0);
+                }
+            }
+        }
+    }
+
+    // Category List Adapter
+    private class CategoryListAdapter extends RecyclerListView.SelectionAdapter {
+        private Context mContext;
+        private ChatCategory category;
+        private ArrayList<HistoryItem> categoryItems = new ArrayList<>();
+
+        public CategoryListAdapter(Context context, int categoryIndex) {
+            mContext = context;
+            category = ChatCategory.values()[categoryIndex];
+            updateCategoryData();
+        }
+
+        private void updateCategoryData() {
+            categoryItems.clear();
+
+            // Use filtered data in search mode, otherwise use all data
+            ArrayList<HistoryItem> sourceItems = isSearchMode ? filteredHistoryItems : allHistoryItems;
+
+            // Ensure we're working with the latest data
+            if (sourceItems == null || sourceItems.isEmpty()) {
+                if (BuildVars.LOGS_ENABLED) Log.d(NAX, "No data available for " + category.name() + " category");
+                return;
+            }
+
+            for (HistoryItem item : sourceItems) {
+                if (shouldIncludeItem(item, category)) {
+                    categoryItems.add(item);
+                }
+            }
+
+            if (BuildVars.LOGS_ENABLED) Log.d(NAX, "Updated " + category.name() + " category: " + categoryItems.size() + " items from " + sourceItems.size() + " total" + (isSearchMode ? " (search mode)" : ""));
+        }
+
+        public void onItemClick(View view, int position) {
+            if (position >= 0 && position < categoryItems.size()) {
+                HistoryItem item = categoryItems.get(position);
+                if (isMultiSelectMode) {
+                    HistoryCell cell = (HistoryCell) view;
+                    toggleItemSelection(item, cell);
+                } else {
+                    openChat(item);
+                }
+            }
+        }
+
+        @Override
+        public int getItemCount() {
+            return categoryItems.isEmpty() ? 1 : categoryItems.size(); // Show empty state if no items
+        }
+
+        @Override
+        public void onBindViewHolder(RecyclerView.ViewHolder holder, int position) {
+            int viewType = getItemViewType(position);
+
+            if (viewType == 1) { // Empty state
+                if (holder.itemView instanceof EmptyStateCell) {
+                    EmptyStateCell emptyStateCell = (EmptyStateCell) holder.itemView;
+
+                    if (isSearchMode) {
+                        // In search mode, show search results
+                        if (TextUtils.isEmpty(searchQuery)) {
+                            emptyStateCell.setText("", getString(R.string.ChatHistory_EnterSearchQuery));
+                        } else {
+                            emptyStateCell.setText("", LocaleController.formatString(R.string.ChatHistory_NoResultsFor, searchQuery));
+                        }
+                    } else if (category == ChatCategory.ALL) {
+                        // For ALL category, show "Recent Chats Empty"
+                        emptyStateCell.setText("", getString(R.string.ChatHistory_NoRecentChats));
+                    } else {
+                        // For specific categories, show "No xx found" (no title)
+                        String categoryDisplayName = getCategoryDisplayName(category);
+                        emptyStateCell.setText("", LocaleController.formatString(R.string.ChatHistory_NoCategoryFound, categoryDisplayName));
+                    }
+                }
+            } else { // History item
+                if (holder.itemView instanceof HistoryCell && position >= 0 && position < categoryItems.size()) {
+                    HistoryCell historyCell = (HistoryCell) holder.itemView;
+                    HistoryItem item = categoryItems.get(position);
+                    historyCell.setDialog(item);
+                    
+                    // Set multi-select mode and selection state
+                    historyCell.setMultiSelectMode(isMultiSelectMode);
+                    historyCell.setSelected(selectedItems.contains(item));
+                }
+            }
+        }
+
+        @Override
+        public boolean isEnabled(RecyclerView.ViewHolder holder) {
+            return !categoryItems.isEmpty();
+        }
+
+        @NonNull
+        @Override
+        public RecyclerView.ViewHolder onCreateViewHolder(@NonNull ViewGroup parent, int viewType) {
+            View view;
+            if (viewType == 1) {
+                view = new EmptyStateCell(mContext);
+            } else {
+                HistoryCell historyCell = new HistoryCell(mContext);
+                historyCell.setOnLongClickListener(v -> {
+                    if (!isMultiSelectMode && historyCell.currentItem != null) {
+                        enterMultiSelectMode();
+                        toggleItemSelection(historyCell.currentItem, historyCell);
+                        return true;
+                    }
+                    return false;
+                });
+                historyCell.setOnClickListener(v -> {
+                    if (historyCell.currentItem != null) {
+                        if (isMultiSelectMode) {
+                            toggleItemSelection(historyCell.currentItem, historyCell);
+                        } else {
+                            openChat(historyCell.currentItem);
+                        }
+                    }
+                });
+                view = historyCell;
+            }
+            view.setLayoutParams(new RecyclerView.LayoutParams(RecyclerView.LayoutParams.MATCH_PARENT, RecyclerView.LayoutParams.WRAP_CONTENT));
+            return new RecyclerListView.Holder(view);
+        }
+
+        @Override
+        public int getItemViewType(int position) {
+            return categoryItems.isEmpty() ? 1 : 0; // 0 = history item, 1 = empty state
+        }
+    }
+
+    private String getCategoryDisplayName(ChatCategory category) {
+        switch (category) {
+            case ALL:
+                return getString(R.string.ChatCategoryAll);
+            case CHANNELS:
+                return getString(R.string.ChatCategoryChannels);
+            case GROUPS:
+                return getString(R.string.ChatCategoryGroups);
+            case USERS:
+                return getString(R.string.ChatCategoryUsers);
+            case BOTS:
+                return getString(R.string.ChatCategoryBots);
+            default:
+                return getString(R.string.ChatCategoryAll);
+        }
+    }
+    
+    private void openChat(HistoryItem item) {
+        if (item == null || (item.user == null && item.chat == null)) {
+            return;
+        }
+
+        // If user is in search mode with empty query, close search UI and exit search before navigating
+        if (isSearchMode && TextUtils.isEmpty(searchQuery)) {
+            try {
+                if (actionBar != null && actionBar.isSearchFieldVisible()) {
+                    actionBar.closeSearchField(false);
+                }
+            } catch (Exception ignore) { }
+            exitSearchMode();
+        }
+
+        // Mark as opening chat
+        isOpeningChat = true;
+        
+        // Save current state before opening chat
+        saveState();
+
+        // Check if we're viewing the current user's own account
+        boolean isViewingOwnAccount = (currentAccount == UserConfig.selectedAccount);
+
+        // If viewing own account, always use internal ChatActivity
+        if (isViewingOwnAccount) {
+            Bundle args = new Bundle();
+            if (item.dialogId < 0) {
+                args.putLong("chat_id", -item.dialogId);
+                presentFragment(new ChatActivity(args), false, false);
+            } else {
+                args.putLong("user_id", item.dialogId);
+                presentFragment(new ChatActivity(args), false, false);
+            }
+            return;
+        }
+
+        String publicUsername = null;
+        if (item.user != null) {
+            publicUsername = UserObject.getPublicUsername(item.user);
+        } else if (item.chat != null) {
+            publicUsername = ChatObject.getPublicUsername(item.chat);
+        }
+
+        if (!TextUtils.isEmpty(publicUsername)) {
+            MessagesController.getInstance(UserConfig.selectedAccount).openByUserName(publicUsername, this, 1);
+        } else {
+            // Check if this private chat exists in current account
+            if (chatExistsInCurrentAccount(item)) {
+                // Open directly if exists in current account
+                Bundle args = new Bundle();
+                if (item.dialogId < 0) {
+                    args.putLong("chat_id", -item.dialogId);
+                    presentFragment(new ChatActivity(args), false, false);
+                } else {
+                    args.putLong("user_id", item.dialogId);
+                    presentFragment(new ChatActivity(args), false, false);
+                }
+            } else {
+                // Show dialog for private chats when viewing other accounts
+                showPrivateChatDialog(item);
+            }
+        }
+    }
+
+    private boolean chatExistsInCurrentAccount(HistoryItem item) {
+        int selectedAccount = UserConfig.selectedAccount;
+
+        if (item.dialogId > 0) {
+            // User dialog - check if user exists in current account
+            TLRPC.User user = MessagesController.getInstance(selectedAccount).getUser(item.dialogId);
+            return user != null;
+        } else {
+            // Chat dialog - check if chat exists in current account
+            long chatId = -item.dialogId;
+            TLRPC.Chat chat = MessagesController.getInstance(selectedAccount).getChat(chatId);
+            return chat != null;
+        }
+    }
+
+    private void showPrivateChatDialog(HistoryItem item) {
+        AlertDialog.Builder builder = new AlertDialog.Builder(getParentActivity());
+        builder.setTitle(getString(R.string.AppName));
+
+        String chatName = "";
+        if (item.user != null) {
+            chatName = ContactsController.formatName(item.user.first_name, item.user.last_name);
+        } else if (item.chat != null) {
+            chatName = item.chat.title;
+        }
+
+        builder.setMessage(LocaleController.formatString("PrivateChatMessage", R.string.PrivateChatMessage, chatName));
+
+        builder.setPositiveButton(getString(R.string.OK), null);
+        showDialog(builder.create());
+    }
+
+    private void showChatOptionsMenu(HistoryItem item, View anchorView) {
+        // Determine available options
+        boolean hasPublicUsername = false;
+        String username = null;
+        String displayName = null;
+        
+        if (item.user != null) {
+            username = UserObject.getPublicUsername(item.user);
+            displayName = UserObject.getUserName(item.user);
+            hasPublicUsername = !TextUtils.isEmpty(username);
+        } else if (item.chat != null) {
+            username = ChatObject.getPublicUsername(item.chat);
+            displayName = item.chat.title;
+            hasPublicUsername = !TextUtils.isEmpty(username);
+        }
+
+        boolean isViewingOwnAccount = (currentAccount == UserConfig.selectedAccount);
+        boolean canOpen = isViewingOwnAccount || hasPublicUsername || (!isViewingOwnAccount && chatExistsInCurrentAccount(item));
+
+        // Create final copies for lambda
+        final String finalUsername = username;
+        final String finalDisplayName = displayName;
+        final boolean finalHasPublicUsername = hasPublicUsername;
+        final boolean finalCanOpen = canOpen;
+
+        // Create popup layout
+        ActionBarPopupWindow.ActionBarPopupWindowLayout popupLayout = new ActionBarPopupWindow.ActionBarPopupWindowLayout(getContext());
+        popupLayout.setFitItems(true);
+
+        // Create and show popup window
+        ActionBarPopupWindow popupWindow = new ActionBarPopupWindow(popupLayout, LayoutHelper.WRAP_CONTENT, LayoutHelper.WRAP_CONTENT);
+
+        // Add Open option
+        ActionBarMenuSubItem openItem = ActionBarMenuItem.addItem(popupLayout, R.drawable.msg_openin, getString(R.string.Open), false, getResourceProvider());
+        openItem.setVisibility(finalCanOpen);
+        if (!finalCanOpen) {
+            openItem.setColors(Theme.getColor(Theme.key_windowBackgroundWhiteGrayText3), Theme.getColor(Theme.key_windowBackgroundWhiteGrayText3));
+        }
+        openItem.setOnClickListener(v -> {
+            popupWindow.dismiss();
+            if (finalCanOpen) {
+                openChat(item);
+            }
+        });
+
+        // Add Share option
+        ActionBarMenuSubItem shareItem = ActionBarMenuItem.addItem(popupLayout, R.drawable.msg_share, getString(R.string.ShareFile), false, getResourceProvider());
+        shareItem.setVisibility(finalHasPublicUsername);
+        if (!finalHasPublicUsername) {
+            shareItem.setColors(Theme.getColor(Theme.key_windowBackgroundWhiteGrayText3), Theme.getColor(Theme.key_windowBackgroundWhiteGrayText3));
+        }
+        shareItem.setOnClickListener(v -> {
+            popupWindow.dismiss();
+            if (finalHasPublicUsername) {
+                shareChat(finalUsername, item);
+            }
+        });
+
+        // Add Copy option
+        ActionBarMenuSubItem copyItem = ActionBarMenuItem.addItem(popupLayout, R.drawable.msg_copy, getString(R.string.Copy), false, getResourceProvider());
+        copyItem.setVisibility(finalHasPublicUsername);
+        if (!finalHasPublicUsername) {
+            copyItem.setColors(Theme.getColor(Theme.key_windowBackgroundWhiteGrayText3), Theme.getColor(Theme.key_windowBackgroundWhiteGrayText3));
+        }
+        copyItem.setOnClickListener(v -> {
+            popupWindow.dismiss();
+            if (finalHasPublicUsername) {
+                copyUsername(finalUsername);
+            }
+        });
+
+        // Add Delete option (always available)
+        ActionBarMenuSubItem deleteItem = ActionBarMenuItem.addItem(popupLayout, R.drawable.msg_delete, getString(R.string.Delete), false, getResourceProvider());
+        deleteItem.setOnClickListener(v -> {
+            popupWindow.dismiss();
+            showDeleteChatDialog(item);
+        });
+        popupWindow.setPauseNotifications(true);
+        popupWindow.setDismissAnimationDuration(220);
+        popupWindow.setOutsideTouchable(true);
+        popupWindow.setClippingEnabled(true);
+        popupWindow.setAnimationStyle(R.style.PopupContextAnimation);
+        popupWindow.setFocusable(true);
+        popupLayout.measure(View.MeasureSpec.makeMeasureSpec(AndroidUtilities.dp(1000), View.MeasureSpec.AT_MOST),
+                           View.MeasureSpec.makeMeasureSpec(AndroidUtilities.dp(1000), View.MeasureSpec.AT_MOST));
+        popupWindow.setInputMethodMode(ActionBarPopupWindow.INPUT_METHOD_NOT_NEEDED);
+        popupWindow.setSoftInputMode(android.view.WindowManager.LayoutParams.SOFT_INPUT_STATE_UNSPECIFIED);
+        popupWindow.getContentView().setFocusableInTouchMode(true);
+
+        // Calculate position
+        int[] location = new int[2];
+        anchorView.getLocationInWindow(location);
+        int popupX = location[0] + anchorView.getWidth() - popupLayout.getMeasuredWidth();
+        int popupY = location[1];
+
+        popupWindow.showAtLocation(anchorView, android.view.Gravity.LEFT | android.view.Gravity.TOP, popupX, popupY);
+        popupWindow.dimBehind();
+    }
+
+    private void shareChat(String username, HistoryItem item) {
+        try {
+            String shareText = "@" + username;
+            ShareAlert shareAlert = ShareAlert.createShareAlert(getContext(), null, shareText, false, shareText, false);
+            shareAlert.setDelegate(new ShareAlert.ShareAlertDelegate() {
+                @Override
+                public void didShare() {
+                    int shareCount = shareAlert.getSelectedDialogsCount();
+                    
+                    if (shareCount > 1) {
+                        CharSequence bulletinText = AndroidUtilities.replaceTags(LocaleController.formatPluralString("LinkSharedToManyChats", shareCount, shareCount));
+                        shareAlert.setOnDismissListener(() -> AndroidUtilities.runOnUIThread(() ->
+                                BulletinFactory.of(ChatHistoryActivity.this).createSimpleBulletin(
+                                        R.raw.forward,
+                                        bulletinText
+                                ).hideAfterBottomSheet(false).ignoreDetach().setDuration(org.telegram.ui.Components.Bulletin.DURATION_PROLONG).show()
+                        ));
+                    } else if (shareCount == 1) {
+                        long dialogId = shareAlert.getFirstSelectedDialogId();
+                        Bundle args = new Bundle();
+                        if (org.telegram.messenger.DialogObject.isEncryptedDialog(dialogId)) {
+                            args.putInt("enc_id", org.telegram.messenger.DialogObject.getEncryptedChatId(dialogId));
+                        } else if (org.telegram.messenger.DialogObject.isUserDialog(dialogId)) {
+                            args.putLong("user_id", dialogId);
+                        } else {
+                            args.putLong("chat_id", -dialogId);
+                        }
+                        
+                        ChatActivity chatActivity = new ChatActivity(args);
+                        presentFragment(chatActivity, true);
+                    }
+                }
+            });
+            showDialog(shareAlert);
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+    }
+
+    private void copyUsername(String username) {
+        try {
+            android.content.ClipboardManager clipboard = (android.content.ClipboardManager)
+                getParentActivity().getSystemService(Context.CLIPBOARD_SERVICE);
+            android.content.ClipData clip = android.content.ClipData.newPlainText("username", "@" + username);
+            clipboard.setPrimaryClip(clip);
+            BulletinFactory.of(this).createSimpleBulletin(R.raw.copy,
+                getString(R.string.TextCopied)).show();
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+    }
+
+    private void showDeleteChatDialog(HistoryItem item) {
+        AlertDialog.Builder builder = new AlertDialog.Builder(getParentActivity());
+        builder.setTitle(getString(R.string.DeleteChatTitle));
+
+        String chatName = "";
+        if (item.user != null) {
+            chatName = ContactsController.formatName(item.user.first_name, item.user.last_name);
+        } else if (item.chat != null) {
+            chatName = item.chat.title;
+        }
+
+        builder.setMessage(LocaleController.formatString("DeleteChatMessage", R.string.DeleteChatMessage, chatName));
+
+        builder.setPositiveButton(getString(R.string.Delete), (dialog, which) -> {
+            deleteChatFromHistory(item);
+        });
+
+        builder.setNegativeButton(getString(R.string.Cancel), null);
+        showDialog(builder.create());
+    }
+
+    private void deleteChatFromHistory(HistoryItem item) {
+        try {
+            // Get recent dialogs using reflection
+            java.lang.reflect.Method getRecentDialogsMethod = BackButtonMenuRecent.class.getDeclaredMethod("getRecentDialogs", int.class);
+            getRecentDialogsMethod.setAccessible(true);
+
+            @SuppressWarnings("unchecked")
+            LinkedList<Long> recentDialogIds = (LinkedList<Long>) getRecentDialogsMethod.invoke(null, currentAccount);
+
+            // Remove the dialog from the list
+            recentDialogIds.remove(item.dialogId);
+
+            // Save the updated list using reflection
+            java.lang.reflect.Method saveRecentDialogsMethod = BackButtonMenuRecent.class.getDeclaredMethod("saveRecentDialogs", int.class, LinkedList.class);
+            saveRecentDialogsMethod.setAccessible(true);
+            saveRecentDialogsMethod.invoke(null, currentAccount, recentDialogIds);
+
+            // Refresh the interface
+            loadHistoryItems();
+            refreshAllPages();
+
+            BulletinFactory.of(this).createSimpleBulletin(R.raw.ic_delete,
+                getString(R.string.ChatRemovedFromRecent)).show();
+        } catch (Exception e) {
+            e.printStackTrace();
+            // Fallback: manually remove from local list and refresh
+            allHistoryItems.removeIf(historyItem -> historyItem.dialogId == item.dialogId);
+            refreshAllPages();
+            BulletinFactory.of(this).createSimpleBulletin(R.raw.ic_delete,
+                getString(R.string.ChatRemovedFromRecent)).show();
+        }
+    }
+
+
+    // Data classes
+    private static class HistoryItem {
+        long dialogId;
+        TLRPC.Chat chat;
+        TLRPC.User user;
+        
+        @Override
+        public boolean equals(Object obj) {
+            if (this == obj) return true;
+            if (obj == null || getClass() != obj.getClass()) return false;
+            HistoryItem that = (HistoryItem) obj;
+            return dialogId == that.dialogId;
+        }
+        
+        @Override
+        public int hashCode() {
+            return Long.hashCode(dialogId);
+        }
+    }
+
+    // Custom cells
+    private class HistoryCell extends FrameLayout {
+        private BackupImageView avatarImageView;
+        private TextView nameTextView;
+        private TextView usernameTextView;
+        private AvatarDrawable avatarDrawable;
+        private ActionBarMenuItem optionsButton;
+        private CheckBox checkBox;
+        private CheckBox2 checkBox2;
+        private HistoryItem currentItem;
+        private boolean isSelected = false;
+
+        public HistoryCell(Context context) {
+            super(context);
+
+            avatarDrawable = new AvatarDrawable();
+            avatarImageView = new BackupImageView(context);
+            avatarImageView.setRoundRadius(AndroidUtilities.dp(25));
+            addView(avatarImageView, LayoutHelper.createFrame(50, 50, Gravity.LEFT | Gravity.CENTER_VERTICAL, 16, 0, 0, 0));
+
+            // Add CheckBox for multi-select mode (kept for compatibility)
+            checkBox = new CheckBox(context);
+            checkBox.setVisibility(GONE);
+            checkBox.setClickable(false);
+            checkBox.setFocusable(false);
+            addView(checkBox, LayoutHelper.createFrame(24, 24, Gravity.LEFT | Gravity.CENTER_VERTICAL, 60, 0, 0, 0));
+
+            // Add CheckBox2 like in DialogCell
+            checkBox2 = new CheckBox2(context, 21, null) {
+                @Override
+                public void invalidate() {
+                    super.invalidate();
+                    HistoryCell.this.invalidate();
+                }
+                @Override
+                protected void onDraw(Canvas canvas) {
+                    super.onDraw(canvas);
+                }
+            };
+            checkBox2.setVisibility(GONE);
+            checkBox2.setColor(-1, Theme.key_windowBackgroundWhite, Theme.key_checkboxCheck);
+            checkBox2.setDrawUnchecked(false);
+            checkBox2.setDrawBackgroundAsArc(3);
+            addView(checkBox2, LayoutHelper.createFrame(24, 24, Gravity.LEFT | Gravity.TOP, 0, 0, 0, 0));
+
+            nameTextView = new TextView(context);
+            nameTextView.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlackText));
+            nameTextView.setTextSize(16);
+            nameTextView.setLines(1);
+            nameTextView.setMaxLines(1);
+            nameTextView.setSingleLine(true);
+            nameTextView.setEllipsize(TextUtils.TruncateAt.END);
+            nameTextView.setGravity(Gravity.LEFT);
+            addView(nameTextView, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, Gravity.LEFT | Gravity.TOP, 82, 16, 64, 0));
+
+            usernameTextView = new TextView(context);
+            usernameTextView.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteGrayText3));
+            usernameTextView.setTextSize(14);
+            usernameTextView.setLines(1);
+            usernameTextView.setMaxLines(1);
+            usernameTextView.setSingleLine(true);
+            usernameTextView.setEllipsize(TextUtils.TruncateAt.END);
+            usernameTextView.setGravity(Gravity.LEFT);
+            addView(usernameTextView, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, Gravity.LEFT | Gravity.TOP, 82, 38, 64, 0));
+
+            // Add options button (three dots)
+            optionsButton = new ActionBarMenuItem(context, null, 0, Theme.getColor(Theme.key_windowBackgroundWhiteGrayText3));
+            optionsButton.setIcon(R.drawable.ic_ab_other);
+            optionsButton.setBackgroundDrawable(Theme.createSelectorDrawable(Theme.getColor(Theme.key_listSelector), 1));
+            optionsButton.setOnClickListener(v -> {
+                if (currentItem != null) {
+                    showChatOptionsMenu(currentItem, v);
+                }
+            });
+            addView(optionsButton, LayoutHelper.createFrame(48, 48, Gravity.RIGHT | Gravity.CENTER_VERTICAL, 0, 0, 8, 0));
+
+            setBackgroundColor(Theme.getColor(Theme.key_windowBackgroundWhite));
+        }
+
+        @Override
+        protected void onMeasure(int widthMeasureSpec, int heightMeasureSpec) {
+            super.onMeasure(MeasureSpec.makeMeasureSpec(MeasureSpec.getSize(widthMeasureSpec), MeasureSpec.EXACTLY), MeasureSpec.makeMeasureSpec(AndroidUtilities.dp(72), MeasureSpec.EXACTLY));
+        }
+        
+        @Override
+        protected void onLayout(boolean changed, int left, int top, int right, int bottom) {
+            super.onLayout(changed, left, top, right, bottom);
+            if (checkBox2 != null) {
+                // 头像位置：左边距16dp，垂直居中，大小50dp
+                int avatarLeft = AndroidUtilities.dp(16);
+                int avatarTop = (getMeasuredHeight() - AndroidUtilities.dp(50)) / 2;
+                int avatarSize = AndroidUtilities.dp(50);
+                
+                // checkBox位置：头像右下角，稍微向外偏移
+                int checkBoxSize = AndroidUtilities.dp(24);
+                int x = avatarLeft + avatarSize - checkBoxSize + AndroidUtilities.dp(8);
+                int y = avatarTop + avatarSize - checkBoxSize + AndroidUtilities.dp(8);
+                
+                checkBox2.layout(x, y, x + checkBox2.getMeasuredWidth(), y + checkBox2.getMeasuredHeight());
+            }
+        }
+        
+        @Override
+        public boolean onTouchEvent(MotionEvent event) {
+            switch (event.getAction()) {
+                case MotionEvent.ACTION_DOWN:
+                    setBackgroundColor(Theme.getColor(Theme.key_listSelector));
+                    break;
+                case MotionEvent.ACTION_UP:
+                case MotionEvent.ACTION_CANCEL:
+                    setBackgroundColor(Theme.getColor(Theme.key_windowBackgroundWhite));
+                    break;
+            }
+            return super.onTouchEvent(event);
+        }
+
+        public void setMultiSelectMode(boolean multiSelectMode) {
+            if (multiSelectMode) {
+                // Keep options button visible in multi-select mode
+                optionsButton.setVisibility(VISIBLE);
+                checkBox2.setVisibility(VISIBLE);
+            } else {
+                // First reset selection with animation while checkbox is still visible
+                setSelected(false);
+                optionsButton.setVisibility(VISIBLE);
+                checkBox2.setVisibility(GONE);
+            }
+        }
+
+        public void setSelected(boolean selected) {
+            if (isSelected == selected) {
+                return;
+            }
+            
+            isSelected = selected;
+            
+            // Only animate if CheckBox2 is visible
+            boolean shouldAnimate = checkBox2.getVisibility() == VISIBLE;
+            checkBox2.setChecked(selected, shouldAnimate);
+        }
+
+        public boolean isSelected() {
+            return isSelected;
+        }
+
+        public void setDialog(HistoryItem item) {
+            this.currentItem = item;
+
+            if (item.user != null) {
+                avatarDrawable.setInfo(item.user);
+                avatarImageView.setForUserOrChat(item.user, avatarDrawable);
+                nameTextView.setText(UserObject.getUserName(item.user));
+
+                String username = UserObject.getPublicUsername(item.user);
+                if (!TextUtils.isEmpty(username)) {
+                    usernameTextView.setText("@" + username);
+                    usernameTextView.setVisibility(VISIBLE);
+                } else {
+                    // Show user ID when no public username is available
+                    usernameTextView.setText("ID: " + item.user.id);
+                    usernameTextView.setVisibility(VISIBLE);
+                }
+            } else if (item.chat != null) {
+                avatarDrawable.setInfo(item.chat);
+                avatarImageView.setForUserOrChat(item.chat, avatarDrawable);
+                nameTextView.setText(item.chat.title);
+
+                String username = ChatObject.getPublicUsername(item.chat);
+                if (!TextUtils.isEmpty(username)) {
+                    usernameTextView.setText("@" + username);
+                    usernameTextView.setVisibility(VISIBLE);
+                } else {
+                    // Show private group/channel indicator for chats without public username
+                    if (item.chat.broadcast) {
+                        usernameTextView.setText(LocaleController.getString("ChannelPrivate", R.string.ChannelPrivate));
+                    } else {
+                        usernameTextView.setText(LocaleController.getString("MegaPrivate", R.string.MegaPrivate));
+                    }
+                    usernameTextView.setVisibility(VISIBLE);
+                }
+            }
+        }
+        
+
+    }
+
+    private class EmptyStateCell extends FrameLayout {
+        private TextView titleTextView;
+        private TextView descriptionTextView;
+
+        public EmptyStateCell(Context context) {
+            super(context);
+
+            titleTextView = new TextView(context);
+            titleTextView.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteGrayText3));
+            titleTextView.setTextSize(17);
+            titleTextView.setGravity(Gravity.CENTER);
+            addView(titleTextView, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, Gravity.CENTER, 32, 48, 32, 0));
+
+            descriptionTextView = new TextView(context);
+            descriptionTextView.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteGrayText3));
+            descriptionTextView.setTextSize(15);
+            descriptionTextView.setGravity(Gravity.CENTER);
+            addView(descriptionTextView, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, Gravity.CENTER, 32, 80, 32, 48));
+
+            setBackgroundColor(Theme.getColor(Theme.key_windowBackgroundWhite));
+        }
+
+        @Override
+        protected void onMeasure(int widthMeasureSpec, int heightMeasureSpec) {
+            // Use a reasonable height for empty state, container will handle the full coverage
+            super.onMeasure(
+                MeasureSpec.makeMeasureSpec(MeasureSpec.getSize(widthMeasureSpec), MeasureSpec.EXACTLY),
+                MeasureSpec.makeMeasureSpec(AndroidUtilities.dp(200), MeasureSpec.EXACTLY)
+            );
+        }
+
+        public void setText(String title, String description) {
+            if (TextUtils.isEmpty(title)) {
+                titleTextView.setVisibility(GONE);
+            } else {
+                titleTextView.setText(title);
+                titleTextView.setVisibility(VISIBLE);
+            }
+
+            if (TextUtils.isEmpty(description)) {
+                descriptionTextView.setVisibility(GONE);
+            } else {
+                descriptionTextView.setText(description);
+                descriptionTextView.setVisibility(VISIBLE);
+            }
+        }
+    }
+
+    // Multi-select mode methods
+    private void enterMultiSelectMode() {
+        // Save current search state before entering multi-select mode
+        savedSearchMode = isSearchMode;
+        savedSearchQuery = searchQuery;
+        
+        // If currently in search mode, close search field first to avoid ActionBar conflicts
+        if (isSearchMode && actionBar != null && actionBar.isSearchFieldVisible()) {
+            // Set flag to prevent exitSearchMode during search field closure
+            isRestoringSearchState = true;
+            actionBar.closeSearchField();
+            // Reset flag after a short delay
+            AndroidUtilities.runOnUIThread(() -> {
+                isRestoringSearchState = false;
+            }, 100);
+        }
+        
+        isMultiSelectMode = true;
+        selectedItems.clear();
+        updateActionBarForMultiSelect();
+        updateAllCellsMultiSelectMode();
+    }
+
+    private void exitMultiSelectMode() {
+        isMultiSelectMode = false;
+        selectedItems.clear();
+        
+        // Check if we need to restore search state
+        boolean shouldRestoreSearch = savedSearchMode && !TextUtils.isEmpty(savedSearchQuery);
+        
+        updateActionBarForNormalMode();
+        updateAllCellsMultiSelectMode();
+        
+        // Restore search state if it was active before multi-select mode
+        if (shouldRestoreSearch) {
+            AndroidUtilities.runOnUIThread(() -> {
+                if (searchItem != null && actionBar != null) {
+                    // Set flag to prevent exitSearchMode during restoration
+                    isRestoringSearchState = true;
+                    
+                    // Set search mode and query first
+                    isSearchMode = true;
+                    searchQuery = savedSearchQuery;
+                    
+                    // Open search field with the saved query and make it visible
+                    actionBar.openSearchField(savedSearchQuery, false);
+                    
+                    // Ensure the search field is properly displayed
+                    if (searchItem.getSearchField() != null) {
+                        searchItem.getSearchField().setText(savedSearchQuery);
+                        searchItem.getSearchField().setSelection(savedSearchQuery.length());
+                    }
+                    
+                    // Update title to reflect search mode
+                    updateTitle();
+                    
+                    // Perform search to restore results
+                    performSearch(savedSearchQuery);
+                    
+                    // Reset flag after restoration is complete
+                    AndroidUtilities.runOnUIThread(() -> {
+                        isRestoringSearchState = false;
+                    }, 100);
+                }
+            }, 200);
+        }
+    }
+
+    private void toggleItemSelection(HistoryItem item, HistoryCell cell) {
+        if (selectedItems.contains(item)) {
+            selectedItems.remove(item);
+            cell.setSelected(false);
+        } else {
+            selectedItems.add(item);
+            cell.setSelected(true);
+        }
+        updateActionBarTitle();
+        
+        // Exit multi-select mode if no items selected
+        if (selectedItems.isEmpty()) {
+            exitMultiSelectMode();
+        }
+    }
+
+    private void updateActionBarForMultiSelect() {
+        if (actionBar != null) {
+            actionBar.setBackButtonImage(R.drawable.ic_ab_back);
+            actionBar.setActionBarMenuOnItemClick(new ActionBar.ActionBarMenuOnItemClick() {
+                @Override
+                public void onItemClick(int id) {
+                    if (id == -1) {
+                        exitMultiSelectMode();
+                    } else if (id == 1) {
+                        showDeleteSelectedDialog();
+                    }
+                }
+            });
+            
+            ActionBarMenu menu = actionBar.createMenu();
+            menu.clearItems();
+            deleteItem = menu.addItem(1, R.drawable.msg_delete);
+            updateActionBarTitle();
+        }
+    }
+
+    private void updateActionBarForNormalMode() {
+        if (actionBar != null) {
+            actionBar.setBackButtonImage(R.drawable.ic_ab_back);
+            actionBar.setActionBarMenuOnItemClick(new ActionBar.ActionBarMenuOnItemClick() {
+                @Override
+                public void onItemClick(int id) {
+                    if (id == -1) {
+                        finishFragment();
+                    } else if (id == 1) {
+                        if (actionBar.isSearchFieldVisible()) {
+                            actionBar.closeSearchField();
+                        } else {
+                            actionBar.openSearchField("", false);
+                        }
+                    } else if (id == 2) {
+                        showOptionsMenu();
+                    }
+                }
+            });
+            
+            ActionBarMenu menu = actionBar.createMenu();
+            menu.clearItems();
+            searchItem = menu.addItem(1, R.drawable.ic_ab_search).setIsSearchField(true).setActionBarMenuItemSearchListener(new ActionBarMenuItem.ActionBarMenuItemSearchListener() {
+                @Override
+                public void onSearchExpand() {
+                    if (!isSearchMode) {
+                        isSearchMode = true;
+                        performSearch("");
+                    }
+                }
+
+                @Override
+                public void onSearchCollapse() {
+                    if (!isRestoringSearchState) {
+                        exitSearchMode();
+                    }
+                }
+
+                @Override
+                public void onTextChanged(EditText editText) {
+                    String text = editText.getText().toString();
+                    searchQuery = text;
+                    performSearch(text);
+                }
+            });
+            searchItem.getSearchField().setHint(getString("Search", R.string.Search));
+            ActionBarMenuItem settingsItem = menu.addItem(2, R.drawable.msg_settings);
+            settingsItem.setLongClickEnabled(false);
+            updateTitle();
+        }
+    }
+
+    private void updateActionBarTitle() {
+        if (actionBar != null) {
+            if (isMultiSelectMode) {
+                actionBar.setTitle(selectedItems.size() + " selected");
+            } else {
+                updateTitle();
+            }
+        }
+    }
+
+    private void updateAllCellsMultiSelectMode() {
+        if (viewPager != null) {
+            for (int i = 0; i < viewPager.getChildCount(); i++) {
+                View child = viewPager.getChildAt(i);
+                if (child instanceof FrameLayout) {
+                    FrameLayout container = (FrameLayout) child;
+                    for (int j = 0; j < container.getChildCount(); j++) {
+                        View containerChild = container.getChildAt(j);
+                        if (containerChild instanceof RecyclerListView) {
+                            RecyclerListView recyclerView = (RecyclerListView) containerChild;
+                            for (int k = 0; k < recyclerView.getChildCount(); k++) {
+                                View itemView = recyclerView.getChildAt(k);
+                                if (itemView instanceof HistoryCell) {
+                                    HistoryCell cell = (HistoryCell) itemView;
+                                    cell.setMultiSelectMode(isMultiSelectMode);
+                                    if (!isMultiSelectMode) {
+                                        cell.setSelected(false);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private void showDeleteSelectedDialog() {
+        if (selectedItems.isEmpty()) {
+            return;
+        }
+        
+        AlertDialog.Builder builder = new AlertDialog.Builder(getParentActivity());
+        builder.setTitle(getString(R.string.ChatHistoryDeleteChats));
+        builder.setMessage(getString(R.string.ChatHistoryDeleteConfirmation) + selectedItems.size() + getString(R.string.ChatHistorySelected));
+        builder.setPositiveButton(getString(R.string.ChatHistoryDeleteChats), (dialog, which) -> {
+            deleteSelectedChats();
+        });
+        builder.setNegativeButton("Cancel", null);
+        showDialog(builder.create());
+    }
+
+    private void deleteSelectedChats() {
+        for (HistoryItem item : selectedItems) {
+            deleteChatFromHistory(item);
+        }
+        exitMultiSelectMode();
+        refreshAllPages();
+    }
+}
