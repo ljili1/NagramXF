@@ -37,6 +37,7 @@ import org.telegram.ui.ActionBar.ActionBar;
 import org.telegram.ui.ActionBar.AlertDialog;
 import org.telegram.ui.ActionBar.BaseFragment;
 import org.telegram.ui.ActionBar.Theme;
+import org.telegram.ui.ActionBar.ThemeDescription;
 import org.telegram.ui.BasePermissionsActivity;
 import org.telegram.ui.Cells.ShadowSectionCell;
 import org.telegram.ui.Cells.TextCell;
@@ -101,7 +102,7 @@ public class NekoSettingsActivity extends BaseFragment {
         private static final int VIEW_TYPE_BOTTOM = 2;
         private static final int VIEW_TYPE_TEXT = 3;
 
-        private final RecyclerListView listView;
+        public final RecyclerListView listView;
         private final RecyclerView.Adapter listAdapter;
 
         private int nSettingsHeaderRow = -1;
@@ -550,6 +551,52 @@ public class NekoSettingsActivity extends BaseFragment {
     @Override
     public boolean isActionBarCrossfadeEnabled() {
         return false;
+    }
+
+    @Override
+    public ArrayList<ThemeDescription> getThemeDescriptions() {
+        ArrayList<ThemeDescription> themeDescriptions = new ArrayList<>();
+
+        // Fragment background
+        themeDescriptions.add(new ThemeDescription(fragmentView, ThemeDescription.FLAG_BACKGROUND, null, null, null, null, Theme.key_windowBackgroundGray));
+
+        // ActionBar colors
+        themeDescriptions.add(new ThemeDescription(actionBar, ThemeDescription.FLAG_BACKGROUND, null, null, null, null, Theme.key_avatar_backgroundActionBarBlue));
+        themeDescriptions.add(new ThemeDescription(actionBar, ThemeDescription.FLAG_AB_ITEMSCOLOR, null, null, null, null, Theme.key_avatar_actionBarIconBlue));
+        themeDescriptions.add(new ThemeDescription(actionBar, ThemeDescription.FLAG_AB_TITLECOLOR, null, null, null, null, Theme.key_actionBarDefaultTitle));
+        themeDescriptions.add(new ThemeDescription(actionBar, ThemeDescription.FLAG_AB_SELECTORCOLOR, null, null, null, null, Theme.key_avatar_actionBarSelectorBlue));
+        themeDescriptions.add(new ThemeDescription(actionBar, ThemeDescription.FLAG_AB_SUBMENUBACKGROUND, null, null, null, null, Theme.key_actionBarDefaultSubmenuBackground));
+        themeDescriptions.add(new ThemeDescription(actionBar, ThemeDescription.FLAG_AB_SUBMENUITEM, null, null, null, null, Theme.key_actionBarDefaultSubmenuItem));
+
+        // If listView exists, bind its children
+        RecyclerListView lv = typePage != null ? typePage.listView : null;
+        if (lv != null) {
+            // List background (gray)
+            themeDescriptions.add(new ThemeDescription(lv, ThemeDescription.FLAG_BACKGROUND, null, null, null, null, Theme.key_windowBackgroundGray));
+
+            // Cell backgrounds (white)
+            themeDescriptions.add(new ThemeDescription(lv, ThemeDescription.FLAG_CELLBACKGROUNDCOLOR, new Class[]{TextCell.class, HeaderCell.class, TextSettingsCell.class}, null, null, null, Theme.key_windowBackgroundWhite));
+
+            // List glow and selector
+            themeDescriptions.add(new ThemeDescription(lv, ThemeDescription.FLAG_LISTGLOWCOLOR, null, null, null, null, Theme.key_avatar_backgroundActionBarBlue));
+            themeDescriptions.add(new ThemeDescription(lv, ThemeDescription.FLAG_SELECTOR, null, null, null, null, Theme.key_listSelector));
+
+            // Dividers and gray shadow section
+            themeDescriptions.add(new ThemeDescription(lv, 0, new Class[]{View.class}, Theme.dividerPaint, null, null, Theme.key_divider));
+            themeDescriptions.add(new ThemeDescription(lv, ThemeDescription.FLAG_BACKGROUNDFILTER, new Class[]{ShadowSectionCell.class}, null, null, null, Theme.key_windowBackgroundGrayShadow));
+
+            // Text colors inside cells
+            themeDescriptions.add(new ThemeDescription(lv, 0, new Class[]{TextCell.class}, new String[]{"textView"}, null, null, null, Theme.key_windowBackgroundWhiteBlackText));
+            themeDescriptions.add(new ThemeDescription(lv, 0, new Class[]{TextCell.class}, new String[]{"valueTextView"}, null, null, null, Theme.key_windowBackgroundWhiteValueText));
+            // TextSettingsCell text colors
+            themeDescriptions.add(new ThemeDescription(lv, 0, new Class[]{TextSettingsCell.class}, new String[]{"textView"}, null, null, null, Theme.key_windowBackgroundWhiteBlackText));
+            themeDescriptions.add(new ThemeDescription(lv, 0, new Class[]{TextSettingsCell.class}, new String[]{"valueTextView"}, null, null, null, Theme.key_windowBackgroundWhiteValueText));
+
+            // Header text color
+            themeDescriptions.add(new ThemeDescription(lv, 0, new Class[]{HeaderCell.class}, new String[]{"textView"}, null, null, null, Theme.key_windowBackgroundWhiteBlueHeader));
+        }
+
+        return themeDescriptions;
     }
 
     public String getTitle() {

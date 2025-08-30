@@ -1066,7 +1066,7 @@ public class PhotoPickerActivity extends BaseFragment implements NotificationCen
             }
             if (Build.VERSION.SDK_INT < 21) {
                 Drawable shadowDrawable = context.getResources().getDrawable(R.drawable.floating_shadow_profile).mutate();
-                shadowDrawable.setColorFilter(new PorterDuffColorFilter(0xff000000, PorterDuff.Mode.SRC_IN));
+                shadowDrawable.setColorFilter(new PorterDuffColorFilter(0xff000000, PorterDuff.Mode.MULTIPLY));
                 CombinedDrawable combinedDrawable = new CombinedDrawable(shadowDrawable, writeButtonDrawable, 0, 0);
                 combinedDrawable.setIconSize(AndroidUtilities.dp(56), AndroidUtilities.dp(56));
                 writeButtonDrawable = combinedDrawable;
@@ -1074,7 +1074,7 @@ public class PhotoPickerActivity extends BaseFragment implements NotificationCen
             writeButton.setBackgroundDrawable(writeButtonDrawable);
             writeButton.setImageResource(R.drawable.attach_send);
             writeButton.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
-            writeButton.setColorFilter(new PorterDuffColorFilter(Theme.getColor(Theme.key_dialogFloatingIcon), PorterDuff.Mode.SRC_IN));
+            writeButton.setColorFilter(new PorterDuffColorFilter(Theme.getColor(Theme.key_dialogFloatingIcon), PorterDuff.Mode.MULTIPLY));
             writeButton.setScaleType(ImageView.ScaleType.CENTER);
             if (Build.VERSION.SDK_INT >= 21) {
                 writeButton.setOutlineProvider(new ViewOutlineProvider() {
@@ -1151,11 +1151,11 @@ public class PhotoPickerActivity extends BaseFragment implements NotificationCen
                             String languageText = Translator.getInputTranslateLangForChat(ChatsHelper.getChatId()).toUpperCase();
                             String text = getString(R.string.TranslateMessageLLM) + ' ' + "(" + languageText + ")";
                             itemCells[a].setTextAndIcon(text, R.drawable.magic_stick_solar);
-                            itemCells[a].setVisibility(NaConfig.INSTANCE.isLLMTranslatorAvailable());
+                            itemCells[a].setVisibility(NaConfig.INSTANCE.isLLMTranslatorAvailable() && !NaConfig.INSTANCE.llmIsDefaultProvider());
                         } else if (num == 3) {
                             String languageText = Translator.getInputTranslateLangForChat(ChatsHelper.getChatId()).toUpperCase();
                             String text = getString(R.string.TranslateMessage) + ' ' + "(" + languageText + ")";
-                            itemCells[a].setTextAndIcon(text, R.drawable.ic_translate);
+                            itemCells[a].setTextAndIcon(text, NaConfig.INSTANCE.llmIsDefaultProvider() ? R.drawable.magic_stick_solar : R.drawable.ic_translate);
                         }
                         itemCells[a].setMinimumWidth(AndroidUtilities.dp(196));
 

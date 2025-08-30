@@ -2431,7 +2431,7 @@ public class ChatAttachAlert extends BottomSheet implements NotificationCenter.N
 
         shadow = new View(context);
         shadow.setBackgroundResource(R.drawable.attach_shadow);
-        shadow.getBackground().setColorFilter(new PorterDuffColorFilter(0xff000000, PorterDuff.Mode.SRC_IN));
+        shadow.getBackground().setColorFilter(new PorterDuffColorFilter(0xff000000, PorterDuff.Mode.MULTIPLY));
         containerView.addView(shadow, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, 2, Gravity.BOTTOM | Gravity.LEFT, 0, 0, 0, 84));
 
         buttonsRecyclerView = new RecyclerListView(context) {
@@ -3607,7 +3607,7 @@ public class ChatAttachAlert extends BottomSheet implements NotificationCenter.N
             if (chatActivity != null && commentTextView != null && commentTextView.getText().length() > 0) {
                 String languageText = Translator.getInputTranslateLangForChat(ChatsHelper.getChatId()).toUpperCase();
                 StringBuilder sb;
-                if (NaConfig.INSTANCE.isLLMTranslatorAvailable()) {
+                if (NaConfig.INSTANCE.isLLMTranslatorAvailable() && !NaConfig.INSTANCE.llmIsDefaultProvider()) {
                     sb = new StringBuilder();
                     sb.append(getString(R.string.TranslateMessageLLM));
                     sb.append(' ').append("(").append(languageText).append(")");
@@ -3638,7 +3638,7 @@ public class ChatAttachAlert extends BottomSheet implements NotificationCenter.N
                 sb = new StringBuilder();
                 sb.append(getString(R.string.TranslateMessage));
                 sb.append(' ').append("(").append(languageText).append(")");
-                options.add(R.drawable.ic_translate, sb,
+                options.add(NaConfig.INSTANCE.llmIsDefaultProvider() ? R.drawable.magic_stick_solar : R.drawable.ic_translate, sb,
                         () -> {
                             if (messageSendPreview != null) {
                                 messageSendPreview.dismiss(false);

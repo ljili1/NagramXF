@@ -1289,18 +1289,13 @@ public class ChatHistoryActivity extends BaseFragment {
                                 ).hideAfterBottomSheet(false).ignoreDetach().setDuration(org.telegram.ui.Components.Bulletin.DURATION_PROLONG).show()
                         ));
                     } else if (shareCount == 1) {
-                        long dialogId = shareAlert.getFirstSelectedDialogId();
-                        Bundle args = new Bundle();
-                        if (org.telegram.messenger.DialogObject.isEncryptedDialog(dialogId)) {
-                            args.putInt("enc_id", org.telegram.messenger.DialogObject.getEncryptedChatId(dialogId));
-                        } else if (org.telegram.messenger.DialogObject.isUserDialog(dialogId)) {
-                            args.putLong("user_id", dialogId);
-                        } else {
-                            args.putLong("chat_id", -dialogId);
-                        }
-                        
-                        ChatActivity chatActivity = new ChatActivity(args);
-                        presentFragment(chatActivity, true);
+                        CharSequence bulletinText = AndroidUtilities.replaceTags(LocaleController.getString("LinkSharedToManyChats_one", R.string.LinkSharedToManyChats_one));
+                        shareAlert.setOnDismissListener(() -> AndroidUtilities.runOnUIThread(() ->
+                                BulletinFactory.of(ChatHistoryActivity.this).createSimpleBulletin(
+                                        R.raw.forward,
+                                        bulletinText
+                                ).hideAfterBottomSheet(false).ignoreDetach().setDuration(org.telegram.ui.Components.Bulletin.DURATION_SHORT).show()
+                        ));
                     }
                 }
             });

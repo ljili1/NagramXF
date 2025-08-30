@@ -1,6 +1,7 @@
 package tw.nekomimi.nekogram.helpers;
 
 import static org.telegram.messenger.LocaleController.getString;
+import static org.telegram.messenger.TranslateController.UNKNOWN_LANGUAGE;
 
 import android.app.DatePickerDialog;
 import android.app.TimePickerDialog;
@@ -25,6 +26,7 @@ import org.telegram.messenger.BaseController;
 import org.telegram.messenger.ChatObject;
 import org.telegram.messenger.FileLoader;
 import org.telegram.messenger.FileLog;
+import org.telegram.messenger.LanguageDetector;
 import org.telegram.messenger.LocaleController;
 import org.telegram.messenger.MediaController;
 import org.telegram.messenger.MediaDataController;
@@ -129,7 +131,7 @@ public class MessageHelper extends BaseController {
         SQLiteCursor cursor;
         MessageObject ret = null;
         try {
-            cursor = getMessagesStorage().getDatabase().queryFinalized(String.format(Locale.US, "SELECT data,send_state,mid,date FROM messages WHERE uid = %d ORDER BY date DESC LIMIT %d,%d", dialogId, 0, 10));
+            cursor = getMessagesStorage().getDatabase().queryFinalized(String.format(Locale.US, "SELECT data,send_state,mid,date FROM messages_v2 WHERE uid = %d ORDER BY date DESC LIMIT %d,%d", dialogId, 0, 10));
             while (cursor.next()) {
                 NativeByteBuffer data = cursor.byteBufferValue(0);
                 if (data == null)
@@ -565,4 +567,83 @@ public class MessageHelper extends BaseController {
         }
         return files;
     }
+
+    public static boolean shouldSkipTranslation(String message) {
+        if (TextUtils.isEmpty(message)) {
+            return true;
+        }
+        final int len = message.length();
+        int wordStart = 0;
+        for (int i = 0; i <= len; i++) {
+            if (i == len || Character.isWhitespace(message.charAt(i))) {
+                if (wordStart < i) {
+                    if (!isSkippedWord(message, wordStart, i)) {
+                        return false;
+                    }
+                }
+                wordStart = i + 1;
+            }
+        }
+        return true;
+    }
+
+    private static boolean isSkippedWord(String message, int start, int end) {
+        int wordLen = end - start;
+        if (wordLen == 0) return true;
+        char firstChar = message.charAt(start);
+        return switch (firstChar) {
+            case '@', '#', '/' -> true;
+            case 'h' -> {
+                if (wordLen >= 8) {
+                    yield message.startsWith("http://", start) || message.startsWith("https://", start);
+                } else if (wordLen == 7) {
+                    yield message.startsWith("http://", start);
+                }
+                yield false;
+            }
+            case 'f' -> {
+                if (wordLen >= 6) {
+                    yield message.startsWith("ftp://", start);
+                }
+                yield false;
+            }
+            default -> false;
+        };
+    }
+
+    public void detectLanguageNow(MessageObject messageObject) {
+        final long dialogId = messageObject.getDialogId();
+        LanguageDetector.detectLanguage(messageObject.messageOwner.message, lng -> AndroidUtilities.runOnUIThread(() -> {
+            String detectedLanguage = lng;
+            if (detectedLanguage == null) {
+                detectedLanguage = UNKNOWN_LANGUAGE;
+            }
+            messageObject.messageOwner.originalLanguage = detectedLanguage;
+            getMessagesStorage().updateMessageCustomParams(dialogId, messageObject.messageOwner);
+        }), err -> AndroidUtilities.runOnUIThread(() -> {
+            messageObject.messageOwner.originalLanguage = UNKNOWN_LANGUAGE;
+            getMessagesStorage().updateMessageCustomParams(dialogId, messageObject.messageOwner);
+        }));
+    }
+
+    public static String getMessagePlainText(MessageObject messageObject, MessageObject.GroupedMessages messageGroup) {
+        if (messageObject.isPoll()) {
+            TLRPC.Poll poll = ((TLRPC.TL_messageMediaPoll) messageObject.messageOwner.media).poll;
+            StringBuilder pollText = new StringBuilder(poll.question.text).append("\n");
+            for (TLRPC.PollAnswer answer : poll.answers) {
+                pollText.append("\n\uD83D\uDD18 ");
+                pollText.append(answer.text.text);
+            }
+            return pollText.toString();
+        } else if (messageObject.isVoiceTranscriptionOpen()) {
+            return messageObject.messageOwner.voiceTranscription;
+        } else if (messageGroup != null) {
+            MessageObject captionMessage = messageGroup.findCaptionMessageObject();
+            if (captionMessage != null && !TextUtils.isEmpty(captionMessage.caption)) {
+                return captionMessage.caption.toString();
+            }
+        }
+        return messageObject.messageOwner.message;
+    }
+
 }

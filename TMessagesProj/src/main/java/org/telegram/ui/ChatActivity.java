@@ -4630,7 +4630,7 @@ public class ChatActivity extends BaseFragment implements NotificationCenter.Not
                 RLottieDrawable drawable = new RLottieDrawable(R.raw.boosts, "" + R.raw.boosts, dp(24), dp(24));
                 if (NaConfig.INSTANCE.getChatMenuItemBoostGroup().Bool()) headerItem.lazilyAddSubItem(boost_group, drawable, LocaleController.getString(ChatObject.isChannelAndNotMegaGroup(currentChat) ? R.string.BoostingBoostChannelMenu : R.string.BoostingBoostGroupMenu));
             }
-            translateItem = headerItem.lazilyAddSubItem(translate, R.drawable.msg_translate, LocaleController.getString(R.string.TranslateMessage));
+            translateItem = headerItem.lazilyAddSubItem(translate, NaConfig.INSTANCE.llmIsDefaultProvider() ? R.drawable.magic_stick_solar : R.drawable.msg_translate, LocaleController.getString(R.string.TranslateMessage));
             updateTranslateItemVisibility();
             /*if (currentChat != null && !currentChat.creator && !ChatObject.hasAdminRights(currentChat)) {
                 headerItem.lazilyAddSubItem(report, R.drawable.msg_report, LocaleController.getString(R.string.ReportChat));
@@ -10812,7 +10812,7 @@ public class ChatActivity extends BaseFragment implements NotificationCenter.Not
         if (NaConfig.INSTANCE.getShowNoQuoteForward().Bool() && (currentEncryptedChat == null && !noforward)) {
             actionModeOtherItem.addSubItem(nkbtn_forward_noquote, R.drawable.msg_forward_noquote, LocaleController.getString(R.string.NoQuoteForward));
         }
-        actionModeOtherItem.addSubItem(nkbtn_translate, R.drawable.ic_translate, LocaleController.getString(R.string.Translate));
+        actionModeOtherItem.addSubItem(nkbtn_translate, NaConfig.INSTANCE.llmIsDefaultProvider() ? R.drawable.magic_stick_solar : R.drawable.ic_translate, LocaleController.getString(R.string.Translate));
         if (NekoConfig.showShareMessages.Bool()) {
             actionModeOtherItem.addSubItem(nkbtn_sharemessage, R.drawable.msg_shareout, LocaleController.getString(R.string.ShareMessages));
         }
@@ -32947,7 +32947,7 @@ public class ChatActivity extends BaseFragment implements NotificationCenter.Not
                             return true;
                         });
                     }
-                    if (option == nkbtn_translate && !(selectedObject.translated || selectedObject.messageOwner.translated) && !NaConfig.INSTANCE.getShowTranslateMessageLLM().Bool() && NaConfig.INSTANCE.isLLMTranslatorAvailable()) {
+                    if (option == nkbtn_translate && !(selectedObject.translated || selectedObject.messageOwner.translated) && !NaConfig.INSTANCE.getShowTranslateMessageLLM().Bool() && NaConfig.INSTANCE.isLLMTranslatorAvailable() && !NaConfig.INSTANCE.llmIsDefaultProvider()) {
                         var translatePopupWrapper = new TranslatePopupWrapper(this, popupLayout.getSwipeBack(), this::processSelectedOption, getResourceProvider());
                         int swipeBackIndex = popupLayout.addViewToSwipeBack(translatePopupWrapper.windowLayout);
                         cell.setRightIcon(R.drawable.msg_arrowright, v12 -> popupLayout.getSwipeBack().openForeground(swipeBackIndex));
@@ -44582,7 +44582,7 @@ public class ChatActivity extends BaseFragment implements NotificationCenter.Not
                 layout.addView(copyButton);
 
                 ActionBarMenuSubItem translateButton = new ActionBarMenuSubItem(getContext(), false, false);
-                translateButton.setTextAndIcon(LocaleController.getString(R.string.TranslateMessage), R.drawable.msg_translate);
+                translateButton.setTextAndIcon(LocaleController.getString(R.string.TranslateMessage), NaConfig.INSTANCE.llmIsDefaultProvider() ? R.drawable.magic_stick_solar : R.drawable.msg_translate);
                 translateButton.setOnClickListener(e3 -> {
                     DialogTransKt.startTrans(getParentActivity(), text.toString());
                     if (dismiss[1] != null) dismiss[1].run();
@@ -44603,7 +44603,7 @@ public class ChatActivity extends BaseFragment implements NotificationCenter.Not
                 layout.addView(translateButton);
 
                 ActionBarMenuSubItem translateLlmButton = new ActionBarMenuSubItem(getContext(), false, true);
-                translateLlmButton.setVisibility(NaConfig.INSTANCE.isLLMTranslatorAvailable() ? View.VISIBLE : View.GONE);
+                translateLlmButton.setVisibility(NaConfig.INSTANCE.isLLMTranslatorAvailable() && !NaConfig.INSTANCE.llmIsDefaultProvider() ? View.VISIBLE : View.GONE);
                 translateLlmButton.setTextAndIcon(LocaleController.getString(R.string.TranslateMessageLLM), R.drawable.magic_stick_solar);
                 translateLlmButton.setOnClickListener(e4 -> {
                     DialogTransKt.startTrans(getParentActivity(), text.toString(), toLang, Translator.providerLLMTranslator);
@@ -44870,7 +44870,7 @@ public class ChatActivity extends BaseFragment implements NotificationCenter.Not
             }
             if (hideTitleItem != null) hideTitleItem.setVisibility(android.view.View.GONE);
         } else if (id == nkbtn_detail) {
-            presentFragment(new MessageDetailsActivity(getSelectedMessages().get(0)));
+            presentFragment(new MessageDetailsActivity(getSelectedMessages().get(0), getValidGroupedMessage(getSelectedMessages().get(0))));
         } else if (id == nkbtn_sharemessage) {
             var selected = getSelectedMessages();
             if (selected.isEmpty()) return;
@@ -45012,7 +45012,7 @@ public class ChatActivity extends BaseFragment implements NotificationCenter.Not
                 break;
             }
             case nkbtn_detail: {
-                presentFragment(new MessageDetailsActivity(selectedObject));
+                presentFragment(new MessageDetailsActivity(selectedObject, selectedObjectGroup));
                 break;
             }
             case nkbtn_view_history: {
@@ -47143,8 +47143,8 @@ public class ChatActivity extends BaseFragment implements NotificationCenter.Not
                         }
                     }
                     final TranslateController translateController = getMessagesController().getTranslateController();
-                    boolean showTranslate = NekoConfig.showTranslate.Bool();
-                    boolean showTranslateLLM = NaConfig.INSTANCE.isLLMTranslatorAvailableInMenu();
+                    boolean showTranslate = NekoConfig.showTranslate.Bool() || NaConfig.INSTANCE.getShowTranslateMessageLLM().Bool() && NaConfig.INSTANCE.llmIsDefaultProvider();
+                    boolean showTranslateLLM = NaConfig.INSTANCE.getShowTranslateMessageLLM().Bool() && NaConfig.INSTANCE.isLLMTranslatorAvailable() && !NaConfig.INSTANCE.llmIsDefaultProvider();
                     boolean isTranslatingDialog = translateController.isTranslatingDialog(selectedObject.getDialogId());
                     if ((showTranslate || showTranslateLLM) && (selectedObject.isOutOwner() || !isTranslatingDialog)) {
                         if (messageObject != null || docsWithMessages) {
@@ -47157,7 +47157,7 @@ public class ChatActivity extends BaseFragment implements NotificationCenter.Not
                             if (showTranslate) {
                                 items.add(translated ? LocaleController.getString(R.string.UndoTranslate) : LocaleController.getString(R.string.Translate));
                                 options.add(nkbtn_translate);
-                                icons.add(R.drawable.msg_translate);
+                                icons.add(NaConfig.INSTANCE.llmIsDefaultProvider() ? R.drawable.magic_stick_solar : R.drawable.msg_translate);
                             }
                             if (showTranslateLLM && (!showTranslate || !translated)) {
                                 items.add(translated ? LocaleController.getString(R.string.UndoTranslate) : LocaleController.getString(R.string.TranslateMessageLLM));
@@ -47378,7 +47378,7 @@ public class ChatActivity extends BaseFragment implements NotificationCenter.Not
                 }
                 final TranslateController translateController = getMessagesController().getTranslateController();
                 boolean showTranslate = NekoConfig.showTranslate.Bool();
-                boolean showTranslateLLM = NaConfig.INSTANCE.getShowTranslateMessageLLM().Bool();
+                boolean showTranslateLLM = NaConfig.INSTANCE.getShowTranslateMessageLLM().Bool() && NaConfig.INSTANCE.isLLMTranslatorAvailable() && !NaConfig.INSTANCE.llmIsDefaultProvider();
                 boolean isTranslatingDialog = translateController.isTranslatingDialog(selectedObject.getDialogId());
                 if ((showTranslate || showTranslateLLM) && (selectedObject.isOutOwner() || !isTranslatingDialog)) {
                     if (messageObject != null || docsWithMessages) {
@@ -47391,7 +47391,7 @@ public class ChatActivity extends BaseFragment implements NotificationCenter.Not
                         if (showTranslate) {
                             items.add(td ? LocaleController.getString(R.string.UndoTranslate) : LocaleController.getString(R.string.Translate));
                             options.add(nkbtn_translate);
-                            icons.add(R.drawable.msg_translate);
+                            icons.add(NaConfig.INSTANCE.llmIsDefaultProvider() ? R.drawable.magic_stick_solar : R.drawable.msg_translate);
                         }
                         if (showTranslateLLM && (!showTranslate || !td)) {
                             items.add(td ? LocaleController.getString(R.string.UndoTranslate) : LocaleController.getString(R.string.TranslateMessageLLM));

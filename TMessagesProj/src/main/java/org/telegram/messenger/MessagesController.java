@@ -127,6 +127,8 @@ import tw.nekomimi.nekogram.helpers.ChatNameHelper;
 import tw.nekomimi.nekogram.utils.AlertUtil;
 import tw.nekomimi.nekogram.utils.UIUtil;
 import xyz.nextalone.nagram.NaConfig;
+import xyz.nextalone.nagram.helper.MessageHelper;
+
 import com.radolyn.ayugram.AyuConstants;
 import com.radolyn.ayugram.messages.AyuSavePreferences;
 import com.radolyn.ayugram.messages.AyuMessagesController;
@@ -10770,11 +10772,6 @@ public class MessagesController extends BaseController implements NotificationCe
                 newStrings.put(key, newPrintingStrings);
                 newTypes.put(key, newPrintingStringsTypes);
 
-                if (NekoConfig.ignoreBlocked.Bool()) {
-                    arr = arr.stream().filter(it -> getMessagesController().blockePeers.indexOfKey(it.userId) == -1).collect(Collectors.toCollection(ArrayList::new));
-                }
-                if (arr.isEmpty()) continue;
-
                 int type = 0;
                 CharSequence text = null;
                 if (key > 0 || isEncryptedChat || arr.size() == 1) {
@@ -10926,6 +10923,7 @@ public class MessagesController extends BaseController implements NotificationCe
                         paint.setTextSize(AndroidUtilities.dp(14));
                     }
                     text = Emoji.replaceEmoji(text, paint.getFontMetricsInt(), false);
+                    text = MessageHelper.INSTANCE.zalgoFilter(text);
                     newPrintingStrings.put(threadId, text);
                     newPrintingStringsTypes.put(threadId, type);
                 }

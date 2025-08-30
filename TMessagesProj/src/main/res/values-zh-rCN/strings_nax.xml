@@ -209,7 +209,7 @@
     <string name="AutoInsertGIFCaption">发送 GIF 时自动插入草稿</string>
     <string name="AutoInsertGIFCaptionNotice">自动将当前输入框中的内容作为 GIF 的附带文字发送。</string>
     <string name="UserAvatarsInMessagePreview">在消息预览中显示用户头像</string>
-    <string name="YourVersionIsLatestNax">您的版本是最新的。</string>
+    <string name="YourVersionIsLatestNax">已是最新版本。</string>
     <string name="PremiumElements">Premium 元素</string>
     <string name="PremiumItemBoosts">助推者标识</string>
     <string name="PremiumItemStickerEffects">贴纸特效</string>
@@ -247,7 +247,7 @@
     <string name="PinnedReactions">置顶的表情回应</string>
     <string name="PinnedReactions_Status_Chats">在聊天中启用置顶的表情回应</string>
     <string name="PinnedReactions_Status_Channels">在频道中启用置顶的表情回应</string>
-    <string name="PinnedReactions_Description">您可以从任意表情包中选择置的顶表情回应。</string>
+    <string name="PinnedReactions_Description">您可以从任意表情包中选择置顶的表情回应。</string>
     <string name="PinnedReactions_Description_Channels">您只能从默认 Emoji 中选择置顶的表情回应。</string>
     <string name="PinnedReactions_Limit">最多可以选择 %d 个表情回应。</string>
     <string name="PinnedReactions_Type">不支持此 Emoji。</string>
@@ -269,4 +269,9 @@
     <string name="ChatHistoryDeleteChats">删除聊天</string>
     <string name="ChatHistoryDeleteConfirmation">确定要删除已选择的 </string>
     <string name="ChatHistorySelected"> 个聊天</string>
+    <string name="ChatCategoryAll">全部</string>
+    <string name="ChatCategoryChannels">频道</string>
+    <string name="ChatCategoryGroups">群组</string>
+    <string name="ChatCategoryUsers">用户</string>
+    <string name="ChatCategoryBots">机器人</string>
 </resources>

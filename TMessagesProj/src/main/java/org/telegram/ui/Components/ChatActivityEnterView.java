@@ -3360,8 +3360,8 @@ public class ChatActivityEnterView extends BlurredFrameLayout implements Notific
 
         Drawable drawable1 = getContext().getResources().getDrawable(R.drawable.input_calendar1).mutate();
         Drawable drawable2 = getContext().getResources().getDrawable(R.drawable.input_calendar2).mutate();
-        drawable1.setColorFilter(new PorterDuffColorFilter(getThemedColor(Theme.key_chat_messagePanelIcons), PorterDuff.Mode.SRC_IN));
-        drawable2.setColorFilter(new PorterDuffColorFilter(getThemedColor(Theme.key_chat_recordedVoiceDot), PorterDuff.Mode.SRC_IN));
+        drawable1.setColorFilter(new PorterDuffColorFilter(getThemedColor(Theme.key_chat_messagePanelIcons), PorterDuff.Mode.MULTIPLY));
+        drawable2.setColorFilter(new PorterDuffColorFilter(getThemedColor(Theme.key_chat_recordedVoiceDot), PorterDuff.Mode.MULTIPLY));
         CombinedDrawable combinedDrawable = new CombinedDrawable(drawable1, drawable2);
 
         scheduledButton = new ImageView(getContext());
@@ -3488,7 +3488,7 @@ public class ChatActivityEnterView extends BlurredFrameLayout implements Notific
         }
         botButton = new ImageView(getContext());
         botButton.setImageDrawable(botButtonDrawable = new ReplaceableIconDrawable(getContext()));
-        botButtonDrawable.setColorFilter(new PorterDuffColorFilter(getThemedColor(Theme.key_chat_messagePanelIcons), PorterDuff.Mode.SRC_IN));
+        botButtonDrawable.setColorFilter(new PorterDuffColorFilter(getThemedColor(Theme.key_chat_messagePanelIcons), PorterDuff.Mode.MULTIPLY));
         botButtonDrawable.setIcon(R.drawable.input_bot2, false);
         botButton.setScaleType(ImageView.ScaleType.CENTER);
         if (Build.VERSION.SDK_INT >= 21) {
@@ -4493,7 +4493,7 @@ public class ChatActivityEnterView extends BlurredFrameLayout implements Notific
         } else {
             long chatId = ChatsHelper.getChatId();
             String languageText = Translator.getInputTranslateLangForChat(chatId).toUpperCase();
-            if (NaConfig.INSTANCE.isLLMTranslatorAvailable()) {
+            if (NaConfig.INSTANCE.isLLMTranslatorAvailable() && !NaConfig.INSTANCE.llmIsDefaultProvider()) {
                 cell.setTextAndIcon(LocaleController.getString(R.string.TranslateMessageLLM) + " (" + languageText + ")", R.drawable.magic_stick_solar);
                 cell.setOnClickListener(v -> {
                     if (menuPopupWindow != null && menuPopupWindow.isShowing()) {
@@ -4517,7 +4517,7 @@ public class ChatActivityEnterView extends BlurredFrameLayout implements Notific
                 menuPopupLayout.addView(cell, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, 48, LocaleController.isRTL ? Gravity.RIGHT : Gravity.LEFT, 0, 48 * a++, 0, 0));
             }
             cell = new ActionBarMenuSubItem(getContext(), false, dlps == 0);
-            cell.setTextAndIcon(LocaleController.getString(R.string.TranslateMessage) + " (" + languageText + ")", R.drawable.ic_translate);
+            cell.setTextAndIcon(LocaleController.getString(R.string.TranslateMessage) + " (" + languageText + ")", NaConfig.INSTANCE.llmIsDefaultProvider() ? R.drawable.magic_stick_solar : R.drawable.ic_translate);
             cell.setOnClickListener(v -> {
                 if (menuPopupWindow != null && menuPopupWindow.isShowing()) {
                     menuPopupWindow.dismiss();
@@ -4718,14 +4718,14 @@ public class ChatActivityEnterView extends BlurredFrameLayout implements Notific
                         });
                         return true;
                     });
-                    preSendTranslateLlmButton.setVisibility(NaConfig.INSTANCE.isLLMTranslatorAvailable());
+                    preSendTranslateLlmButton.setVisibility(NaConfig.INSTANCE.isLLMTranslatorAvailable() && !NaConfig.INSTANCE.llmIsDefaultProvider());
                     sendPopupLayout.addView(preSendTranslateLlmButton, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, 48));
                 }
                 if (messageEditText != null && messageEditText.getText().length() > 0) {
                     ActionBarMenuSubItem preSendTranslateButton = new ActionBarMenuSubItem(getContext(), false, false, resourcesProvider);
                     long chatId = ChatsHelper.getChatId();
                     String languageText = Translator.getInputTranslateLangForChat(chatId).toUpperCase();
-                    preSendTranslateButton.setTextAndIcon(LocaleController.getString(R.string.TranslateMessage) + " (" + languageText + ")", R.drawable.ic_translate);
+                    preSendTranslateButton.setTextAndIcon(LocaleController.getString(R.string.TranslateMessage) + " (" + languageText + ")", NaConfig.INSTANCE.llmIsDefaultProvider() ? R.drawable.magic_stick_solar : R.drawable.ic_translate);
                     preSendTranslateButton.setMinimumWidth(AndroidUtilities.dp(196));
                     preSendTranslateButton.setOnClickListener(v -> {
                         if (sendPopupWindow != null && sendPopupWindow.isShowing()) {
@@ -5057,7 +5057,7 @@ public class ChatActivityEnterView extends BlurredFrameLayout implements Notific
             long chatId = ChatsHelper.getChatId();
             String languageText = Translator.getInputTranslateLangForChat(chatId).toUpperCase();
             StringBuilder sb;
-            if (NaConfig.INSTANCE.isLLMTranslatorAvailable()) {
+            if (NaConfig.INSTANCE.isLLMTranslatorAvailable() && !NaConfig.INSTANCE.llmIsDefaultProvider()) {
                 sb = new StringBuilder();
                 sb.append(getString(R.string.TranslateMessageLLM));
                 sb.append(' ').append("(").append(languageText).append(")");
@@ -5088,7 +5088,7 @@ public class ChatActivityEnterView extends BlurredFrameLayout implements Notific
             sb = new StringBuilder();
             sb.append(getString(R.string.TranslateMessage));
             sb.append(' ').append("(").append(languageText).append(")");
-            options.add(R.drawable.ic_translate, sb,
+            options.add(NaConfig.INSTANCE.llmIsDefaultProvider() ? R.drawable.magic_stick_solar : R.drawable.ic_translate, sb,
                     () -> {
                         if (messageSendPreview != null) {
                             messageSendPreview.dismiss(false);
@@ -10417,7 +10417,7 @@ public class ChatActivityEnterView extends BlurredFrameLayout implements Notific
         int color = getThemedColor(Theme.key_chat_messagePanelVoicePressed);
         int defaultAlpha = Color.alpha(color);
         if (doneCheckDrawable != null) {
-            doneCheckDrawable.setColorFilter(new PorterDuffColorFilter(ColorUtils.setAlphaComponent(color, (int) (defaultAlpha * (0.58f + 0.42f * doneButtonEnabledProgress))), PorterDuff.Mode.SRC_IN));
+            doneCheckDrawable.setColorFilter(new PorterDuffColorFilter(ColorUtils.setAlphaComponent(color, (int) (defaultAlpha * (0.58f + 0.42f * doneButtonEnabledProgress))), PorterDuff.Mode.MULTIPLY));
         }
         if (botCommandsMenuContainer != null) {
             botCommandsMenuContainer.updateColors();

@@ -5747,7 +5747,6 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
                 writeButton.setContentDescription(LocaleController.getString(R.string.ViewDiscussion));
             }
         }
-        writeButton.setColorFilter(new PorterDuffColorFilter(getThemedColor(Theme.key_profile_actionIcon), PorterDuff.Mode.SRC_IN));
         writeButton.setScaleType(ImageView.ScaleType.CENTER);
 
         frameLayout.addView(writeButton, LayoutHelper.createFrame(60, 60, Gravity.RIGHT | Gravity.TOP, 0, 0, 16, 0));
@@ -7157,7 +7156,7 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
                 }
                 return Unit.INSTANCE;
             });
-            builder.addItem(LocaleController.getString(R.string.Translate), R.drawable.ic_translate, __ -> {
+            builder.addItem(LocaleController.getString(R.string.Translate), NaConfig.INSTANCE.llmIsDefaultProvider() ? R.drawable.magic_stick_solar : R.drawable.ic_translate, __ -> {
                 try {
                     if (!TextUtils.isEmpty(about)) {
                         DialogTransKt.startTrans(getParentActivity(), about);
@@ -7167,7 +7166,7 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
                 }
                 return Unit.INSTANCE;
             });
-            if (NaConfig.INSTANCE.isLLMTranslatorAvailable()) {
+            if (NaConfig.INSTANCE.isLLMTranslatorAvailable() && !NaConfig.INSTANCE.llmIsDefaultProvider()) {
                 builder.addItem(LocaleController.getString(R.string.TranslateMessageLLM), R.drawable.magic_stick_solar, __ -> {
                     try {
                         if (!TextUtils.isEmpty(about)) {
@@ -7397,7 +7396,7 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
             int c = AndroidUtilities.getOffsetColor(color1, color2, value, 1.0f);
             nameTextView[1].setTextColor(c);
             if (lockIconDrawable != null) {
-                lockIconDrawable.setColorFilter(c, PorterDuff.Mode.SRC_IN);
+                lockIconDrawable.setColorFilter(c, PorterDuff.Mode.MULTIPLY);
             }
             if (scamDrawable != null) {
                 color1 = getThemedColor(Theme.key_avatar_subtitleInProfileBlue);
@@ -12434,10 +12433,6 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
                                     arch = "arm64-v8a";
                                 } else if (nativeLibraryDir.contains("arm")) {
                                     arch = "armeabi-v7a";
-                                } else if (nativeLibraryDir.contains("x86_64")) {
-                                    arch = "x86_64";
-                                } else if (nativeLibraryDir.contains("x86")) {
-                                    arch = "x86";
                                 } else {
                                     // Fallback to primary ABI
                                     arch = Build.SUPPORTED_ABIS[0].toLowerCase(Locale.ROOT);
@@ -14324,7 +14319,7 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
                     }
                 }
                 if (lockIconDrawable != null) {
-                    lockIconDrawable.setColorFilter(getThemedColor(Theme.key_chat_lockIcon), PorterDuff.Mode.SRC_IN);
+                    lockIconDrawable.setColorFilter(getThemedColor(Theme.key_chat_lockIcon), PorterDuff.Mode.MULTIPLY);
                 }
                 if (scamDrawable != null) {
                     scamDrawable.setColor(getThemedColor(Theme.key_avatar_subtitleInProfileBlue));
