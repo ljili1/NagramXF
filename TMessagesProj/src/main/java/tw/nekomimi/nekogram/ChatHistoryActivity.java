@@ -1787,7 +1787,7 @@ public class ChatHistoryActivity extends BaseFragment {
     private void updateActionBarTitle() {
         if (actionBar != null) {
             if (isMultiSelectMode) {
-                actionBar.setTitle(selectedItems.size() + " selected");
+                actionBar.setTitle(selectedItems.size() + getString(R.string.ChatHistorySelected));
             } else {
                 updateTitle();
             }

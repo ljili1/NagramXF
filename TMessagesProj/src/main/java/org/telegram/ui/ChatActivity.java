@@ -44870,7 +44870,11 @@ public class ChatActivity extends BaseFragment implements NotificationCenter.Not
             }
             if (hideTitleItem != null) hideTitleItem.setVisibility(android.view.View.GONE);
         } else if (id == nkbtn_detail) {
-            presentFragment(new MessageDetailsActivity(getSelectedMessages().get(0), getValidGroupedMessage(getSelectedMessages().get(0))));
+            ArrayList<MessageObject> messageObjects = getSelectedMessages();
+            if (!messageObjects.isEmpty()) {
+                MessageObject.GroupedMessages messageGroup = getValidGroupedMessage(messageObjects.getFirst());
+                presentFragment(new MessageDetailsActivity(messageObjects.getFirst(), messageGroup));
+            }
         } else if (id == nkbtn_sharemessage) {
             var selected = getSelectedMessages();
             if (selected.isEmpty()) return;
