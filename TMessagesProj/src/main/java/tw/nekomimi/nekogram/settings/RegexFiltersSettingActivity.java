@@ -12,20 +12,46 @@ package tw.nekomimi.nekogram.settings;
 import static org.telegram.messenger.LocaleController.getString;
 
 import android.annotation.SuppressLint;
+import android.content.ClipData;
+import android.content.ClipboardManager;
 import android.content.Context;
+import android.content.Intent;
+import android.net.Uri;
+import android.text.InputType;
 import android.view.View;
+import android.widget.EditText;
+import android.widget.FrameLayout;
+import android.widget.LinearLayout;
+import android.widget.Toast;
 
 import androidx.annotation.NonNull;
 import androidx.recyclerview.widget.RecyclerView;
 
+import com.google.gson.Gson;
+
 import org.telegram.messenger.AndroidUtilities;
 import org.telegram.messenger.LocaleController;
 import org.telegram.messenger.R;
+import org.telegram.ui.ActionBar.ActionBar;
+import org.telegram.ui.ActionBar.ActionBarMenu;
+import org.telegram.ui.ActionBar.ActionBarMenuItem;
+import org.telegram.ui.ActionBar.AlertDialog;
+import org.telegram.ui.ActionBar.BottomSheet;
 import org.telegram.ui.ActionBar.Theme;
+import org.telegram.ui.Components.BulletinFactory;
+import org.telegram.ui.Components.EditTextBoldCursor;
+import org.telegram.ui.Components.LayoutHelper;
 import org.telegram.ui.Cells.TextCell;
 import org.telegram.ui.Cells.TextCheckCell;
 import org.telegram.ui.Cells.TextInfoPrivacyCell;
+import java.io.BufferedReader;
+import java.io.InputStreamReader;
+import java.io.OutputStream;
+import java.net.HttpURLConnection;
+import java.net.URL;
 import java.util.ArrayList;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 import tw.nekomimi.nekogram.NekoConfig;
 import tw.nekomimi.nekogram.helpers.AyuFilter;
@@ -35,6 +61,10 @@ import tw.nekomimi.nekogram.ui.cells.HeaderCell;
 import xyz.nextalone.nagram.NaConfig;
 
 public class RegexFiltersSettingActivity extends BaseNekoSettingsActivity {
+
+    private static final int MENU_IMPORT = 1;
+    private static final int MENU_EXPORT = 2;
+    private static final int MENU_CLEAR = 3;
 
     private final long dialogId;
     private int filtersOptionHeaderRow;
@@ -151,6 +181,316 @@ public class RegexFiltersSettingActivity extends BaseNekoSettingsActivity {
     @Override
     protected String getActionBarTitle() {
         return getString(R.string.RegexFilters);
+    }
+
+    @Override
+    public ActionBar createActionBar(Context context) {
+        ActionBar actionBar = super.createActionBar(context);
+        
+        ActionBarMenu menu = actionBar.createMenu();
+        ActionBarMenuItem menuItem = menu.addItem(0, R.drawable.ic_ab_other);
+        menuItem.addSubItem(MENU_IMPORT, R.drawable.msg_download, LocaleController.getString("ImportRegexFilters", R.string.ImportRegexFilters));
+        
+        if (!AyuFilter.getRegexFilters().isEmpty()) {
+            menuItem.addSubItem(MENU_EXPORT, R.drawable.msg_shareout, LocaleController.getString("ExportRegexFilters", R.string.ExportRegexFilters));
+        }
+        
+        menuItem.addSubItem(MENU_CLEAR, R.drawable.msg_delete, LocaleController.getString("ClearAllRegexFilters", R.string.ClearAllRegexFilters));
+        
+        actionBar.setActionBarMenuOnItemClick(new ActionBar.ActionBarMenuOnItemClick() {
+            @Override
+            public void onItemClick(int id) {
+                if (id == -1) {
+                    finishFragment();
+                } else if (id == MENU_IMPORT) {
+                    showImportOptions();
+                } else if (id == MENU_EXPORT) {
+                    showExportOptions();
+                } else if (id == MENU_CLEAR) {
+                    clearAllFilters();
+                }
+            }
+        });
+        
+        return actionBar;
+    }
+
+    private void showImportOptions() {
+        BottomSheet.Builder builder = new BottomSheet.Builder(getParentActivity());
+        
+        LinearLayout linearLayout = new LinearLayout(getParentActivity());
+        linearLayout.setOrientation(LinearLayout.VERTICAL);
+        
+        TextInfoPrivacyCell titleCell = new TextInfoPrivacyCell(getParentActivity());
+        titleCell.setText(LocaleController.getString("SelectImportMethod", R.string.SelectImportMethod));
+        titleCell.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteGrayText2));
+        linearLayout.addView(titleCell, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
+        
+        TextCell pasteCell = new TextCell(getParentActivity());
+        pasteCell.setText(LocaleController.getString("PasteFromClipboard", R.string.PasteFromClipboard), false);
+        pasteCell.setBackground(Theme.getSelectorDrawable(false));
+        pasteCell.setOnClickListener(v -> {
+            builder.getDismissRunnable().run();
+            importFromClipboard();
+        });
+        linearLayout.addView(pasteCell, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
+        
+        TextCell urlCell = new TextCell(getParentActivity());
+        urlCell.setText(LocaleController.getString("ImportFromURL", R.string.ImportFromURL), false);
+        urlCell.setBackground(Theme.getSelectorDrawable(false));
+        urlCell.setOnClickListener(v -> {
+            builder.getDismissRunnable().run();
+            showUrlImportDialog();
+        });
+        linearLayout.addView(urlCell, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
+        
+        
+        builder.setCustomView(linearLayout);
+        builder.show();
+    }
+
+    private void importFromClipboard() {
+        ClipboardManager clipboard = (ClipboardManager) getParentActivity().getSystemService(Context.CLIPBOARD_SERVICE);
+        if (clipboard != null && clipboard.hasPrimaryClip()) {
+            ClipData.Item item = clipboard.getPrimaryClip().getItemAt(0);
+            String text = item.getText().toString();
+            processImportedData(text);
+        } else {
+            BulletinFactory.of(this).createErrorBulletin(LocaleController.getString("ClipboardEmpty", R.string.ClipboardEmpty)).show();
+        }
+    }
+
+    private void showUrlImportDialog() {
+        AlertDialog.Builder builder = new AlertDialog.Builder(getParentActivity());
+        builder.setTitle(LocaleController.getString("ImportFromURL", R.string.ImportFromURL));
+
+        LinearLayout linearLayout = new LinearLayout(getParentActivity());
+        linearLayout.setOrientation(LinearLayout.VERTICAL);
+
+        EditTextBoldCursor editText = new EditTextBoldCursor(getParentActivity());
+        editText.setHintTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteHintText));
+        editText.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlackText));
+        editText.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_URI);
+        linearLayout.addView(editText, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, AndroidUtilities.dp(8), 0, AndroidUtilities.dp(10), 0));
+
+        builder.setView(linearLayout);
+        builder.setPositiveButton(getString(R.string.OK), (dialog, which) -> {
+            String url = editText.getText().toString().trim();
+            if (!url.isEmpty()) {
+                importFromUrl(url);
+            }
+        });
+        builder.setNegativeButton(getString(R.string.Cancel), null);
+
+        AlertDialog dialog = builder.create();
+        showDialog(dialog);
+        editText.requestFocus();
+        AndroidUtilities.showKeyboard(editText);
+    }
+
+    private void importFromUrl(String url) {
+        if (!isValidUrl(url)) {
+            BulletinFactory.of(this).createErrorBulletin(LocaleController.getString("InvalidUrl", R.string.InvalidUrl)).show();
+            return;
+        }
+        
+        if (url.contains("dpaste.com/") && !url.endsWith(".txt")) {
+            url = url + ".txt";
+        }
+        
+        final String finalUrl = url;
+        ExecutorService executor = Executors.newSingleThreadExecutor();
+        executor.execute(() -> {
+            try {
+                URL urlObj = new URL(finalUrl);
+                HttpURLConnection connection = (HttpURLConnection) urlObj.openConnection();
+                connection.setRequestMethod("GET");
+                connection.setConnectTimeout(10000);
+                connection.setReadTimeout(10000);
+                
+                int responseCode = connection.getResponseCode();
+                if (responseCode == HttpURLConnection.HTTP_OK) {
+                    BufferedReader reader = new BufferedReader(new InputStreamReader(connection.getInputStream()));
+                    StringBuilder response = new StringBuilder();
+                    String line;
+                    while ((line = reader.readLine()) != null) {
+                        response.append(line);
+                    }
+                    reader.close();
+                    
+                    AndroidUtilities.runOnUIThread(() -> {
+                        processImportedData(response.toString());
+                    });
+                } else {
+                    AndroidUtilities.runOnUIThread(() -> {
+                        BulletinFactory.of(this).createErrorBulletin(LocaleController.getString("ImportFromUrl", R.string.ImportFromUrl)).show();
+                    });
+                }
+                connection.disconnect();
+            } catch (Exception e) {
+                AndroidUtilities.runOnUIThread(() -> {
+                    BulletinFactory.of(this).createErrorBulletin(LocaleController.getString("ImportFromUrl", R.string.ImportFromUrl) + ": " + e.getMessage()).show();
+                });
+            }
+        });
+    }
+    
+    private boolean isValidUrl(String url) {
+        try {
+            new URL(url);
+            return url.startsWith("http://") || url.startsWith("https://");
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+
+    private void processImportedData(String json) {
+        try {
+            AyuFilter.FilterModel[] importedFilters = new Gson().fromJson(json, AyuFilter.FilterModel[].class);
+            
+            if (importedFilters != null && importedFilters.length > 0) {
+                ArrayList<AyuFilter.FilterModel> currentFilters = AyuFilter.getRegexFilters();
+                for (AyuFilter.FilterModel filter : importedFilters) {
+                    currentFilters.add(0, filter);
+                }
+                AyuFilter.saveFilter(currentFilters);
+                updateRows();
+                if (listAdapter != null) {
+                    listAdapter.notifyDataSetChanged();
+                }
+                BulletinFactory.of(this).createSimpleBulletin(R.raw.contact_check, LocaleController.formatString("RegexFiltersImported", R.string.RegexFiltersImported, importedFilters.length)).show();
+            } else {
+                BulletinFactory.of(this).createErrorBulletin(LocaleController.getString("ImportFileFormatError", R.string.ImportFileFormatError)).show();
+            }
+        } catch (Exception e) {
+            BulletinFactory.of(this).createErrorBulletin(LocaleController.formatString("ImportFailed", R.string.ImportFailed, e.getMessage())).show();
+        }
+    }
+
+    private void showExportOptions() {
+        ArrayList<AyuFilter.FilterModel> filters = AyuFilter.getRegexFilters();
+        if (filters.isEmpty()) {
+            BulletinFactory.of(this).createErrorBulletin(LocaleController.getString("NoRegexFiltersToExport", R.string.NoRegexFiltersToExport)).show();
+            return;
+        }
+        
+        BottomSheet.Builder builder = new BottomSheet.Builder(getParentActivity());
+        
+        LinearLayout linearLayout = new LinearLayout(getParentActivity());
+        linearLayout.setOrientation(LinearLayout.VERTICAL);
+        
+        TextInfoPrivacyCell titleCell = new TextInfoPrivacyCell(getParentActivity());
+        titleCell.setText(LocaleController.getString("SelectExportMethod", R.string.SelectExportMethod));
+        titleCell.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteGrayText2));
+        linearLayout.addView(titleCell, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
+        
+        TextCell copyCell = new TextCell(getParentActivity());
+        copyCell.setBackground(Theme.getSelectorDrawable(false));
+        copyCell.setText(LocaleController.getString("CopyToClipboard", R.string.CopyToClipboard), false);
+        copyCell.setOnClickListener(v -> {
+            builder.getDismissRunnable().run();
+            exportToClipboard();
+        });
+        linearLayout.addView(copyCell, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
+        
+        TextCell dpasteCell = new TextCell(getParentActivity());
+        dpasteCell.setBackground(Theme.getSelectorDrawable(false));
+        dpasteCell.setText(LocaleController.getString("PublishToDpaste", R.string.PublishToDpaste), false);
+        dpasteCell.setOnClickListener(v -> {
+            builder.getDismissRunnable().run();
+            publishToDpaste();
+        });
+        linearLayout.addView(dpasteCell, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
+        
+        builder.setCustomView(linearLayout);
+        builder.show();
+    }
+
+    private void exportToClipboard() {
+        ArrayList<AyuFilter.FilterModel> filters = AyuFilter.getRegexFilters();
+        String json = new Gson().toJson(filters);
+        
+        ClipboardManager clipboard = (ClipboardManager) getParentActivity().getSystemService(Context.CLIPBOARD_SERVICE);
+        ClipData clip = ClipData.newPlainText("Regex Filters", json);
+        clipboard.setPrimaryClip(clip);
+        
+        BulletinFactory.of(this).createSimpleBulletin(R.raw.copy, LocaleController.formatString("RegexFiltersCopiedToClipboard", R.string.RegexFiltersCopiedToClipboard, filters.size())).show();
+    }
+
+    private void publishToDpaste() {
+        ArrayList<AyuFilter.FilterModel> filters = AyuFilter.getRegexFilters();
+        String json = new Gson().toJson(filters);
+        
+        ExecutorService executor = Executors.newSingleThreadExecutor();
+        executor.execute(() -> {
+            try {
+                URL url = new URL("https://dpaste.com/api/v2/");
+                HttpURLConnection connection = (HttpURLConnection) url.openConnection();
+                connection.setRequestMethod("POST");
+                connection.setRequestProperty("Content-Type", "application/x-www-form-urlencoded");
+                connection.setDoOutput(true);
+                connection.setConnectTimeout(10000);
+                connection.setReadTimeout(10000);
+                
+                String postData = "content=" + java.net.URLEncoder.encode(json, "UTF-8") + 
+                                 "&syntax=json" + 
+                                 "&expiry_days=30";
+                
+                OutputStream os = connection.getOutputStream();
+                os.write(postData.getBytes("UTF-8"));
+                os.flush();
+                os.close();
+                
+                int responseCode = connection.getResponseCode();
+                if (responseCode == HttpURLConnection.HTTP_CREATED) {
+                    BufferedReader reader = new BufferedReader(new InputStreamReader(connection.getInputStream()));
+                    String pasteUrl = reader.readLine();
+                    reader.close();
+                    
+                    AndroidUtilities.runOnUIThread(() -> {
+                        ClipboardManager clipboard = (ClipboardManager) getParentActivity().getSystemService(Context.CLIPBOARD_SERVICE);
+                        ClipData clip = ClipData.newPlainText("Dpaste URL", pasteUrl);
+                        clipboard.setPrimaryClip(clip);
+                        
+                        BulletinFactory.of(this).createSimpleBulletin(R.raw.saved_messages, LocaleController.formatString("PublishedToDpaste", R.string.PublishedToDpaste, pasteUrl)).show();
+                    });
+                } else {
+                    AndroidUtilities.runOnUIThread(() -> {
+                        BulletinFactory.of(this).createErrorBulletin(LocaleController.getString("PublishToDpasteError", R.string.PublishToDpasteError)).show();
+                    });
+                }
+                connection.disconnect();
+            } catch (Exception e) {
+                AndroidUtilities.runOnUIThread(() -> {
+                    BulletinFactory.of(this).createErrorBulletin(LocaleController.getString("PublishToDpasteError", R.string.PublishToDpasteError) + ": " + e.getMessage()).show();
+                });
+            }
+        });
+    }
+    
+
+    private void clearAllFilters() {
+        ArrayList<AyuFilter.FilterModel> filters = AyuFilter.getRegexFilters();
+        if (filters.isEmpty()) {
+            BulletinFactory.of(this).createErrorBulletin(LocaleController.getString("NoRegexFiltersToClear", R.string.NoRegexFiltersToClear)).show();
+            return;
+        }
+        
+        AlertDialog.Builder builder = new AlertDialog.Builder(getParentActivity());
+        builder.setTitle(LocaleController.getString("ClearAllRegexFilters", R.string.ClearAllRegexFilters));
+        builder.setMessage(LocaleController.getString("ClearAllRegexFiltersConfirm", R.string.ClearAllRegexFiltersConfirm));
+        builder.setPositiveButton(getString(R.string.Delete), (dialog, which) -> {
+            NaConfig.INSTANCE.getRegexFiltersData().setConfigString("[]");
+            AyuFilter.rebuildCache();
+            updateRows();
+            if (listAdapter != null) {
+                listAdapter.notifyDataSetChanged();
+            }
+            BulletinFactory.of(this).createSimpleBulletin(R.raw.chats_infotip, LocaleController.getString("RegexFiltersCleared", R.string.RegexFiltersCleared)).show();
+        });
+        builder.setNegativeButton(getString(R.string.Cancel), null);
+        showDialog(builder.create());
     }
 
     private class ListAdapter extends BaseListAdapter {

@@ -348,7 +348,7 @@ object NaConfig {
         addConfig(
             "DisableStories",
             ConfigItem.configTypeBool,
-            true
+            false
         )
     val useLocalQuoteColorData =
         addConfig(
@@ -1405,6 +1405,12 @@ object NaConfig {
             "SquareFloatingActionButton",
             ConfigItem.configTypeBool,
             false
+        )
+    val hideStoriesFromHeader =
+        addConfig(
+            "HideStoriesFromHeader",
+            ConfigItem.configTypeBool,
+            true
         )
 
     val preferredTranslateTargetLangList = ArrayList<String>()

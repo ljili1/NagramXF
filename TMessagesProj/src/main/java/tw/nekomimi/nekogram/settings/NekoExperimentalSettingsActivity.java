@@ -174,6 +174,7 @@ public class NekoExperimentalSettingsActivity extends BaseNekoXSettingsActivity 
     // Story
     private final AbstractConfigCell headerStory = cellGroup.appendCell(new ConfigCellHeader(getString(R.string.Story)));
     private final AbstractConfigCell disableStoriesRow = cellGroup.appendCell(new ConfigCellTextCheck(NaConfig.INSTANCE.getDisableStories()));
+    private final AbstractConfigCell hideFromHeaderRow = cellGroup.appendCell(new ConfigCellTextCheck(NaConfig.INSTANCE.getHideStoriesFromHeader()));
     private final AbstractConfigCell dividerStory = cellGroup.appendCell(new ConfigCellDivider());
 
     // Sticker Cache
@@ -220,6 +221,7 @@ public class NekoExperimentalSettingsActivity extends BaseNekoXSettingsActivity 
             cellGroup.rows.remove(useDeletedIconRow);
             cellGroup.rows.remove(customDeletedMarkRow);
         }
+        checkStoriesCellRows();
         addRowsToMap(cellGroup);
     }
 
@@ -496,6 +498,7 @@ public class NekoExperimentalSettingsActivity extends BaseNekoXSettingsActivity 
                     }
                 }
             } else if (key.equals(NaConfig.INSTANCE.getDisableStories().getKey())) {
+                checkStoriesCellRows();
                 tooltip.showWithAction(0, UndoView.ACTION_NEED_RESTART, null, null);
             } else if (key.equals(NekoConfig.localPremium.getKey())) {
                 NotificationCenter.getGlobalInstance().postNotificationName(NotificationCenter.mainUserInfoChanged);
@@ -554,6 +557,8 @@ public class NekoExperimentalSettingsActivity extends BaseNekoXSettingsActivity 
             } else if (key.equals(NaConfig.INSTANCE.getPerformanceClass().getKey())) {
                 tooltip.showWithAction(0, UndoView.ACTION_NEED_RESTART, null, null);
             } else if (key.equals(NaConfig.INSTANCE.getPlayerDecoder().getKey())) {
+                tooltip.showWithAction(0, UndoView.ACTION_NEED_RESTART, null, null);
+            } else if (key.equals(NaConfig.INSTANCE.getHideStoriesFromHeader().getKey())) {
                 tooltip.showWithAction(0, UndoView.ACTION_NEED_RESTART, null, null);
             }
         };
@@ -920,6 +925,29 @@ public class NekoExperimentalSettingsActivity extends BaseNekoXSettingsActivity 
         if (listAdapter != null) {
             ((ConfigCellTextCheckIcon) clearMessageDatabaseRow).setValue(AyuData.totalSize > 0 ? AndroidUtilities.formatFileSize(AyuData.totalSize) : "...");
             listAdapter.notifyItemChanged(cellGroup.rows.indexOf(clearMessageDatabaseRow));
+        }
+    }
+
+    private void checkStoriesCellRows() {
+        boolean disabled = NaConfig.INSTANCE.getDisableStories().Bool();
+        if (listAdapter == null) {
+            if (disabled) {
+                cellGroup.rows.remove(hideFromHeaderRow);
+            }
+            return;
+        }
+        if (!disabled) {
+            final int index = cellGroup.rows.indexOf(disableStoriesRow);
+            if (!cellGroup.rows.contains(hideFromHeaderRow)) {
+                cellGroup.rows.add(index + 1, hideFromHeaderRow);
+                listAdapter.notifyItemInserted(index + 1);
+            }
+        } else {
+            final int index = cellGroup.rows.indexOf(hideFromHeaderRow);
+            if (index != -1) {
+                cellGroup.rows.remove(hideFromHeaderRow);
+                listAdapter.notifyItemRemoved(index);
+            }
         }
     }
 }

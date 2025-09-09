@@ -129,13 +129,7 @@ public class ForceForward {
     public void runForceForward(ArrayList<MessageObject> messagesToSend, long targetDialogId, boolean showUndo) {
         if (messagesToSend == null || messagesToSend.isEmpty() || parentFragment.getParentActivity() == null) return;
 
-        // progress dialog
-        final AlertDialog progressDialog = new AlertDialog(parentFragment.getParentActivity(), AlertDialog.ALERT_TYPE_SPINNER, parentFragment.getResourceProvider());
-        progressDialog.setCanCancel(false);
-        progressDialog.showDelayed(200);
-
-        Utilities.globalQueue.postRunnable(() -> {
-            try {
+        try {
                 // 1) ensure media downloaded
                 ArrayList<MessageObject> needDownload = new ArrayList<>();
                 for (MessageObject mo : messagesToSend) {
@@ -173,17 +167,7 @@ public class ForceForward {
                             }
                         }
                                
-                        // 提供进度反馈，避免转圈界面假死
-                        if (attempts % 50 == 0) { // 每5秒更新一次
-                            final int remainingCount = needDownload.size();
-                            AndroidUtilities.runOnUIThread(() -> {
-                                try {
-                                    if (progressDialog != null && progressDialog.isShowing()) {
-                                        progressDialog.setMessage("正在下载媒体文件... (" + remainingCount + " 个剩余)");
-                                    }
-                                } catch (Exception ignore) {}
-                            });
-                        }
+
                                
                         Thread.sleep(100);
                             attempts++;
@@ -475,107 +459,94 @@ public class ForceForward {
                     }
                 }
 
-                // 分组在遍历时遇到末尾已即时发送；此处无需再次统一发送
+            // 分组在遍历时遇到末尾已即时发送；此处无需再次统一发送
 
-                // 发送未分组的单张照片
-                for (SendMessagesHelper.SendingMediaInfo info : singlePhotos) {
-                    java.util.ArrayList<SendMessagesHelper.SendingMediaInfo> one = new java.util.ArrayList<>();
-                    one.add(info);
-                    SendMessagesHelper.prepareSendingMedia(
-                        parentFragment.getAccountInstance(),
-                        one,
-                        targetDialogId,
-                        null,
-                        null,
-                        null,
-                        null,
-                        false,
-                        false, // single
-                        null,
-                        true,
-                        0,
-                        parentFragment.getChatMode(),
-                        false,
-                        null,
-                        parentFragment.quickReplyShortcut,
-                        parentFragment.getQuickReplyId(),
-                        0,
-                        false,
-                        0,
-                        parentFragment.getSendMonoForumPeerId(),
-                        parentFragment.getSendMessageSuggestionParams()
-                    );
-                }
-
-                // 发送未分组的视频（逐条）
-                for (SendMessagesHelper.SendingMediaInfo info : singleVideos) {
-                    java.util.ArrayList<SendMessagesHelper.SendingMediaInfo> one = new java.util.ArrayList<>();
-                    one.add(info);
-                    SendMessagesHelper.prepareSendingMedia(
-                        parentFragment.getAccountInstance(),
-                        one,
-                        targetDialogId,
-                        null,
-                        null,
-                        null,
-                        null,
-                        false,
-                        false,
-                        null,
-                        true,
-                        0,
-                        parentFragment.getChatMode(),
-                        false,
-                        null,
-                        parentFragment.quickReplyShortcut,
-                        parentFragment.getQuickReplyId(),
-                        0,
-                        false,
-                        0,
-                        parentFragment.getSendMonoForumPeerId(),
-                        parentFragment.getSendMessageSuggestionParams()
-                    );
-                }
-
-                // 发送未分组的文档（逐条）
-                for (SendMessagesHelper.SendingMediaInfo info : singleDocuments) {
-                    SendMessagesHelper.prepareSendingDocument(
-                        parentFragment.getAccountInstance(),
-                        info.path,
-                        info.path,
-                        null,
-                        info.caption,
-                        null,
-                        targetDialogId,
-                        null,
-                        null,
-                        null,
-                        null,
-                        null,
-                        true,
-                        0,
-                        null,
-                        parentFragment.quickReplyShortcut,
-                        parentFragment.getQuickReplyId(),
-                        false
-                    );
-                }
-
-                // 相册分组已按末尾触发发送，无需 flush
-
-                AndroidUtilities.runOnUIThread(() -> {
-                    try { progressDialog.dismiss(); } catch (Exception ignore) {}
-                    if (showUndo) {
-                        UndoView undoView = parentFragment.getUndoView();
-                        if (undoView != null) {
-                            undoView.showWithAction(targetDialogId, UndoView.ACTION_FWD_MESSAGES, messagesToSend.size());
-                        }
-                    }
-                });
-            } catch (Exception e) {
-                FileLog.e(e);
-                AndroidUtilities.runOnUIThread(() -> { try { progressDialog.dismiss(); } catch (Exception ignore) {} });
+            // 发送未分组的单张照片
+            for (SendMessagesHelper.SendingMediaInfo info : singlePhotos) {
+                java.util.ArrayList<SendMessagesHelper.SendingMediaInfo> one = new java.util.ArrayList<>();
+                one.add(info);
+                SendMessagesHelper.prepareSendingMedia(
+                    parentFragment.getAccountInstance(),
+                    one,
+                    targetDialogId,
+                    null,
+                    null,
+                    null,
+                    null,
+                    false,
+                    false, // single
+                    null,
+                    true,
+                    0,
+                    parentFragment.getChatMode(),
+                    false,
+                    null,
+                    parentFragment.quickReplyShortcut,
+                    parentFragment.getQuickReplyId(),
+                    0,
+                    false,
+                    0,
+                    parentFragment.getSendMonoForumPeerId(),
+                    parentFragment.getSendMessageSuggestionParams()
+                );
             }
-        });
+
+            // 发送未分组的视频（逐条）
+            for (SendMessagesHelper.SendingMediaInfo info : singleVideos) {
+                java.util.ArrayList<SendMessagesHelper.SendingMediaInfo> one = new java.util.ArrayList<>();
+                one.add(info);
+                SendMessagesHelper.prepareSendingMedia(
+                    parentFragment.getAccountInstance(),
+                    one,
+                    targetDialogId,
+                    null,
+                    null,
+                    null,
+                    null,
+                    false,
+                    false,
+                    null,
+                    true,
+                    0,
+                    parentFragment.getChatMode(),
+                    false,
+                    null,
+                    parentFragment.quickReplyShortcut,
+                    parentFragment.getQuickReplyId(),
+                    0,
+                    false,
+                    0,
+                    parentFragment.getSendMonoForumPeerId(),
+                    parentFragment.getSendMessageSuggestionParams()
+                );
+            }
+
+            // 发送未分组的文档（逐条）
+            for (SendMessagesHelper.SendingMediaInfo info : singleDocuments) {
+                SendMessagesHelper.prepareSendingDocument(
+                    parentFragment.getAccountInstance(),
+                    info.path,
+                    info.path,
+                    null,
+                    info.caption,
+                    null,
+                    targetDialogId,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    true,
+                    0,
+                    null,
+                    parentFragment.quickReplyShortcut,
+                    parentFragment.getQuickReplyId(),
+                    false
+                );
+            }
+
+        } catch (Exception e) {
+            FileLog.e(e);
+        }
     }
 }

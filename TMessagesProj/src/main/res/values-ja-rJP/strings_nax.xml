@@ -164,6 +164,7 @@
     <string name="DebugMenuForceForumTabs">話題タブを強制する</string>
     <string name="DebugMenuDoNotForceForumTabs">話題タブを強制しない</string>
     <string name="DebugMenuCleanAppUpdate">アプリの更新を消去</string>
+    <string name="DebugMenuMakeMemoryDump">メモリダンプを作成</string>
     <string name="TranslateMessageLLM">AI で翻訳</string>
     <string name="ResetChatNameOverrides">チャット名の上書きをリセット</string>
     <string name="ResetChatNameNotification">チャット名の上書きがクリアされました。</string>
@@ -236,4 +237,5 @@
     <string name="PinnedReactions_Limit">最大 %d つのリアクションを選択できます。</string>
     <string name="PinnedReactions_Type">この絵文字は使用できません。</string>
     <string name="PinnedReactions_Apply">ピン留めされたアクションを更新</string>
+    <string name="HideStoriesFromHeader">ヘッダーから非表示</string>
 </resources>

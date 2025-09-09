@@ -24,7 +24,7 @@
     <string name="HideHelpSection">在设置中隐藏帮助</string>
     <string name="ProviderLLMTranslator">AI 翻译</string>
     <string name="LlmApiUrl">API URL</string>
-    <string name="LlmApiUrlHint">e.g. https://api.openai.com/v1</string>
+    <string name="LlmApiUrlHint">例如： https://api.openai.com/v1</string>
     <string name="LlmApiKey">API 密钥</string>
     <string name="LlmModelName">模型</string>
     <string name="LlmApiUrlNotice">API 基本 URL，支持任何与 OpenAI 兼容的端点。例如 Gemini、xAI (Grok)、Groq、Mistral、DeepSeek 等。\n\n如果留空将默认使用 Gemini 的 OpenAI 兼容端点。</string>
@@ -38,13 +38,13 @@
     <string name="LlmProviderDeepSeekKey">DeepSeek API 密钥</string>
     <string name="LlmProviderXAIKey">xAI API 密钥</string>
     <string name="LlmSystemPrompt">系统提示词</string>
-    <string name="LlmSystemPromptHint">You are a helpful assistant.</string>
+    <string name="LlmSystemPromptHint">你是一名得力的助手……</string>
     <string name="LlmSystemPromptNotice">定义 AI 的角色和行为。\n\n此提示设置 AI 的语调、个性和限制。考虑描述 AI 应该成为什么样的助手。\n\n可以留空不设置此参数。</string>
     <string name="LlmUserPrompt">用户提示词</string>
     <string name="LlmUserPromptNotice">使用 @text 作为原始消息的占位符，使用 @toLang 作为目标语言的占位符（可选）。\n\n例如：\'将 @text 翻译成 @toLang 无需任何解释。\'\n\n留空将使用默认提示词。</string>
     <string name="LlmTemperature">严谨与想象</string>
     <string name="AITranslatorSettings">AI 翻译</string>
-    <string name="TranslucentDeletedMessages">透明已删除消息</string>
+    <string name="TranslucentDeletedMessages">使已删除的消息半透明</string>
     <string name="ArticleTranslationProvider">文章翻译源</string>
     <string name="EnableSeparateArticleTranslator">单独设置文章翻译源</string>
     <string name="DisableCrashlyticsCollection">禁用 Firebase Crashlytics 崩溃报告</string>
@@ -60,7 +60,8 @@
     <string name="ClearDeleted">清除已删除消息</string>
     <string name="ClearDeletedAlertMessage">您确定要清除此聊天中的所有已删除消息吗？</string>
     <string name="ForwardsRestrictedInfoAyuDeleted">不允许转发。</string>
-    <string name="botCommandConfirmTitle">确认指令</string>
+    <string name="RegexFiltersNotice">点击以编辑。</string>
+    <string name="botCommandConfirmTitle">确认发送</string>
     <string name="botCommandConfirmText">您确定要发送此指令吗？\n\n%s</string>
     <string name="DisableScreenshotDetection">禁用截屏检测</string>
     <string name="MessageSavingSaveMedia">保存媒体</string>
@@ -103,7 +104,7 @@
     <string name="Other">其他</string>
     <string name="RestartApp">重启应用</string>
     <string name="ResetSettings">重置设置</string>
-    <string name="ResetSettingsAlert">您确定要重置「N-设置」为初始状态吗？</string>
+    <string name="ResetSettingsAlert">您确定要重置所有 N-设置 吗？</string>
     <string name="DontAutoPlayNextVoice">禁用自动播放下一条语音消息</string>
     <string name="SaveToChatSubfolder">按聊天名称保存附件</string>
     <string name="MessageColoredBackground">多彩消息背景</string>
@@ -133,8 +134,8 @@
     <string name="DontSendUploadProgress">不发送输入状态</string>
     <string name="SendOfflinePacketAfterOnline">在线后自动离线</string>
     <string name="MarkReadAfterSend">动作后设置已读</string>
-    <string name="GhostModeNotice">长按任何选项以防止其在切换隐身模式时发生变化。</string>
-    <string name="MarkReadAfterSendNotice">当你发送新消息或点击反应时，自动将消息标记为已读。</string>
+    <string name="GhostModeNotice">长按任何选项以阻止其在切换幽灵模式时发生变化。</string>
+    <string name="MarkReadAfterSendNotice">发送新消息或点击表情回应时，自动将消息标记为已读。</string>
     <string name="SendWithoutSoundRowNotice">对方将不会收到声音提醒。</string>
     <string name="GhostReadMessage">标记已读</string>
     <string name="SendWithSound">有声发送</string>
@@ -152,7 +153,7 @@
     <string name="CloudflareAccountID">帐户 ID</string>
     <string name="CloudflareAPIToken">API 令牌</string>
     <string name="CloudflareCredentialsDialog">配置 Cloudflare 帐户 ID 和 API 令牌。\n**如何获取?**\n</string>
-    <string name="GeminiApiKeyNotSet">Gemini API 密钥未配置。</string>
+    <string name="GeminiApiKeyNotSet">未配置 Gemini API 密钥。</string>
     <string name="GeminiApiKeyDialog">配置 Gemini API 密钥，留空将尝试使用翻译器设置中的密钥。\n**如何获取?**\n</string>
     <string name="GeminiNotSupport">此设备不支持 Gemini。</string>
     <string name="ReplyInPrivate">在私聊中回复</string>
@@ -167,7 +168,7 @@
     <string name="DebugMenuUseOldCamera1Api">使用旧的 Camera 1 API</string>
     <string name="DebugMenuUseCpuBlur">回退到 CPU 模糊</string>
     <string name="DebugMenuUseNewGpuBlur">使用新的 GPU 模糊</string>
-    <string name="DebugMenuEnableAdaptableColorInBrowser">启用自适应性浏览器颜色</string>
+    <string name="DebugMenuEnableAdaptableColorInBrowser">启用自适应浏览器颜色</string>
     <string name="DebugMenuDisableAdaptableColorInBrowser">禁用自适应浏览器颜色</string>
     <string name="DebugMenuEnableVideoQualitiesDebug">启用视频质量调试</string>
     <string name="DebugMenuDisableVideoQualitiesDebug">禁用视频质量调试</string>
@@ -175,6 +176,7 @@
     <string name="DebugMenuForceForumTabs">强制话题标签</string>
     <string name="DebugMenuDoNotForceForumTabs">取消强制话题标签</string>
     <string name="DebugMenuCleanAppUpdate">清除应用更新</string>
+    <string name="DebugMenuMakeMemoryDump">内存转储</string>
     <string name="TranslateMessageLLM">AI 翻译</string>
     <string name="ResetChatNameOverrides">重置聊天名称覆盖</string>
     <string name="ResetChatNameNotification">聊天名称覆盖已清除。</string>
@@ -216,7 +218,7 @@
     <string name="PremiumItemEmojiStatus">Emoji 标识</string>
     <string name="PremiumItemEmojiInReplies">回复背景中的 Emoji</string>
     <string name="PremiumItemCustomColorInReplies">自定义颜色</string>
-    <string name="PremiumItemStarInReactions">表情回应中的星星</string>
+    <string name="PremiumItemStarInReactions">表情回应中的 Star</string>
     <string name="PremiumItemVideoAvatar">动态头像</string>
     <string name="PremiumItemCustomWallpaper">自定义壁纸</string>
     <string name="TranslationTargetApp">跟随应用</string>
@@ -252,7 +254,6 @@
     <string name="PinnedReactions_Limit">最多可以选择 %d 个表情回应。</string>
     <string name="PinnedReactions_Type">不支持此 Emoji。</string>
     <string name="PinnedReactions_Apply">更新置顶的表情回应</string>
-    <!-- Chat History Activity -->
     <string name="SwitchAccountNax">切换账号</string>
     <string name="CurrentNax">当前</string>
     <string name="PrivateChatMessage">无法打开私有聊天：%1$s\n\n此聊天为私有聊天，只能从原始账号访问。</string>
@@ -265,13 +266,39 @@
     <string name="ChatHistory_NoResultsFor">未找到与“%1$s”匹配的结果</string>
     <string name="ChatHistory_NoRecentChats">无最近聊天</string>
     <string name="ChatHistory_NoCategoryFound">未找到任何%1$s</string>
-    <!-- Added translations for delete confirmation dialog in ChatHistory -->
     <string name="ChatHistoryDeleteChats">删除聊天</string>
     <string name="ChatHistoryDeleteConfirmation">确定要删除已选择的 </string>
-    <string name="ChatHistorySelected"> 个聊天</string>
+    <string name="ChatHistorySelected">个聊天</string>
     <string name="ChatCategoryAll">全部</string>
     <string name="ChatCategoryChannels">频道</string>
     <string name="ChatCategoryGroups">群组</string>
     <string name="ChatCategoryUsers">用户</string>
     <string name="ChatCategoryBots">机器人</string>
+    <string name="ImportRegexFilters">导入</string>
+    <string name="ExportRegexFilters">导出</string>
+    <string name="ClearAllRegexFilters">清除</string>
+    <string name="ClearAllRegexFiltersConfirm">您确定要清除所有正则过滤器吗？</string>
+    <string name="RegexFiltersImported">成功导入 %d 个正则过滤器</string>
+    <string name="RegexFiltersExported">成功导出 %d 个正则过滤器</string>
+    <string name="RegexFiltersCleared">所有正则过滤器已清除</string>
+    <string name="RegexFiltersImportError">导入正则过滤器失败</string>
+    <string name="RegexFiltersExportError">导出正则过滤器失败</string>
+    <string name="NoRegexFiltersToExport">没有正则过滤器可导出</string>
+    <string name="CopyToClipboard">复制到剪贴板</string>
+    <string name="PublishToDpaste">发布到 dpaste.com</string>
+    <string name="ImportFromURL">从 URL 导入</string>
+    <string name="CopiedToClipboard">已复制到剪贴板</string>
+    <string name="PublishedToDpaste">已发布到 dpaste.com: %s</string>
+    <string name="PublishToDpasteError">发布到 dpaste.com 时出错</string>
+    <string name="ImportFromUrl">从 URL 导入时出错</string>
+    <string name="SelectImportMethod">选择导入过滤器的方法</string>
+    <string name="SelectExportMethod">选择导出过滤器的方法</string>
+    <string name="InvalidUrl">无效的 URL</string>
+    <string name="NoDataInClipboard">剪贴板中没有数据</string>
+    <string name="ClipboardEmpty">剪贴板为空</string>
+    <string name="RegexFiltersCopiedToClipboard">%d 个正则过滤器已复制到剪贴板</string>
+    <string name="NoRegexFiltersToClear">没有正则过滤器可清除</string>
+    <string name="ImportFileFormatError">导入文件格式错误或为空</string>
+    <string name="ImportFailed">导入失败: %s</string>
+    <string name="ExportFailed">导出失败: %s</string>
 </resources>

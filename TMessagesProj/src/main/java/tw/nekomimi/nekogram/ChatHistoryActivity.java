@@ -1481,12 +1481,10 @@ public class ChatHistoryActivity extends BaseFragment {
         protected void onLayout(boolean changed, int left, int top, int right, int bottom) {
             super.onLayout(changed, left, top, right, bottom);
             if (checkBox2 != null) {
-                // 头像位置：左边距16dp，垂直居中，大小50dp
                 int avatarLeft = AndroidUtilities.dp(16);
                 int avatarTop = (getMeasuredHeight() - AndroidUtilities.dp(50)) / 2;
                 int avatarSize = AndroidUtilities.dp(50);
                 
-                // checkBox位置：头像右下角，稍微向外偏移
                 int checkBoxSize = AndroidUtilities.dp(24);
                 int x = avatarLeft + avatarSize - checkBoxSize + AndroidUtilities.dp(8);
                 int y = avatarTop + avatarSize - checkBoxSize + AndroidUtilities.dp(8);
@@ -1787,7 +1785,7 @@ public class ChatHistoryActivity extends BaseFragment {
     private void updateActionBarTitle() {
         if (actionBar != null) {
             if (isMultiSelectMode) {
-                actionBar.setTitle(selectedItems.size() + getString(R.string.ChatHistorySelected));
+                actionBar.setTitle(selectedItems.size() + " " + getString(R.string.ChatHistorySelected));
             } else {
                 updateTitle();
             }
@@ -1832,7 +1830,7 @@ public class ChatHistoryActivity extends BaseFragment {
         builder.setPositiveButton(getString(R.string.ChatHistoryDeleteChats), (dialog, which) -> {
             deleteSelectedChats();
         });
-        builder.setNegativeButton("Cancel", null);
+        builder.setNegativeButton(LocaleController.getString("Cancel", R.string.Cancel), null);
         showDialog(builder.create());
     }
 
