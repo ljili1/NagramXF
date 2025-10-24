@@ -66,7 +66,7 @@ import org.telegram.ui.TopicsFragment;
 import java.util.concurrent.atomic.AtomicReference;
 
 import xyz.nextalone.nagram.NaConfig;
-import xyz.nextalone.nagram.helper.MessageHelper;
+import tw.nekomimi.nekogram.helpers.MessageHelper;
 
 public class ChatAvatarContainer extends FrameLayout implements NotificationCenter.NotificationCenterDelegate {
 
@@ -206,7 +206,7 @@ public class ChatAvatarContainer extends FrameLayout implements NotificationCent
 
             @Override
             protected void onDraw(Canvas canvas) {
-                if (allowDrawStories && animatedEmojiDrawable == null) {
+                if (allowDrawStories && animatedEmojiDrawable == null && !isCentered()) {
                     params.originalAvatarRect.set(0, 0, getMeasuredWidth(), getMeasuredHeight());
                     params.drawSegments = true;
                     params.drawInside = true;
@@ -230,7 +230,7 @@ public class ChatAvatarContainer extends FrameLayout implements NotificationCent
 
             @Override
             public boolean onTouchEvent(MotionEvent event) {
-                if (allowDrawStories) {
+                if (allowDrawStories && !isCentered()) {
                     if (params.checkOnTouchEvent(event, this)) {
                         return true;
                     }
@@ -894,7 +894,7 @@ public class ChatAvatarContainer extends FrameLayout implements NotificationCent
 
     public void setTitle(CharSequence value, boolean scam, boolean fake, boolean verified, boolean premium, TLRPC.EmojiStatus emojiStatus, boolean animated, boolean scrollable) {
         if (value != null) {
-            value = MessageHelper.INSTANCE.zalgoFilter(value);
+            value = MessageHelper.zalgoFilter(value);
             value = Emoji.replaceEmoji(value, titleTextView.getPaint().getFontMetricsInt(), false);
         }
 

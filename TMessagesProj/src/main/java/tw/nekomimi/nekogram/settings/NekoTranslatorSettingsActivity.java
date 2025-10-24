@@ -32,6 +32,7 @@ import org.telegram.messenger.AndroidUtilities;
 import org.telegram.messenger.BotWebViewVibrationEffect;
 import org.telegram.messenger.R;
 import org.telegram.messenger.UserConfig;
+import org.telegram.messenger.browser.Browser;
 import org.telegram.ui.ActionBar.ActionBar;
 import org.telegram.ui.ActionBar.Theme;
 import org.telegram.ui.Cells.ShadowSectionCell;
@@ -90,7 +91,6 @@ public class NekoTranslatorSettingsActivity extends BaseNekoXSettingsActivity {
     private final AbstractConfigCell translatorModeRow = cellGroup.appendCell(new ConfigCellSelectBox(null, NaConfig.INSTANCE.getTranslatorMode(), new String[]{
             getString(R.string.TranslatorModeAppend),
             getString(R.string.TranslatorModeInline),
-            getString(R.string.TranslatorModePopup),
     }, null));
     private final AbstractConfigCell translateToLangRow = cellGroup.appendCell(new ConfigCellCustom("TranslateToLang", CellGroup.ITEM_TYPE_TEXT_SETTINGS_CELL, true));
     private final AbstractConfigCell doNotTranslateRow = cellGroup.appendCell(new ConfigCellCustom("DoNotTranslate", CellGroup.ITEM_TYPE_TEXT_SETTINGS_CELL, true));
@@ -117,7 +117,7 @@ public class NekoTranslatorSettingsActivity extends BaseNekoXSettingsActivity {
     private final AbstractConfigCell llmProviderRow = cellGroup.appendCell(new ConfigCellSelectBox(null, NaConfig.INSTANCE.getLlmProviderPreset(), new String[]{
             getString(R.string.LlmProviderCustom),
             "OpenAI " + getString(R.string.LlmProviderOpenAIModel),
-            "Google " + getString(R.string.LlmProviderGeminiModel),
+            "Google " + "gemini-2.5-flash-lite",
             "Groq " + "meta/llama-4-maverick",
             "DeepSeek " + "DeepSeek-V3.1",
             "xAI " + getString(R.string.LlmProviderXAIModel),
@@ -167,6 +167,7 @@ public class NekoTranslatorSettingsActivity extends BaseNekoXSettingsActivity {
         isAutoTranslateEnabled = NaConfig.INSTANCE.getTelegramUIAutoTranslate().Bool();
         oldLlmProvider = NaConfig.INSTANCE.getLlmProviderPreset().Int();
         rebuildRowsForLlmProvider(oldLlmProvider);
+        checkTemperatureRows();
         addRowsToMap(cellGroup);
     }
 
@@ -181,7 +182,8 @@ public class NekoTranslatorSettingsActivity extends BaseNekoXSettingsActivity {
     /** @noinspection deprecation*/
     private void customDialog_BottomInputString(int position, ConfigItem bind, String subtitle, String hint) {
         BottomBuilder builder = new BottomBuilder(getParentActivity());
-        builder.addTitle(getString(bind.getKey()), subtitle);
+        CharSequence enhancedSubtitle = getEnhancedSubtitleWithLink(bind, subtitle);
+        builder.addTitle(getString(bind.getKey()), enhancedSubtitle);
         var keyField = builder.addEditText(hint);
         if (!bind.String().trim().isEmpty()) {
             keyField.setText(bind.String());
@@ -192,11 +194,43 @@ public class NekoTranslatorSettingsActivity extends BaseNekoXSettingsActivity {
             if (key.trim().isEmpty()) key = null;
             bind.setConfigString(key);
             listAdapter.notifyItemChanged(position);
+            AndroidUtilities.runOnUIThread(this::checkTemperatureRows, 445);
             return Unit.INSTANCE;
         });
         builder.show();
         keyField.requestFocus();
         AndroidUtilities.showKeyboard(keyField);
+    }
+
+    private CharSequence getEnhancedSubtitleWithLink(ConfigItem bind, CharSequence originalSubtitle) {
+        String providerUrl = getProviderKeyUrl(bind);
+        if (providerUrl != null) {
+            return AndroidUtilities.replaceSingleTag(
+                originalSubtitle + "\n**" + getString(R.string.HowToObtain) + "**",
+                -1,
+                AndroidUtilities.REPLACING_TAG_TYPE_LINKBOLD,
+                () -> Browser.openUrl(getParentActivity(), providerUrl),
+                getResourceProvider()
+            );
+        }
+        return originalSubtitle;
+    }
+
+    private String getProviderKeyUrl(ConfigItem bind) {
+        if (bind == NaConfig.INSTANCE.getLlmProviderOpenAIKey()) {
+            return "https://platform.openai.com/api-keys";
+        } else if (bind == NaConfig.INSTANCE.getLlmProviderGeminiKey()) {
+            return "https://aistudio.google.com/app/apikey";
+        } else if (bind == NaConfig.INSTANCE.getLlmProviderGroqKey()) {
+            return "https://console.groq.com/keys";
+        } else if (bind == NaConfig.INSTANCE.getLlmProviderDeepSeekKey()) {
+            return "https://platform.deepseek.com/api_keys";
+        } else if (bind == NaConfig.INSTANCE.getLlmProviderXAIKey()) {
+            return "https://console.x.ai";
+        } else if (bind == NekoConfig.googleCloudTranslateKey) {
+            return "https://console.cloud.google.com/apis/credentials";
+        }
+        return null;
     }
 
     private void showProviderSelectionPopup(View view, ConfigItem configItem, Runnable onSelected) {
@@ -387,6 +421,7 @@ public class NekoTranslatorSettingsActivity extends BaseNekoXSettingsActivity {
                 if (newLlmProvider == oldLlmProvider) {
                     return;
                 }
+                checkTemperatureRows();
                 int providerRowIndex = cellGroup.rows.indexOf(llmProviderRow);
                 int startIndex = providerRowIndex + 1;
                 List<AbstractConfigCell> oldSpecificRowBlueprints = llmProviderConfigMap.getOrDefault(oldLlmProvider, List.of());
@@ -410,6 +445,7 @@ public class NekoTranslatorSettingsActivity extends BaseNekoXSettingsActivity {
                         listAdapter.notifyItemRangeInserted(startIndex, newRowCount);
                     }
                 }
+                addRowsToMap(cellGroup);
                 oldLlmProvider = newLlmProvider;
             } else if (key.equals(NaConfig.INSTANCE.getGoogleTranslateExp().getKey())) {
                 if ((boolean) newValue) {
@@ -677,5 +713,32 @@ public class NekoTranslatorSettingsActivity extends BaseNekoXSettingsActivity {
             doNotTranslateCellValue = String.format(getPluralString("Languages", langCodes.size()), langCodes.size());
         }
         return doNotTranslateCellValue;
+    }
+
+    private void checkTemperatureRows() {
+        String modelName = NaConfig.INSTANCE.getLlmModelName().String();
+        boolean showTemperature = NaConfig.INSTANCE.getLlmProviderPreset().Int() > 1 || (NaConfig.INSTANCE.getLlmProviderPreset().Int() == 0 && !modelName.startsWith("gpt-5"));
+        if (listAdapter == null) {
+            if (!showTemperature) {
+                cellGroup.rows.remove(headerTemperature);
+                cellGroup.rows.remove(temperatureValueRow);
+            }
+            return;
+        }
+        if (showTemperature) {
+            final int index = cellGroup.rows.indexOf(llmUserPromptRow);
+            if (!cellGroup.rows.contains(headerTemperature)) {
+                cellGroup.rows.add(index + 1, headerTemperature);
+                cellGroup.rows.add(index + 2, temperatureValueRow);
+                listAdapter.notifyItemRangeInserted(index + 1, 2);
+            }
+        } else {
+            int temperatureRowIndex = cellGroup.rows.indexOf(headerTemperature);
+            if (temperatureRowIndex != -1) {
+                cellGroup.rows.remove(headerTemperature);
+                cellGroup.rows.remove(temperatureValueRow);
+                listAdapter.notifyItemRangeRemoved(temperatureRowIndex, 2);
+            }
+        }
     }
 }

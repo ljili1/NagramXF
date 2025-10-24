@@ -3,10 +3,12 @@ package tw.nekomimi.nekogram.translate
 import android.text.TextUtils
 import android.view.View
 import androidx.core.content.edit
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
 import okhttp3.Call
 import okhttp3.Callback
 import okhttp3.Response
+import org.telegram.messenger.AndroidUtilities
 import org.telegram.messenger.LocaleController
 import org.telegram.messenger.LocaleController.getString
 import org.telegram.messenger.R
@@ -15,7 +17,7 @@ import org.telegram.tgnet.TLRPC
 import tw.nekomimi.nekogram.NekoConfig
 import tw.nekomimi.nekogram.translate.source.*
 import tw.nekomimi.nekogram.ui.PopupBuilder
-import tw.nekomimi.nekogram.utils.UIUtil
+import tw.nekomimi.nekogram.utils.AppScope
 import tw.nekomimi.nekogram.utils.receiveLazy
 import xyz.nextalone.nagram.NaConfig
 import java.io.IOException
@@ -109,20 +111,20 @@ interface Translator {
             translateCallBack: TranslateCallBack
         ) {
 
-            UIUtil.runOnIoDispatcher {
+            AppScope.io.launch {
                 runCatching {
                     val result: String = translate(to, query, provider.takeIf { it != 0 } ?: NekoConfig.translationProvider.Int())
 
-                    UIUtil.runOnUIThread(Runnable {
+                    AndroidUtilities.runOnUIThread {
                         translateCallBack.onSuccess(result)
-                    })
+                    }
                 }.onFailure {
-                    UIUtil.runOnUIThread(Runnable {
+                    AndroidUtilities.runOnUIThread {
                         translateCallBack.onFailed(
                             it is UnsupportedOperationException,
                             it.message ?: it.javaClass.simpleName
                         )
-                    })
+                    }
                 }
             }
         }
@@ -137,20 +139,20 @@ interface Translator {
             translateCallBack: TranslateCallBack2
         ) {
 
-            UIUtil.runOnIoDispatcher {
+            AppScope.io.launch {
                 runCatching {
                     val result = translateBase(
                         to, query, entities, NekoConfig.translationProvider.Int()
                     )
 
-                    UIUtil.runOnUIThread(Runnable { translateCallBack.onSuccess(result) })
+                    AndroidUtilities.runOnUIThread { translateCallBack.onSuccess(result) }
                 }.onFailure {
-                    UIUtil.runOnUIThread(Runnable {
+                    AndroidUtilities.runOnUIThread {
                         translateCallBack.onFailed(
                             it is UnsupportedOperationException,
                             it.message ?: it.javaClass.simpleName
                         )
-                    })
+                    }
                 }
             }
         }
@@ -163,7 +165,7 @@ interface Translator {
             translateCallBack: TranslateCallBack3
         ) {
 
-            UIUtil.runOnIoDispatcher {
+            AppScope.io.launch {
                 runCatching {
                     var translatedPoll = TranslateController.PollText()
                     if (query.question != null) {
@@ -185,14 +187,14 @@ interface Translator {
                         )
                     }
 
-                    UIUtil.runOnUIThread(Runnable { translateCallBack.onSuccess(translatedPoll) })
+                    AndroidUtilities.runOnUIThread { translateCallBack.onSuccess(translatedPoll) }
                 }.onFailure {
-                    UIUtil.runOnUIThread(Runnable {
+                    AndroidUtilities.runOnUIThread {
                         translateCallBack.onFailed(
                             it is UnsupportedOperationException,
                             it.message ?: it.javaClass.simpleName
                         )
-                    })
+                    }
                 }
             }
         }
@@ -344,6 +346,16 @@ interface Translator {
         interface TranslateCallBack3 {
             fun onSuccess(pollText: TranslateController.PollText)
             fun onFailed(unsupported: Boolean, message: String)
+        }
+
+        @JvmStatic
+        fun getLocale2code(locale: Locale): String {
+            return locale.locale2code
+        }
+
+        @JvmStatic
+        fun getCode2Locale(code: String): Locale {
+            return code.code2Locale
         }
     }
 

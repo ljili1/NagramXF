@@ -1,5 +1,6 @@
 package tw.nekomimi.nekogram.settings;
 
+import static org.telegram.messenger.AndroidUtilities.dp;
 import static org.telegram.messenger.LocaleController.getString;
 
 import android.Manifest;
@@ -10,12 +11,23 @@ import android.content.Intent;
 import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
 import android.graphics.Canvas;
+import android.graphics.PorterDuff;
+import android.graphics.PorterDuffColorFilter;
 import android.net.Uri;
 import android.os.Build;
+import android.text.Editable;
+import android.text.InputType;
+import android.text.SpannableStringBuilder;
+import android.text.Spanned;
+import android.text.TextWatcher;
+import android.text.style.ForegroundColorSpan;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.FrameLayout;
+import android.widget.ImageView;
+import org.telegram.ui.Components.EditTextBoldCursor;
+import android.widget.LinearLayout;
 
 import androidx.annotation.NonNull;
 import androidx.recyclerview.widget.LinearLayoutManager;
@@ -24,11 +36,13 @@ import androidx.recyclerview.widget.RecyclerView;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonPrimitive;
+import com.radolyn.ayugram.messages.AyuSavePreferences;
 
 import org.json.JSONException;
 import org.json.JSONObject;
 import org.telegram.messenger.AndroidUtilities;
 import org.telegram.messenger.ApplicationLoader;
+import org.telegram.messenger.LocaleController;
 import org.telegram.messenger.MessagesController;
 import org.telegram.messenger.R;
 import org.telegram.messenger.SendMessagesHelper;
@@ -39,12 +53,15 @@ import org.telegram.ui.ActionBar.BaseFragment;
 import org.telegram.ui.ActionBar.Theme;
 import org.telegram.ui.ActionBar.ThemeDescription;
 import org.telegram.ui.BasePermissionsActivity;
+import org.telegram.ui.Cells.CheckBoxCell;
+import org.telegram.ui.Cells.SettingsSearchCell;
 import org.telegram.ui.Cells.ShadowSectionCell;
 import org.telegram.ui.Cells.TextCell;
+import org.telegram.ui.Cells.SettingsSearchCell;
 import org.telegram.ui.Cells.TextSettingsCell;
+import org.telegram.ui.Components.EditTextBoldCursor;
 import org.telegram.ui.Components.LayoutHelper;
 import org.telegram.ui.Components.RecyclerListView;
-import org.telegram.ui.Components.ViewPagerFixed;
 import org.telegram.ui.DocumentSelectActivity;
 import org.telegram.ui.LaunchActivity;
 
@@ -54,14 +71,22 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.util.ArrayList;
 import java.util.Date;
+import java.util.HashSet;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.function.Function;
 
 import kotlin.text.StringsKt;
+import tw.nekomimi.nekogram.DatacenterActivity;
+import tw.nekomimi.nekogram.NekoConfig;
+import xyz.nextalone.nagram.NaConfig;
 import tw.nekomimi.nekogram.helpers.AppRestartHelper;
+import tw.nekomimi.nekogram.helpers.ChatNameHelper;
 import tw.nekomimi.nekogram.helpers.CloudSettingsHelper;
 import tw.nekomimi.nekogram.helpers.PasscodeHelper;
+import tw.nekomimi.nekogram.helpers.SettingsHelper;
+import tw.nekomimi.nekogram.helpers.SettingsSearchResult;
 import tw.nekomimi.nekogram.ui.cells.HeaderCell;
 import tw.nekomimi.nekogram.utils.AlertUtil;
 import tw.nekomimi.nekogram.utils.FileUtil;
@@ -70,6 +95,7 @@ import tw.nekomimi.nekogram.utils.ShareUtil;
 
 public class NekoSettingsActivity extends BaseFragment {
     private Page typePage;
+    private ImageView searchButton;
 
     @Override
     public View createView(Context context) {
@@ -84,17 +110,203 @@ public class NekoSettingsActivity extends BaseFragment {
                     finishFragment();
                 } else if (id == 1) {
                     CloudSettingsHelper.getInstance().showDialog(NekoSettingsActivity.this);
+                } else if (id == 2) {
+                    showSettingsSearchDialog();
                 }
             }
         });
         
         actionBar.createMenu().addItem(1, R.drawable.cloud_sync);
+        actionBar.createMenu().addItem(2, R.drawable.ic_ab_search);
 
         fragmentView = new FrameLayout(context);
         fragmentView.setBackgroundColor(getThemedColor(Theme.key_windowBackgroundGray));
         ((FrameLayout) fragmentView).addView(typePage, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT));
 
         return fragmentView;
+    }
+
+    private void showSettingsSearchDialog() {
+        try {
+            Activity parent = getParentActivity();
+            if (parent == null) return;
+
+            ArrayList<SettingsSearchResult> results = SettingsHelper.onCreateSearchArray(fragment -> AndroidUtilities.runOnUIThread(() -> {
+                try {
+                    presentFragment(fragment);
+                } catch (Exception ignore) {
+                }
+            }));
+
+            final ArrayList<SettingsSearchResult> filtered = new ArrayList<>(results);
+            final String[] currentQuery = new String[]{""};
+            final int searchHeight = dp(36);
+            final int clearSize = dp(36);
+            final int pad = dp(12);
+
+            LinearLayout containerLayout = new LinearLayout(parent);
+            containerLayout.setOrientation(LinearLayout.VERTICAL);
+            containerLayout.setLayoutParams(new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.MATCH_PARENT));
+
+            FrameLayout searchFrame = new FrameLayout(parent);
+            LinearLayout.LayoutParams layoutParams = new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, searchHeight + dp(12));
+            layoutParams.setMargins(dp(10), dp(6), dp(10), dp(2));
+            searchFrame.setLayoutParams(layoutParams);
+            searchFrame.setClipToPadding(true);
+            searchFrame.setClipChildren(true);
+
+            ImageView searchIcon = new ImageView(parent);
+            searchIcon.setScaleType(ImageView.ScaleType.CENTER);
+            searchIcon.setImageResource(R.drawable.ic_ab_search);
+            searchIcon.setColorFilter(new PorterDuffColorFilter(getThemedColor(Theme.key_windowBackgroundWhiteGrayIcon), PorterDuff.Mode.MULTIPLY));
+            searchFrame.addView(searchIcon, LayoutHelper.createFrame(48, 48, Gravity.LEFT | Gravity.CENTER_VERTICAL));
+
+            EditTextBoldCursor searchField = new EditTextBoldCursor(parent);
+            searchField.setHint(getString(R.string.Search));
+            searchField.setTextColor(getThemedColor(Theme.key_dialogTextBlack));
+            searchField.setHintTextColor(getThemedColor(Theme.key_windowBackgroundWhiteHintText));
+            searchField.setSingleLine(true);
+            searchField.setBackground(null);
+            searchField.setInputType(InputType.TYPE_CLASS_TEXT);
+            searchField.setLineColors(getThemedColor(Theme.key_windowBackgroundWhiteInputField), getThemedColor(Theme.key_windowBackgroundWhiteInputFieldActivated), getThemedColor(Theme.key_text_RedRegular));
+            searchField.setPadding(dp(61), pad / 2, dp(48), pad / 2);
+            searchField.setLayoutParams(new FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT, Gravity.CENTER_VERTICAL));
+            searchFrame.addView(searchField);
+
+            ImageView clearButton = new ImageView(parent);
+            clearButton.setScaleType(ImageView.ScaleType.CENTER);
+            clearButton.setImageResource(R.drawable.ic_close_white);
+            clearButton.setBackground(Theme.createSelectorDrawable(getThemedColor(Theme.key_listSelector), Theme.RIPPLE_MASK_CIRCLE_20DP));
+            clearButton.setColorFilter(new PorterDuffColorFilter(getThemedColor(Theme.key_windowBackgroundWhiteGrayIcon), PorterDuff.Mode.MULTIPLY));
+            clearButton.setLayoutParams(new FrameLayout.LayoutParams(clearSize, clearSize, Gravity.END | Gravity.CENTER_VERTICAL));
+            searchFrame.addView(clearButton);
+            containerLayout.addView(searchFrame);
+
+            AlertDialog.Builder builder = new AlertDialog.Builder(parent, resourceProvider);
+            builder.setView(containerLayout);
+            builder.setNegativeButton(getString(R.string.Close), null);
+            final AlertDialog dialog = builder.create();
+            dialog.setOnShowListener(d -> {
+                try {
+                    searchField.requestFocus();
+                    AndroidUtilities.showKeyboard(searchField);
+                } catch (Exception ignore) {
+                }
+            });
+
+            RecyclerListView listView = new RecyclerListView(parent);
+            listView.setLayoutManager(new LinearLayoutManager(parent, LinearLayoutManager.VERTICAL, false));
+
+            var adapter = new RecyclerListView.SelectionAdapter() {
+                @Override
+                public boolean isEnabled(RecyclerView.ViewHolder holder) {
+                    return true;
+                }
+
+                @NonNull
+                @Override
+                public RecyclerListView.Holder onCreateViewHolder(@NonNull ViewGroup parent1, int viewType) {
+                    View view = new SettingsSearchCell(parent);
+                    view.setLayoutParams(new RecyclerView.LayoutParams(RecyclerView.LayoutParams.MATCH_PARENT, RecyclerView.LayoutParams.WRAP_CONTENT));
+                    return new RecyclerListView.Holder(view);
+                }
+
+                @Override
+                public void onBindViewHolder(@NonNull RecyclerView.ViewHolder holder, int position) {
+                    SettingsSearchCell cell = (SettingsSearchCell) holder.itemView;
+                    SettingsSearchResult r = filtered.get(position);
+                    String[] path = r.path2 != null ? new String[]{r.path1, r.path2} : new String[]{r.path1};
+                    CharSequence titleToSet = r.searchTitle == null ? "" : r.searchTitle;
+                    String q = currentQuery[0];
+                    if (q != null && !q.isEmpty() && titleToSet.length() > 0) {
+                        SpannableStringBuilder ss = new SpannableStringBuilder(titleToSet);
+                        String lower = titleToSet.toString().toLowerCase();
+                        String[] parts = q.split("\\s+");
+                        int highlightColor = getThemedColor(Theme.key_windowBackgroundWhiteBlueText4);
+                        for (String p : parts) {
+                            if (p.isEmpty()) continue;
+                            int idx = 0;
+                            while (true) {
+                                int found = lower.indexOf(p, idx);
+                                if (found == -1) break;
+                                try {
+                                    ss.setSpan(new ForegroundColorSpan(highlightColor), found, found + p.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                                } catch (Exception ignore) {
+                                }
+                                idx = found + p.length();
+                            }
+                        }
+                        titleToSet = ss;
+                    }
+                    cell.setTextAndValueAndIcon(titleToSet, path, r.iconResId, position < filtered.size() - 1);
+                }
+
+                @Override
+                public int getItemCount() {
+                    return filtered.size();
+                }
+            };
+
+            listView.setAdapter(adapter);
+            listView.setOnItemClickListener((v, position) -> {
+                if (position < 0 || position >= filtered.size()) return;
+                SettingsSearchResult r = filtered.get(position);
+                try {
+                    if (r.openRunnable != null) r.openRunnable.run();
+                } catch (Exception ignore) {
+                }
+                dialog.dismiss();
+            });
+
+            containerLayout.addView(listView, new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.MATCH_PARENT));
+
+            searchField.addTextChangedListener(new TextWatcher() {
+                @Override
+                public void beforeTextChanged(CharSequence s, int start, int count, int after) {
+                }
+
+                @Override
+                public void onTextChanged(CharSequence s, int start, int before, int count) {
+                }
+
+                @SuppressLint("NotifyDataSetChanged")
+                @Override
+                public void afterTextChanged(Editable s) {
+                    String q = s.toString().toLowerCase().trim();
+                    currentQuery[0] = q;
+                    filtered.clear();
+                    if (q.isEmpty()) {
+                        filtered.addAll(results);
+                    } else {
+                        String[] parts = q.split("\\s+");
+                        for (SettingsSearchResult item : results) {
+                            String title = item.searchTitle == null ? "" : item.searchTitle.toLowerCase();
+                            boolean ok = true;
+                            for (String p : parts) {
+                                if (!title.contains(p)) {
+                                    ok = false;
+                                    break;
+                                }
+                            }
+                            if (ok) filtered.add(item);
+                        }
+                    }
+                    adapter.notifyDataSetChanged();
+                    searchIcon.setVisibility(q.length() > 20 ? View.GONE : View.VISIBLE);
+                    clearButton.setVisibility(q.isEmpty() ? View.GONE : View.VISIBLE);
+                }
+            });
+
+            clearButton.setOnClickListener(v -> {
+                searchField.setText("");
+                searchField.requestFocus();
+                AndroidUtilities.showKeyboard(searchField);
+            });
+            clearButton.setVisibility(View.GONE);
+
+            showDialog(dialog);
+        } catch (Exception ignore) {
+        }
     }
 
     private class Page extends FrameLayout {
@@ -303,18 +515,46 @@ public class NekoSettingsActivity extends BaseFragment {
     }
 
     private void backupSettings() {
+        Context context = getParentActivity();
+        if (context == null) return;
 
-        try {
-            File cacheFile = new File(AndroidUtilities.getCacheDir(), new Date().toLocaleString() + ".nekox-settings.json");
-            FileUtil.writeUtf8String(backupSettingsJson(false, 4), cacheFile);
-            ShareUtil.shareFile(getParentActivity(), cacheFile);
-        } catch (JSONException e) {
-            AlertUtil.showSimpleAlert(getParentActivity(), e);
-        }
+        AlertDialog.Builder builder = new AlertDialog.Builder(context);
+        builder.setTitle(getString(R.string.BackupSettings));
 
+        LinearLayout linearLayout = new LinearLayout(context);
+        linearLayout.setOrientation(LinearLayout.VERTICAL);
+
+        CheckBoxCell checkBoxCell = new CheckBoxCell(context, CheckBoxCell.TYPE_CHECK_BOX_DEFAULT, resourceProvider);
+        checkBoxCell.setBackground(Theme.getSelectorDrawable(false));
+        checkBoxCell.setText(getString(R.string.ExportSettingsIncludeApiKeys), "", true, false);
+        checkBoxCell.setPadding(LocaleController.isRTL ? AndroidUtilities.dp(16) : AndroidUtilities.dp(8), 0, LocaleController.isRTL ? AndroidUtilities.dp(8) : AndroidUtilities.dp(16), 0);
+        checkBoxCell.setChecked(true, false);
+        checkBoxCell.setOnClickListener(v -> {
+            CheckBoxCell cell = (CheckBoxCell) v;
+            cell.setChecked(!cell.isChecked(), true);
+        });
+        linearLayout.addView(checkBoxCell, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, 48));
+
+        builder.setView(linearLayout);
+        builder.setPositiveButton(getString(R.string.ExportTheme), (dialog, which) -> {
+            boolean includeApiKeys = checkBoxCell.isChecked();
+            try {
+                File cacheFile = new File(AndroidUtilities.getCacheDir(), new Date().toLocaleString() + ".nekox-settings.json");
+                FileUtil.writeUtf8String(backupSettingsJson(false, 4, includeApiKeys), cacheFile);
+                ShareUtil.shareFile(getParentActivity(), cacheFile);
+            } catch (JSONException e) {
+                AlertUtil.showSimpleAlert(getParentActivity(), e);
+            }
+        });
+        builder.setNegativeButton(getString(R.string.Cancel), null);
+        builder.show();
     }
 
     public static String backupSettingsJson(boolean isCloud, int indentSpaces) throws JSONException {
+        return backupSettingsJson(isCloud, indentSpaces, true);
+    }
+
+    public static String backupSettingsJson(boolean isCloud, int indentSpaces, boolean includeApiKeys) throws JSONException {
 
         JSONObject configJson = new JSONObject();
 
@@ -388,19 +628,23 @@ public class NekoSettingsActivity extends BaseFragment {
         spToJSON("mainconfig", configJson, mainconfig::contains, isCloud);
         spToJSON("themeconfig", configJson, null, isCloud);
 
-        spToJSON("nkmrcfg", configJson, null, isCloud);
+        spToJSON("nkmrcfg", configJson, null, isCloud, includeApiKeys);
 
         return configJson.toString(indentSpaces);
     }
 
     private static void spToJSON(String sp, JSONObject object, Function<String, Boolean> filter, boolean isCloud) throws JSONException {
+        spToJSON(sp, object, filter, isCloud, true);
+    }
+
+    private static void spToJSON(String sp, JSONObject object, Function<String, Boolean> filter, boolean isCloud, boolean includeApiKeys) throws JSONException {
         SharedPreferences preferences = ApplicationLoader.applicationContext.getSharedPreferences(sp, Activity.MODE_PRIVATE);
         JSONObject jsonConfig = new JSONObject();
         for (Map.Entry<String, ?> entry : preferences.getAll().entrySet()) {
             String key = entry.getKey();
-//            if (isCloud && key.endsWith("Key")) {
-//                continue;
-//            }
+            if (!includeApiKeys && (key.endsWith("Key") || key.contains("Token") || key.contains("AccountID"))) {
+                continue;
+            }
             if (isCloud && key.endsWith("Prompt")) {
                 continue;
             }
@@ -474,13 +718,46 @@ public class NekoSettingsActivity extends BaseFragment {
 
     @SuppressLint("ApplySharedPref")
     public static void importSettings(JsonObject configJson) throws JSONException {
+        Set<String> allowedKeys = new HashSet<>();
+        try {
+            allowedKeys.addAll(NekoConfig.getAllKeys());
+            allowedKeys.addAll(NaConfig.INSTANCE.getAllKeys());
+        } catch (Throwable ignore) {
+        }
+        String[] preservePrefixes = {
+                AyuSavePreferences.saveExclusionPrefix,
+                ChatNameHelper.chatNameOverridePrefix,
+                NekoConfig.channelAliasPrefix
+        };
 
         for (Map.Entry<String, JsonElement> element : configJson.entrySet()) {
-            SharedPreferences preferences = ApplicationLoader.applicationContext.getSharedPreferences(element.getKey(), Activity.MODE_PRIVATE);
+            String spName = element.getKey();
+            SharedPreferences preferences = ApplicationLoader.applicationContext.getSharedPreferences(spName, Activity.MODE_PRIVATE);
             SharedPreferences.Editor editor = preferences.edit();
             for (Map.Entry<String, JsonElement> config : ((JsonObject) element.getValue()).entrySet()) {
                 String key = config.getKey();
                 JsonPrimitive value = (JsonPrimitive) config.getValue();
+                if ("nkmrcfg".equals(spName)) {
+                    boolean shouldSkip = true;
+                    for (String prefix : preservePrefixes) {
+                        if (key.startsWith(prefix)) {
+                            shouldSkip = false;
+                            break;
+                        }
+                    }
+                    if (shouldSkip) {
+                        String actualKey = key;
+                        if (key.endsWith("_long")) {
+                            actualKey = StringsKt.substringBeforeLast(key, "_long", key);
+                        } else if (key.endsWith("_float")) {
+                            actualKey = StringsKt.substringBeforeLast(key, "_float", key);
+                        }
+                        shouldSkip = !allowedKeys.contains(actualKey);
+                    }
+                    if (shouldSkip) {
+                        continue;
+                    }
+                }
                 if (value.isBoolean()) {
                     editor.putBoolean(key, value.getAsBoolean());
                 } else if (value.isNumber()) {
@@ -506,7 +783,6 @@ public class NekoSettingsActivity extends BaseFragment {
             }
             editor.commit();
         }
-
     }
 
     private void openFilePicker() {

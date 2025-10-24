@@ -12,6 +12,8 @@ import android.content.Intent;
 import android.content.SharedPreferences;
 import android.graphics.Canvas;
 import android.graphics.Paint;
+import android.os.Build;
+import android.os.Parcelable;
 import android.text.TextPaint;
 import android.transition.TransitionManager;
 import android.view.Gravity;
@@ -73,6 +75,7 @@ import tw.nekomimi.nekogram.config.cell.ConfigCellTextInput;
 import tw.nekomimi.nekogram.config.cell.ConfigCellTextInput2;
 import tw.nekomimi.nekogram.ui.cells.DrawerProfilePreviewCell;
 import tw.nekomimi.nekogram.ui.cells.HeaderCell;
+import tw.nekomimi.nekogram.utils.AndroidUtil;
 import xyz.nextalone.nagram.NaConfig;
 
 @SuppressLint("RtlHardcoded")
@@ -193,6 +196,7 @@ public class NekoGeneralSettingsActivity extends BaseNekoXSettingsActivity {
     private final AbstractConfigCell hidePremiumSectionRow = cellGroup.appendCell(new ConfigCellTextCheck(NaConfig.INSTANCE.getHidePremiumSection()));
     private final AbstractConfigCell hideHelpSectionRow = cellGroup.appendCell(new ConfigCellTextCheck(NaConfig.INSTANCE.getHideHelpSection()));
     private final AbstractConfigCell showStickersInTopLevelRow = cellGroup.appendCell(new ConfigCellTextCheck(NaConfig.INSTANCE.getShowStickersRowToplevel()));
+    private final AbstractConfigCell disableAvatarBlurRow = cellGroup.appendCell(new ConfigCellTextCheck(NaConfig.INSTANCE.getDisableAvatarBlur()));
     private final AbstractConfigCell forceBlurInChatRow = cellGroup.appendCell(new ConfigCellTextCheck(NekoConfig.forceBlurInChat));
     private final AbstractConfigCell headerChatBlur = cellGroup.appendCell(new ConfigCellHeader(getString(R.string.ChatBlurAlphaValue)));
     private final AbstractConfigCell chatBlurAlphaValueRow = cellGroup.appendCell(new ConfigCellCustom("ChatBlurAlphaValue", ConfigCellCustom.CUSTOM_ITEM_CharBlurAlpha, NekoConfig.forceBlurInChat.Bool()));
@@ -314,6 +318,9 @@ public class NekoGeneralSettingsActivity extends BaseNekoXSettingsActivity {
         if (!shouldShowPersian()) {
             cellGroup.rows.remove(usePersianCalendarRow);
             cellGroup.rows.remove(displayPersianCalendarByLatinRow);
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.VANILLA_ICE_CREAM) {
+            cellGroup.rows.remove(pushServiceTypeInAppDialogRow);
         }
         wasCentered = isCentered();
         wasCenteredAtBeginning = wasCentered;
@@ -506,27 +513,12 @@ public class NekoGeneralSettingsActivity extends BaseNekoXSettingsActivity {
                     }
                 }
             } else if (key.equals(NaConfig.INSTANCE.getPushServiceType().getKey())) {
-                SharedPreferences preferences = MessagesController.getNotificationsSettings(UserConfig.selectedAccount);
-                SharedPreferences.Editor editor = preferences.edit();
-                boolean pushServiceEnabled;
-                if (preferences.contains("pushService")) {
-                    pushServiceEnabled = preferences.getBoolean("pushService", true);
-                } else {
-                    pushServiceEnabled = MessagesController.getMainSettings(UserConfig.selectedAccount).getBoolean("keepAliveService", false);
-                }
                 if ((int) newValue == 0) {
-                    NaConfig.INSTANCE.getPushServiceTypeInAppDialog().setConfigBool(true);
-                    if (!cellGroup.rows.contains(pushServiceTypeInAppDialogRow)) {
-                        final int index = cellGroup.rows.indexOf(pushServiceTypeRow) + 1;
-                        cellGroup.rows.add(index, pushServiceTypeInAppDialogRow);
-                        listAdapter.notifyItemInserted(index);
+                    AndroidUtil.setPushService(false);
+                    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.VANILLA_ICE_CREAM) {
+                        ((ConfigCellTextCheck) pushServiceTypeInAppDialogRow).setEnabledAndUpdateState(true);
+                        ApplicationLoader.startPushService();
                     }
-                    if (!pushServiceEnabled) {
-                        editor.putBoolean("pushService", true);
-                        editor.putBoolean("pushConnection", true);
-                        editor.apply();
-                    }
-                    ApplicationLoader.startPushService();
                 } else {
                     NaConfig.INSTANCE.getPushServiceTypeInAppDialog().setConfigBool(false);
                     if (cellGroup.rows.contains(pushServiceTypeInAppDialogRow)) {
@@ -604,6 +596,8 @@ public class NekoGeneralSettingsActivity extends BaseNekoXSettingsActivity {
                 checkCustomDoHCellRows();
                 restartTooltip.showWithAction(0, UndoView.ACTION_NEED_RESTART, null, null);
             } else if (key.equals(NekoConfig.typeface.getKey())) {
+                restartTooltip.showWithAction(0, UndoView.ACTION_NEED_RESTART, null, null);
+            } else if (key.equals(NaConfig.INSTANCE.getDisableDialogsFloatingButton().getKey())) {
                 restartTooltip.showWithAction(0, UndoView.ACTION_NEED_RESTART, null, null);
             }
         };

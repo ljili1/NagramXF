@@ -125,9 +125,8 @@ import java.util.stream.Collectors;
 import tw.nekomimi.nekogram.NekoConfig;
 import tw.nekomimi.nekogram.helpers.ChatNameHelper;
 import tw.nekomimi.nekogram.utils.AlertUtil;
-import tw.nekomimi.nekogram.utils.UIUtil;
 import xyz.nextalone.nagram.NaConfig;
-import xyz.nextalone.nagram.helper.MessageHelper;
+import tw.nekomimi.nekogram.helpers.MessageHelper;
 
 import com.radolyn.ayugram.AyuConstants;
 import com.radolyn.ayugram.messages.AyuSavePreferences;
@@ -8707,7 +8706,7 @@ public class MessagesController extends BaseController implements NotificationCe
                 totalBlockedCount--;
                 blockePeers.delete(peer_id);
 
-                UIUtil.runOnUIThread(() -> getNotificationCenter().postNotificationName(NotificationCenter.blockedUsersDidLoad));
+                AndroidUtilities.runOnUIThread(() -> getNotificationCenter().postNotificationName(NotificationCenter.blockedUsersDidLoad));
 
             });
             try {
@@ -10923,7 +10922,7 @@ public class MessagesController extends BaseController implements NotificationCe
                         paint.setTextSize(AndroidUtilities.dp(14));
                     }
                     text = Emoji.replaceEmoji(text, paint.getFontMetricsInt(), false);
-                    text = MessageHelper.INSTANCE.zalgoFilter(text);
+                    text = MessageHelper.zalgoFilter(text);
                     newPrintingStrings.put(threadId, text);
                     newPrintingStringsTypes.put(threadId, type);
                 }
@@ -20525,9 +20524,6 @@ public class MessagesController extends BaseController implements NotificationCe
                 if (res.peers.isEmpty()) {
                     result = null;
                 } else {
-                    if (!getUserConfig().isRealPremium()) {
-                        res.peers.removeIf((peer) -> peer.premium_required);
-                    }
                     result = res;
                     AndroidUtilities.runOnUIThread(() -> {
                         putUsers(res.users, false);

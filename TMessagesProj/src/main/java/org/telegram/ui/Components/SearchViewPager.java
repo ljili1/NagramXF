@@ -32,11 +32,11 @@ import org.telegram.messenger.AndroidUtilities;
 import org.telegram.messenger.ChatObject;
 import org.telegram.messenger.DialogObject;
 import org.telegram.messenger.LocaleController;
+import org.telegram.messenger.MediaController;
 import org.telegram.messenger.MessageObject;
 import org.telegram.messenger.MessagesController;
 import org.telegram.messenger.NotificationCenter;
 import org.telegram.messenger.R;
-import org.telegram.messenger.MediaController;
 import org.telegram.messenger.SendMessagesHelper;
 import org.telegram.messenger.UserConfig;
 import org.telegram.tgnet.TLRPC;
@@ -122,13 +122,13 @@ public class SearchViewPager extends ViewPagerFixed implements FilteredSearchVie
     public final static int forwardItemId = 201;
     public final static int deleteItemId = 202;
     public final static int speedItemId = 203;
-    public final static int downloadItemId = 204;
+    public final static int saveItemId = 204;
 
     private ActionBarMenuItem speedItem;
     private ActionBarMenuItem gotoItem;
     private ActionBarMenuItem forwardItem;
     private ActionBarMenuItem deleteItem;
-    private ActionBarMenuItem downloadItem;
+    private ActionBarMenuItem saveItem;
 
     private ActionBarMenu actionMode;
 
@@ -808,11 +808,12 @@ public class SearchViewPager extends ViewPagerFixed implements FilteredSearchVie
             actionMode.addView(selectedMessagesCountTextView, LayoutHelper.createLinear(0, LayoutHelper.MATCH_PARENT, 1.0f, 72, 0, 0, 0));
             selectedMessagesCountTextView.setOnTouchListener((v, event) -> true);
 
+            saveItem = actionMode.addItemWithWidth(saveItemId, R.drawable.msg_download, AndroidUtilities.dp(54), getString(R.string.SaveToDownloads));
             speedItem = actionMode.addItemWithWidth(speedItemId, R.drawable.avd_speed, AndroidUtilities.dp(54), getString(R.string.AccDescrPremiumSpeed));
             speedItem.getIconView().setColorFilter(new PorterDuffColorFilter(Theme.getColor(Theme.key_actionBarActionModeDefaultIcon), PorterDuff.Mode.SRC_IN));
+            speedItem.setVisibility(View.GONE);
             gotoItem = actionMode.addItemWithWidth(gotoItemId, R.drawable.msg_message, AndroidUtilities.dp(54), getString(R.string.AccDescrGoToMessage));
             forwardItem = actionMode.addItemWithWidth(forwardItemId, R.drawable.msg_forward_noquote, AndroidUtilities.dp(54), getString(R.string.Forward));
-            downloadItem = actionMode.addItemWithWidth(downloadItemId, R.drawable.msg_download, AndroidUtilities.dp(54), getString(R.string.SaveToDownloads));
             deleteItem = actionMode.addItemWithWidth(deleteItemId, R.drawable.msg_delete, AndroidUtilities.dp(54), getString(R.string.Delete));
         }
         if (selectedMessagesCountTextView != null) {
@@ -830,13 +831,10 @@ public class SearchViewPager extends ViewPagerFixed implements FilteredSearchVie
             AndroidUtilities.hideKeyboard(parent.getParentActivity().getCurrentFocus());
             parent.getActionBar().showActionMode();
             selectedMessagesCountTextView.setNumber(selectedFiles.size(), false);
-            speedItem.setVisibility(isSpeedItemVisible() ? View.VISIBLE : View.GONE);
+            speedItem.setVisibility(/*isSpeedItemVisible() ? View.VISIBLE : */View.GONE);
             gotoItem.setVisibility(View.VISIBLE);
             forwardItem.setVisibility(View.VISIBLE);
             deleteItem.setVisibility(View.VISIBLE);
-            if (downloadItem != null) {
-                downloadItem.setVisibility(selectedFiles.size() > 0 ? View.VISIBLE : View.GONE);
-            }
         } else {
             parent.getActionBar().hideActionMode();
             selectedFiles.clear();
@@ -900,40 +898,14 @@ public class SearchViewPager extends ViewPagerFixed implements FilteredSearchVie
             if (button != null) {
                 button.setTextColor(Theme.getColor(Theme.key_text_RedBold));
             }
-
+        } else if (id == saveItemId) {
+            handleSaveFiles();
         } else if (id == speedItemId) {
             if (!isSpeedItemVisible()) {
                 return;
             }
 
             parent.showDialog(new PremiumFeatureBottomSheet(parent, PremiumPreviewFragment.PREMIUM_FEATURE_DOWNLOAD_SPEED, true));
-        } else if (id == downloadItemId) {
-            if (selectedFiles.isEmpty() || parent == null || parent.getParentActivity() == null) {
-                return;
-            }
-            ArrayList<MessageObject> messageObjects = new ArrayList<>(selectedFiles.values());
-            hideActionMode();
-            MediaController.saveFilesFromMessages(parent.getParentActivity(), parent.getAccountInstance(), messageObjects, (count) -> {
-                AndroidUtilities.runOnUIThread(() -> {
-                    if (count > 0 && parent != null) {
-                        // Check if all files are audio files
-                        boolean allAudio = true;
-                        for (MessageObject msg : messageObjects) {
-                            if (!msg.isMusic()) {
-                                allAudio = false;
-                                break;
-                            }
-                        }
-                        BulletinFactory.FileType fileType;
-                        if (allAudio) {
-                            fileType = count > 1 ? BulletinFactory.FileType.AUDIOS : BulletinFactory.FileType.AUDIO;
-                        } else {
-                            fileType = count > 1 ? BulletinFactory.FileType.UNKNOWNS : BulletinFactory.FileType.UNKNOWN;
-                        }
-                        BulletinFactory.of(parent).createDownloadBulletin(fileType, count, null).show();
-                    }
-                });
-            });
         } else if (id == gotoItemId) {
             if (selectedFiles.size() != 1) {
                 return;
@@ -1043,7 +1015,7 @@ public class SearchViewPager extends ViewPagerFixed implements FilteredSearchVie
                 gotoItem.setVisibility(selectedFiles.size() == 1 ? View.VISIBLE : View.GONE);
             }
             if (speedItem != null) {
-                boolean visible = isSpeedItemVisible();
+                /*boolean visible = isSpeedItemVisible();
                 int v = visible ? View.VISIBLE : View.GONE;
                 if (speedItem.getVisibility() != v) {
                     speedItem.setVisibility(v);
@@ -1061,7 +1033,20 @@ public class SearchViewPager extends ViewPagerFixed implements FilteredSearchVie
                             }
                         }
                     }
+                }*/
+            }
+            if (saveItem != null) {
+                boolean canShowSave = true;
+                for (MessageObject m : selectedFiles.values()) {
+                    if (m != null && !m.isDownloadingFile) {
+                        canShowSave = false;
+                        break;
+                    }
+                    if (m != null && m.getDocument() == null) {
+                        canShowSave = false;
+                    }
                 }
+                saveItem.setVisibility(canShowSave ? View.VISIBLE : View.GONE);
             }
             if (deleteItem != null) {
                 boolean canShowDelete = true;
@@ -1073,9 +1058,6 @@ public class SearchViewPager extends ViewPagerFixed implements FilteredSearchVie
                     }
                 }
                 deleteItem.setVisibility(canShowDelete ? View.VISIBLE : View.GONE);
-            }
-            if (downloadItem != null) {
-                downloadItem.setVisibility(selectedFiles.size() > 0 ? View.VISIBLE : View.GONE);
             }
         }
         if (view instanceof SharedDocumentCell) {
@@ -1542,5 +1524,15 @@ public class SearchViewPager extends ViewPagerFixed implements FilteredSearchVie
         if (dialogsSearchAdapter != null) {
             dialogsSearchAdapter.resetFilter();
         }
+    }
+
+    private void handleSaveFiles() {
+        ArrayList<MessageObject> messageObjects = new ArrayList<>(selectedFiles.values());
+        hideActionMode();
+        MediaController.saveFilesFromMessages(getContext(), AccountInstance.getInstance(currentAccount), messageObjects, (count) -> {
+            if (count > 0 && getContext() != null) {
+                BulletinFactory.of(fragmentView, null).createDownloadBulletin(BulletinFactory.FileType.UNKNOWNS, count, null).show();
+            }
+        });
     }
 }

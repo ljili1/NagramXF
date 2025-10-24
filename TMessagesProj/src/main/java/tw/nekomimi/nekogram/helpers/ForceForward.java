@@ -6,11 +6,13 @@ import org.telegram.messenger.AndroidUtilities;
 import org.telegram.messenger.FileLoader;
 import org.telegram.messenger.FileLog;
 import org.telegram.messenger.ImageLocation;
+import org.telegram.messenger.LocaleController;
 import org.telegram.messenger.MessageObject;
+import org.telegram.messenger.R;
 import org.telegram.messenger.SendMessagesHelper;
 import org.telegram.messenger.Utilities;
 import org.telegram.tgnet.TLRPC;
-import org.telegram.ui.ActionBar.AlertDialog;
+
 import org.telegram.ui.ChatActivity;
 import org.telegram.ui.Components.UndoView;
 
@@ -19,6 +21,7 @@ import java.util.ArrayList;
 import java.util.Iterator;
 
 import xyz.nextalone.nagram.NaConfig;
+import tw.nekomimi.nekogram.helpers.MessageHelper;
 
 /**
  * 强制转发功能处理器
@@ -130,53 +133,41 @@ public class ForceForward {
         if (messagesToSend == null || messagesToSend.isEmpty() || parentFragment.getParentActivity() == null) return;
 
         try {
-                // 1) ensure media downloaded
-                ArrayList<MessageObject> needDownload = new ArrayList<>();
+                // 触发未下载文件的下载，不等待完成，不显示弹窗
                 for (MessageObject mo : messagesToSend) {
                     if (mo == null || mo.messageOwner == null) continue;
-                    boolean hasMedia = mo.getDocument() != null || mo.isPhoto();
-                    if (!hasMedia) continue;
-                    File f = xyz.nextalone.nagram.helper.MessageHelper.INSTANCE.getPathToMessage(mo);
-                    if (f == null || !f.exists()) {
-                        needDownload.add(mo);
-                    }
-                }
-
-                // trigger downloads
-                for (MessageObject mo : needDownload) {
-                    if (mo.getDocument() != null) {
-                        FileLoader.getInstance(currentAccount).loadFile(mo.getDocument(), mo, FileLoader.PRIORITY_HIGH, 0);
-                    } else if (mo.isPhoto()) {
-                        TLRPC.PhotoSize size = FileLoader.getClosestPhotoSizeWithSize(MessageObject.getPhoto(mo.messageOwner).sizes, AndroidUtilities.getPhotoSize());
-                        if (size != null) {
-                            FileLoader.getInstance(currentAccount).loadFile(ImageLocation.getForObject(size, mo.messageOwner), mo.messageOwner, "jpg", FileLoader.PRIORITY_HIGH, 0);
-                        }
-                    }
-                }
-
-                // wait loop (polling) - 增强的下载等待机制
-                int attempts = 0;
-                int maxAttempts = 600; // up to ~60s
-                while (!needDownload.isEmpty() && attempts < maxAttempts) {
-                    Iterator<MessageObject> it = needDownload.iterator();
-                    while (it.hasNext()) {
-                        MessageObject mo = it.next();
-                        File f = xyz.nextalone.nagram.helper.MessageHelper.INSTANCE.getPathToMessage(mo);
-                        if (f != null && f.exists()) {
-                            it.remove();
+                    boolean mediaExists = mo.getDocument() != null || mo.isPhoto() || mo.isVideo();
+                    if (!mediaExists) continue;
+                    
+                    // 使用FileLoader获取理论路径，而不是MessageHelper（会返回null）
+                    String pathStr = FileLoader.getInstance(currentAccount).getPathToMessage(mo.messageOwner).toString();
+                    File f = new File(pathStr);
+                    if (!f.exists()) {
+                        // 文件未下载，触发下载
+                        if (mo.getDocument() != null) {
+                            FileLoader.getInstance(currentAccount).loadFile(mo.getDocument(), mo, FileLoader.PRIORITY_HIGH, 0);
+                        } else if (mo.isPhoto()) {
+                            TLRPC.PhotoSize size = FileLoader.getClosestPhotoSizeWithSize(MessageObject.getPhoto(mo.messageOwner).sizes, AndroidUtilities.getPhotoSize());
+                            if (size != null) {
+                                FileLoader.getInstance(currentAccount).loadFile(ImageLocation.getForObject(size, mo.messageOwner), mo.messageOwner, "jpg", FileLoader.PRIORITY_HIGH, 0);
+                            }
+                        } else if (mo.isVideo()) {
+                            // 视频文件下载
+                            if (mo.getDocument() != null) {
+                                FileLoader.getInstance(currentAccount).loadFile(mo.getDocument(), mo, FileLoader.PRIORITY_HIGH, 0);
+                            } else if (mo.messageOwner != null && mo.messageOwner.media instanceof TLRPC.TL_messageMediaVideo_old) {
+                                // 如果视频没有document，尝试通过视频媒体信息下载
+                                TLRPC.TL_messageMediaVideo_old videoMedia = (TLRPC.TL_messageMediaVideo_old) mo.messageOwner.media;
+                                if (videoMedia.video_unused != null && videoMedia.video_unused.thumb != null) {
+                                    ImageLocation imageLocation = ImageLocation.getForObject(videoMedia.video_unused.thumb, mo.messageOwner);
+                                    if (imageLocation != null) {
+                                        FileLoader.getInstance(currentAccount).loadFile(imageLocation, mo.messageOwner, "jpg", FileLoader.PRIORITY_HIGH, 0);
+                                    }
+                                }
                             }
                         }
-                               
-
-                               
-                        Thread.sleep(100);
-                            attempts++;
-                        }
-                           
-                        // 如果仍有文件未下载完成，但不阻塞发送过程
-                        if (!needDownload.isEmpty()) {
-                            FileLog.w("Some media files not fully downloaded, proceeding anyway: " + needDownload.size());
-                        }
+                    }
+                }
 
                 // 2) send messages as copies
                 //    - 文本：直接使用原始 messageOwner.message，重新生成 entities，避免受限聊天的取文案失败
@@ -222,65 +213,104 @@ public class ForceForward {
 
                     // 照片：收集到相册/单张列表，稍后统一发
                     if (mo.isPhoto()) {
-                        File f = xyz.nextalone.nagram.helper.MessageHelper.INSTANCE.getPathToMessage(mo);
-                        if (f != null && f.exists()) {
-                            SendMessagesHelper.SendingMediaInfo info = new SendMessagesHelper.SendingMediaInfo();
-                            info.path = f.getAbsolutePath();
-                            info.caption = caption;
-                            info.entities = mo.messageOwner != null ? mo.messageOwner.entities : null;
-                            long gid = mo.getGroupId();
-                            if (gid != 0) {
-                                java.util.ArrayList<SendMessagesHelper.SendingMediaInfo> list = albumMap.computeIfAbsent(gid, k -> new java.util.ArrayList<>());
-                                list.add(info);
-                                Integer remain = albumRemain.get(gid);
-                                if (remain != null) {
-                                    remain = remain - 1;
-                                    if (remain <= 0) {
-                                        // 分组最后一项，到此处立即发送该分组，保持与文本等消息的原始相对顺序
-                                        java.util.ArrayList<SendMessagesHelper.SendingMediaInfo> toSend = new java.util.ArrayList<>(list);
-                                        albumMap.remove(gid);
-                                        albumRemain.remove(gid);
-                                        SendMessagesHelper.prepareSendingMedia(
-                                            parentFragment.getAccountInstance(),
-                                            toSend,
-                                            targetDialogId,
-                                            null,
-                                            null,
-                                            null,
-                                            null,
-                                            false,
-                                            true,  // groupMedia
-                                            null,
-                                            true,
-                                            0,
-                                            parentFragment.getChatMode(),
-                                            false,
-                                            null,
-                                            parentFragment.quickReplyShortcut,
-                                            parentFragment.getQuickReplyId(),
-                                            0,
-                                            false,
-                                            0,
-                                            parentFragment.getSendMonoForumPeerId(),
-                                            parentFragment.getSendMessageSuggestionParams()
-                                        );
-                                    } else {
-                                        albumRemain.put(gid, remain);
+                        // 使用FileLoader获取理论路径，而不是MessageHelper（会返回null）
+                        String pathStr = FileLoader.getInstance(currentAccount).getPathToMessage(mo.messageOwner).toString();
+                        File f = new File(pathStr);
+                        String filePath = pathStr;  // 总是使用理论路径
+                        
+                        if (!f.exists()) {
+                            // 照片文件未下载，触发下载，不执行转发
+                            TLRPC.Photo photo = MessageObject.getPhoto(mo.messageOwner);
+                            if (photo != null) {
+                                TLRPC.PhotoSize sizeFull = FileLoader.getClosestPhotoSizeWithSize(photo.sizes, 1280);
+                                if (sizeFull != null) {
+                                    ImageLocation imageLocation = ImageLocation.getForObject(sizeFull, mo.messageOwner);
+                                    if (imageLocation != null) {
+                                        FileLoader.getInstance(currentAccount).loadFile(imageLocation, mo.messageOwner, "jpg", FileLoader.PRIORITY_NORMAL, 0);
                                     }
                                 }
-                            } else {
-                                singlePhotos.add(info);
                             }
+                            continue; // 跳过转发，等下载完成后用户手动再次转发
+                        }
+                        
+                        SendMessagesHelper.SendingMediaInfo info = new SendMessagesHelper.SendingMediaInfo();
+                        info.path = filePath;
+                        info.caption = caption;
+                        info.entities = mo.messageOwner != null ? mo.messageOwner.entities : null;
+                        long gid = mo.getGroupId();
+                        if (gid != 0) {
+                            java.util.ArrayList<SendMessagesHelper.SendingMediaInfo> list = albumMap.computeIfAbsent(gid, k -> new java.util.ArrayList<>());
+                            list.add(info);
+                            Integer remain = albumRemain.get(gid);
+                            if (remain != null) {
+                                remain = remain - 1;
+                                if (remain <= 0) {
+                                    // 分组最后一项，到此处立即发送该分组，保持与文本等消息的原始相对顺序
+                                    java.util.ArrayList<SendMessagesHelper.SendingMediaInfo> toSend = new java.util.ArrayList<>(list);
+                                    albumMap.remove(gid);
+                                    albumRemain.remove(gid);
+                                    // 发送照片组
+                                    SendMessagesHelper.prepareSendingMedia(
+                                        parentFragment.getAccountInstance(),
+                                        toSend,
+                                        targetDialogId,
+                                        null,
+                                        null,
+                                        null,
+                                        null,
+                                        false,
+                                        true,  // groupMedia
+                                        null,
+                                        true,
+                                        0,
+                                        parentFragment.getChatMode(),
+                                        false,
+                                        null,
+                                        parentFragment.quickReplyShortcut,
+                                        parentFragment.getQuickReplyId(),
+                                        0,
+                                        false,
+                                        0,
+                                        parentFragment.getSendMonoForumPeerId(),
+                                        parentFragment.getSendMessageSuggestionParams()
+                                    );
+                                } else {
+                                    albumRemain.put(gid, remain);
+                                }
+                            }
+                        } else {
+                            singlePhotos.add(info);
                         }
                         continue;
                     }
 
                     // 视频：也加入相册分组
                     if (mo.isVideo()) {
-                        File f = xyz.nextalone.nagram.helper.MessageHelper.INSTANCE.getPathToMessage(mo);
-                        if (f != null && f.exists()) {
+                        // 使用FileLoader获取理论路径，而不是MessageHelper（会返回null）
+                        String pathStr = FileLoader.getInstance(currentAccount).getPathToMessage(mo.messageOwner).toString();
+                        File f = new File(pathStr);
+                        String filePath = pathStr;  // 总是使用理论路径
+                        
+                        if (!f.exists()) {
+                            // 视频文件未下载，触发下载，不执行转发
+                            if (mo.getDocument() != null) {
+                                FileLoader.getInstance(currentAccount).loadFile(mo.getDocument(), mo, FileLoader.PRIORITY_NORMAL, 0);
+                            } else if (mo.messageOwner != null && mo.messageOwner.media instanceof TLRPC.TL_messageMediaVideo_old) {
+                                // 如果视频没有document，尝试通过视频媒体信息下载
+                                TLRPC.TL_messageMediaVideo_old videoMedia = (TLRPC.TL_messageMediaVideo_old) mo.messageOwner.media;
+                                if (videoMedia.video_unused != null && videoMedia.video_unused.thumb != null) {
+                                    ImageLocation imageLocation = ImageLocation.getForObject(videoMedia.video_unused.thumb, mo.messageOwner);
+                                    if (imageLocation != null) {
+                                        FileLoader.getInstance(currentAccount).loadFile(imageLocation, mo.messageOwner, "jpg", FileLoader.PRIORITY_NORMAL, 0);
+                                    }
+                                }
+                            }
+                            continue; // 跳过转发，等下载完成后用户手动再次转发
+                        }
+                        
+                        if (filePath != null) {
                             SendMessagesHelper.SendingMediaInfo info = new SendMessagesHelper.SendingMediaInfo();
-                            info.path = f.getAbsolutePath();
+                            info.path = filePath;
                             info.caption = caption;
                             info.entities = mo.messageOwner != null ? mo.messageOwner.entities : null;
                             info.isVideo = true;
@@ -330,15 +360,27 @@ public class ForceForward {
                         continue;
                     }
 
-                    // GIF消息：像视频一样处理，确保以GIF格式发送而不是文档
-                    if (MessageObject.isGifMessage(mo.messageOwner)) {
-                        File f = xyz.nextalone.nagram.helper.MessageHelper.INSTANCE.getPathToMessage(mo);
-                        if (f != null && f.exists()) {
+                    // GIF：当作视频处理，也加入相册分组
+                    if (mo.isGif()) {
+                        // 使用FileLoader获取理论路径，而不是MessageHelper（会返回null）
+                        String pathStr = FileLoader.getInstance(currentAccount).getPathToMessage(mo.messageOwner).toString();
+                        File f = new File(pathStr);
+                        String filePath = pathStr;  // 总是使用理论路径
+                        
+                        if (!f.exists()) {
+                            // GIF文件未下载，触发下载，不执行转发
+                            if (mo.getDocument() != null) {
+                                FileLoader.getInstance(currentAccount).loadFile(mo.getDocument(), mo, FileLoader.PRIORITY_NORMAL, 0);
+                            }
+                            continue; // 跳过转发，等下载完成后用户手动再次转发
+                        }
+                        
+                        if (filePath != null) {
                             SendMessagesHelper.SendingMediaInfo info = new SendMessagesHelper.SendingMediaInfo();
-                            info.path = f.getAbsolutePath();
+                            info.path = filePath;
                             info.caption = caption;
                             info.entities = mo.messageOwner != null ? mo.messageOwner.entities : null;
-                            info.isVideo = true; // 标记为视频类型，让prepareSendingMedia正确处理GIF
+                            info.isVideo = true; // GIF当作视频处理
                             long gid = mo.getGroupId();
                             if (gid != 0) {
                                 java.util.ArrayList<SendMessagesHelper.SendingMediaInfo> list = albumMap.computeIfAbsent(gid, k -> new java.util.ArrayList<>());
@@ -387,55 +429,86 @@ public class ForceForward {
 
                     // 文档（排除视频/贴纸/GIF）：按 grouped_id 收集合并；未分组的逐条发送
                     if (mo.getDocument() != null && !mo.isVideo() && !MessageObject.isGifMessage(mo.messageOwner) && !mo.isSticker() && !mo.isAnimatedSticker()) {
-                        File f = xyz.nextalone.nagram.helper.MessageHelper.INSTANCE.getPathToMessage(mo);
-                        if (f != null && f.exists()) {
+                        // 使用FileLoader获取理论路径，而不是MessageHelper（会返回null）
+                        String pathStr = FileLoader.getInstance(currentAccount).getPathToMessage(mo.messageOwner).toString();
+                        File f = new File(pathStr);
+                        String filePath = pathStr;  // 总是使用理论路径
+                        
+                        if (!f.exists()) {
+                            // 文档文件未下载，触发下载，不执行转发
+                            if (mo.getDocument() != null) {
+                                FileLoader.getInstance(currentAccount).loadFile(mo.getDocument(), mo, FileLoader.PRIORITY_NORMAL, 0);
+                            }
+                            continue; // 跳过转发，等下载完成后用户手动再次转发
+                        }
+                        
+                        long gid = mo.getGroupId();
+                        if (gid != 0) {
+                            // 分组文档：收集到 docAlbumMap
                             SendMessagesHelper.SendingMediaInfo info = new SendMessagesHelper.SendingMediaInfo();
-                            info.path = f.getAbsolutePath();
+                            info.path = filePath;
                             info.caption = caption;
                             info.entities = mo.messageOwner != null ? mo.messageOwner.entities : null;
-                            long gid = mo.getGroupId();
-                            if (gid != 0) {
-                                java.util.ArrayList<SendMessagesHelper.SendingMediaInfo> list = docAlbumMap.computeIfAbsent(gid, k -> new java.util.ArrayList<>());
-                                list.add(info);
-                                Integer remain = albumRemain.get(gid);
-                                if (remain != null) {
-                                    remain = remain - 1;
-                                    if (remain <= 0) {
-                                        java.util.ArrayList<SendMessagesHelper.SendingMediaInfo> toSend = new java.util.ArrayList<>(list);
-                                        docAlbumMap.remove(gid);
-                                        albumRemain.remove(gid);
-                                        // 文档分组：通过 prepareSendingMedia + forceDocument=true 作为一条合并消息发送
-                                        SendMessagesHelper.prepareSendingMedia(
-                                            parentFragment.getAccountInstance(),
-                                            toSend,
-                                            targetDialogId,
-                                            null,
-                                            null,
-                                            null,
-                                            null,
-                                            true,   // forceDocument
-                                            false,  // groupMedia=false（文档不走相册图片逻辑）
-                                            null,
-                                            true,
-                                            0,
-                                            parentFragment.getChatMode(),
-                                            false,
-                                            null,
-                                            parentFragment.quickReplyShortcut,
-                                            parentFragment.getQuickReplyId(),
-                                            0,
-                                            false,
-                                            0,
-                                            parentFragment.getSendMonoForumPeerId(),
-                                            parentFragment.getSendMessageSuggestionParams()
-                                        );
-                                    } else {
-                                        albumRemain.put(gid, remain);
-                                    }
+                            java.util.ArrayList<SendMessagesHelper.SendingMediaInfo> list = docAlbumMap.computeIfAbsent(gid, k -> new java.util.ArrayList<>());
+                            list.add(info);
+                            Integer remain = albumRemain.get(gid);
+                            if (remain != null) {
+                                remain = remain - 1;
+                                if (remain <= 0) {
+                                    java.util.ArrayList<SendMessagesHelper.SendingMediaInfo> toSend = new java.util.ArrayList<>(list);
+                                    docAlbumMap.remove(gid);
+                                    albumRemain.remove(gid);
+                                    // 文档分组：通过 prepareSendingMedia + forceDocument=true 作为一条合并消息发送
+                                    SendMessagesHelper.prepareSendingMedia(
+                                        parentFragment.getAccountInstance(),
+                                        toSend,
+                                        targetDialogId,
+                                        null,
+                                        null,
+                                        null,
+                                        null,
+                                        true,   // forceDocument
+                                        false,  // groupMedia=false（文档不走相册图片逻辑）
+                                        null,
+                                        true,
+                                        0,
+                                        parentFragment.getChatMode(),
+                                        false,
+                                        null,
+                                        parentFragment.quickReplyShortcut,
+                                        parentFragment.getQuickReplyId(),
+                                        0,
+                                        false,
+                                        0,
+                                        parentFragment.getSendMonoForumPeerId(),
+                                        parentFragment.getSendMessageSuggestionParams()
+                                    );
+                                } else {
+                                    albumRemain.put(gid, remain);
                                 }
-                            } else {
-                                singleDocuments.add(info);
                             }
+                        } else {
+                            // 单文件文档：直接发送
+                            SendMessagesHelper.prepareSendingDocument(
+                                parentFragment.getAccountInstance(),
+                                filePath,
+                                filePath,
+                                null,
+                                caption,
+                                null,
+                                targetDialogId,
+                                null,
+                                null,
+                                null,
+                                null,
+                                null,
+                                true,
+                                0,
+                                null,
+                                parentFragment.quickReplyShortcut,
+                                parentFragment.getQuickReplyId(),
+                                false
+                            );
                         }
                         continue;
                     }
@@ -474,7 +547,7 @@ public class ForceForward {
                     null,
                     null,
                     false,
-                    false, // single
+                    false,
                     null,
                     true,
                     0,
