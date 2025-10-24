@@ -13,7 +13,14 @@ import org.telegram.messenger.MessagesController;
 import org.telegram.messenger.UserConfig;
 import org.telegram.tgnet.ConnectionsManager;
 import org.telegram.tgnet.TLRPC;
+import org.telegram.messenger.LocaleController;
+import org.telegram.messenger.R;
+import org.telegram.ui.ActionBar.AlertDialog;
+import org.telegram.ui.Components.AlertsCreator;
+import org.telegram.ui.ActionBar.BaseFragment;
+import org.telegram.ui.Components.BulletinFactory;
 import org.telegram.ui.ActionBar.Theme;
+import org.telegram.ui.LaunchActivity;
 
 import java.io.File;
 import java.util.Arrays;
@@ -30,7 +37,16 @@ public class AndroidUtil {
         if (Build.VERSION.SDK_INT <= Build.VERSION_CODES.R) {
             return color;
         }
-        return Theme.getColor(Theme.key_windowBackgroundWhite);
+        BaseFragment fragment = LaunchActivity.getLastFragment();
+        Theme.ResourcesProvider resourcesProvider = fragment != null ? fragment.getResourceProvider() : null;
+        return Theme.getColor(Theme.key_windowBackgroundWhite, resourcesProvider);
+    }
+
+    public static int getNavBarColor(int color, Theme.ResourcesProvider resourcesProvider) {
+        if (Build.VERSION.SDK_INT <= Build.VERSION_CODES.R) {
+            return color;
+        }
+        return Theme.getColor(Theme.key_windowBackgroundWhite, resourcesProvider);
     }
 
     public static long getDirectorySize(File file) {
@@ -97,11 +113,13 @@ public class AndroidUtil {
             NaConfig.INSTANCE.getPushServiceType().setConfigInt(1);
             NaConfig.INSTANCE.getPushServiceTypeInAppDialog().setConfigBool(false);
         } else {
-            NaConfig.INSTANCE.getPushServiceType().setConfigInt(0);
-            NaConfig.INSTANCE.getPushServiceTypeInAppDialog().setConfigBool(true);
             SharedPreferences.Editor editor = MessagesController.getGlobalNotificationsSettings().edit();
             editor.putBoolean("pushService", true).apply();
             editor.putBoolean("pushConnection", true).apply();
+            NaConfig.INSTANCE.getPushServiceType().setConfigInt(0);
+            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.VANILLA_ICE_CREAM) {
+                NaConfig.INSTANCE.getPushServiceTypeInAppDialog().setConfigBool(true);
+            }
         }
     }
 
@@ -140,5 +158,28 @@ public class AndroidUtil {
                 ARCHIVE_EXTENSIONS.contains(extension);
 
         return isExecutable || isArchive;
+    }
+
+    public static void showErrorDialog(Exception e) {
+        var fragment = LaunchActivity.getSafeLastFragment();
+        var message = e.getLocalizedMessage();
+        if (!BulletinFactory.canShowBulletin(fragment) || message == null) {
+            return;
+        }
+        if (message.length() > 45) {
+            AlertsCreator.showSimpleAlert(fragment, LocaleController.getString(R.string.ErrorOccurred), e.getMessage());
+        } else {
+            BulletinFactory.of(fragment).createErrorBulletin(message).show();
+        }
+    }
+
+    public static String getFileNameWithoutEx(String filename) {
+        if ((filename != null) && (filename.length() > 0)) {
+            int dot = filename.lastIndexOf('.');
+            if ((dot > -1) && (dot < (filename.length()))) {
+                return filename.substring(0, dot);
+            }
+        }
+        return filename;
     }
 }

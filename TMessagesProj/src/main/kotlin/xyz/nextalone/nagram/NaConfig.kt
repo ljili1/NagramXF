@@ -3,6 +3,7 @@ package xyz.nextalone.nagram
 import android.content.Context
 import android.content.SharedPreferences
 import android.net.Uri
+import android.os.Build
 import android.util.Base64
 import androidx.core.net.toUri
 import org.telegram.messenger.AndroidUtilities
@@ -774,7 +775,7 @@ object NaConfig {
         addConfig(
             "TranslatorMode",
             ConfigItem.configTypeInt,
-            1 // 0: append; 1: replace; 2: pop-up
+            1 // 0: append; 1: replace
         )
     val centerActionBarTitleType =
         addConfig(
@@ -924,7 +925,7 @@ object NaConfig {
         addConfig(
             "TranslatorKeepMarkdown",
             ConfigItem.configTypeBool,
-            false
+            true
         )
     val googleTranslateExp =
         addConfig(
@@ -1412,6 +1413,18 @@ object NaConfig {
             ConfigItem.configTypeBool,
             true
         )
+    val disableAvatarBlur =
+        addConfig(
+            "DisableAvatarBlur",
+            ConfigItem.configTypeBool,
+            false
+        )
+    val disableInAppBrowserGestures =
+        addConfig(
+            "DisableInAppBrowserGestures",
+            ConfigItem.configTypeBool,
+            false
+        )
 
     val preferredTranslateTargetLangList = ArrayList<String>()
     fun updatePreferredTranslateTargetLangList() {
@@ -1456,6 +1469,15 @@ object NaConfig {
             preferences.getBoolean("IgnoreFolderCount", false) -> NekoConfig.DIALOG_FILTER_EXCLUDE_ALL
             preferences.getBoolean("IgnoreMutedCount", true) -> NekoConfig.DIALOG_FILTER_EXCLUDE_MUTED
             else -> NekoConfig.DIALOG_FILTER_EXCLUDE_NONE
+        }
+    }
+
+    private fun fixConfig() {
+        if (translatorMode.Int() > 1) {
+            translatorMode.setConfigInt(1)
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.VANILLA_ICE_CREAM) {
+            pushServiceTypeInAppDialog.setConfigBool(false)
         }
     }
 
@@ -1604,11 +1626,21 @@ object NaConfig {
         }
     }
 
+    fun getAllKeys(): Set<String> {
+        synchronized(sync) {
+            return configs.map { it.key }.toSet()
+        }
+    }
+
     init {
         loadConfig(
             false
         )
         migrateUpdateChannelSettings()
         updatePreferredTranslateTargetLangList()
+        fixConfig()
+        if (!BuildVars.LOGS_ENABLED) {
+            showRPCError.setConfigBool(false)
+        }
     }
 }

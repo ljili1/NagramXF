@@ -361,9 +361,8 @@ import tw.nekomimi.nekogram.utils.FileUtil;
 import tw.nekomimi.nekogram.utils.LangsKt;
 import tw.nekomimi.nekogram.utils.ProxyUtil;
 import tw.nekomimi.nekogram.utils.ShareUtil;
-import tw.nekomimi.nekogram.utils.UIUtil;
 import xyz.nextalone.nagram.NaConfig;
-import xyz.nextalone.nagram.helper.MessageHelper;
+import tw.nekomimi.nekogram.helpers.MessageHelper;
 
 public class ProfileActivity extends BaseFragment implements NotificationCenter.NotificationCenterDelegate, DialogsActivity.DialogsActivityDelegate, SharedMediaLayout.SharedMediaPreloaderDelegate, ImageUpdater.ImageUpdaterDelegate, SharedMediaLayout.Delegate {
     private final static int PHONE_OPTION_CALL = 0,
@@ -917,7 +916,7 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
 
         public void createBlurEffect(int actionsSize) {
             this.actionsSize = actionsSize;
-            this.blurEnabled = true; // actionsSize > 0;
+            this.blurEnabled = !NaConfig.INSTANCE.getDisableAvatarBlur().Bool(); // actionsSize > 0;
         }
 
         public AvatarImageView(Context context) {
@@ -1053,6 +1052,7 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
                     blurEnabled && blurSizeFraction > 0f;
 
             ProfileGalleryBlurView blurView = null;
+            handleCustomColor(shouldDrawBlur);
             if (shouldDrawBlur) {
                 blurView = avatarsViewPager.getBlurDrawer();
                 shouldDrawBlur = blurView != null;
@@ -1137,6 +1137,8 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
 
             canvas.restore();
         }
+
+        protected void handleCustomColor(boolean blur) {}
 
         public void setProgressToStoriesInsets(float progressToInsets) {
             if (progressToInsets == this.progressToInsets) {
@@ -1259,7 +1261,7 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
                 hasColorById = false;
                 if (AndroidUtilities.computePerceivedBrightness(getThemedColor(Theme.key_actionBarDefault)) > .8f) {
                     emojiColor = getThemedColor(Theme.key_windowBackgroundWhiteBlueText);
-                    btnColor = Theme.multAlpha(getThemedColor(Theme.key_windowBackgroundWhiteBlueText), .15f);
+                    btnColor = Theme.multAlpha(getThemedColor(Theme.key_windowBackgroundWhiteBlueText), .15f * 2);
                 } else if (AndroidUtilities.computePerceivedBrightness(getThemedColor(Theme.key_actionBarDefault)) < .2f) {
                     emojiColor = Theme.multAlpha(Theme.adaptHSV(getThemedColor(Theme.key_actionBarDefault), +0.02f, +0.25f), .5f);
                     btnColor = Theme.multAlpha(Theme.adaptHSV(getThemedColor(Theme.key_actionBarDefault), +0.02f, +0.25f), .35f);
@@ -2702,7 +2704,7 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
                         } else {
                             AlertDialog.Builder builder = new AlertDialog.Builder(getParentActivity(), resourcesProvider);
                             builder.setTitle(LocaleController.getString(R.string.AddBot));
-                            String chatName = chat == null ? "" : MessageHelper.INSTANCE.zalgoFilter(chat.title);
+                            String chatName = chat == null ? "" : MessageHelper.zalgoFilter(chat.title);
                             builder.setMessage(AndroidUtilities.replaceTags(formatString("AddMembersAlertNamesText", R.string.AddMembersAlertNamesText, UserObject.getUserName(user), chatName)));
                             builder.setNegativeButton(LocaleController.getString(R.string.Cancel), null);
                             builder.setPositiveButton(LocaleController.getString(R.string.AddBot), (di, i) -> {
@@ -4438,12 +4440,12 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
             } else if (position == clearLogsRow) {
                 AlertDialog pro = AlertUtil.showProgress(getParentActivity());
                 pro.show();
-                UIUtil.runOnIoDispatcher(() -> {
+                Utilities.globalQueue.postRunnable(() -> {
                     FileUtil.delete(AndroidUtilities.getLogsDir());
                     try {
                         Thread.sleep(100L);
                     } catch (InterruptedException ignored) {}
-                    LangsKt.uDismiss(pro);
+                    AndroidUtilities.runOnUIThread(() -> pro.dismiss());
                 });
             } else if (position == switchBackendRow) {
                 if (getParentActivity() == null) {
@@ -5451,6 +5453,13 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
                     animatedEmojiDrawable.getImageReceiver().startAnimation();
                 }
             }
+
+            @Override
+            protected void handleCustomColor(boolean blur) {
+                if (musicView != null) {
+                    musicView.handleCustomColor(blur);
+                }
+            }
         };
         avatarImage.createBlurEffect(getActionsExtraHeight());
         avatarImage.getImageReceiver().setAllowDecodeSingleFrame(true);
@@ -5562,7 +5571,7 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
         }
         overlaysView = new OverlaysView(context);
         avatarsBlurView = new ProfileGalleryBlurView(context);
-        avatarsBlurView.setSize(getActionsExtraHeight());
+        avatarsBlurView.setSize(NaConfig.INSTANCE.getDisableAvatarBlur().Bool() ? 0 : getActionsExtraHeight());
         avatarsViewPager = new ProfileGalleryView(context, userId != 0 ? userId : -chatId, actionBar, listView, avatarImage, getClassGuid(), overlaysView, avatarsBlurView) {
             @Override
             protected void setCustomAvatarProgress(float progress) {
@@ -12073,7 +12082,7 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
                         title = Emoji.replaceEmoji(title, nameTextView[a].getPaint().getFontMetricsInt(), false);
                     } catch (Exception ignore) {
                     }
-                    if (nameTextView[a].setText(MessageHelper.INSTANCE.zalgoFilter(title))) {
+                    if (nameTextView[a].setText(MessageHelper.zalgoFilter(title))) {
                         changed = true;
                     }
                 }
@@ -14007,18 +14016,18 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
                     if (position == userInfoRow) {
                         // TLRPC.User user = userInfo.user != null ? userInfo.user : getMessagesController().getUser(userInfo.id);
                         // boolean addlinks = isBot || (user != null && user.premium && userInfo.about != null);
-                        aboutLinkCell.setTextAndValue(MessageHelper.INSTANCE.zalgoFilter(userInfo.about), LocaleController.getString(R.string.UserBio), true);
+                        aboutLinkCell.setTextAndValue(MessageHelper.zalgoFilter(userInfo.about), LocaleController.getString(R.string.UserBio), true);
                     } else if (position == channelInfoRow) {
                         String text = chatInfo.about;
                         while (text.contains("\n\n\n")) {
                             text = text.replace("\n\n\n", "\n\n");
                         }
-                        aboutLinkCell.setTextAndValue(MessageHelper.INSTANCE.zalgoFilter(text), LocaleController.getString(R.string.DescriptionPlaceholder), ChatObject.isChannel(currentChat) && !currentChat.megagroup);
+                        aboutLinkCell.setTextAndValue(MessageHelper.zalgoFilter(text), LocaleController.getString(R.string.DescriptionPlaceholder), ChatObject.isChannel(currentChat) && !currentChat.megagroup);
                     } else if (position == bioRow) {
                         String value;
                         if (userInfo == null || !TextUtils.isEmpty(userInfo.about)) {
                             value = userInfo == null ? LocaleController.getString(R.string.Loading) : userInfo.about;
-                            aboutLinkCell.setTextAndValue(MessageHelper.INSTANCE.zalgoFilter(value), LocaleController.getString(R.string.UserBio), true/*getUserConfig().isPremium()*/);
+                            aboutLinkCell.setTextAndValue(MessageHelper.zalgoFilter(value), LocaleController.getString(R.string.UserBio), true/*getUserConfig().isPremium()*/);
                             currentBio = userInfo != null ? userInfo.about : null;
                         } else {
                             aboutLinkCell.setTextAndValue(LocaleController.getString(R.string.UserBio), LocaleController.getString(R.string.UserBioDetail), false);
