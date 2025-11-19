@@ -83,6 +83,8 @@ import org.telegram.ui.Components.VerticalPositionAutoAnimator;
 import java.util.ArrayList;
 import java.util.concurrent.CountDownLatch;
 
+import xyz.nextalone.nagram.NaConfig;
+
 public class GroupCreateFinalActivity extends BaseFragment implements NotificationCenter.NotificationCenterDelegate, ImageUpdater.ImageUpdaterDelegate {
 
     private GroupCreateAdapter adapter;
@@ -665,7 +667,12 @@ public class GroupCreateFinalActivity extends BaseFragment implements Notificati
         });
 
         floatingButtonContainer = new FrameLayout(context);
-        Drawable drawable = Theme.createSimpleSelectorCircleDrawable(AndroidUtilities.dp(56), Theme.getColor(Theme.key_chats_actionBackground), Theme.getColor(Theme.key_chats_actionPressedBackground));
+        Drawable drawable;
+        if (NaConfig.INSTANCE.getSquareFloatingActionButton().Bool()) {
+            drawable = Theme.createSimpleSelectorRoundRectDrawable(AndroidUtilities.dp(18), Theme.getColor(Theme.key_chats_actionBackground), Theme.getColor(Theme.key_chats_actionPressedBackground));
+        } else {
+            drawable = Theme.createSimpleSelectorCircleDrawable(AndroidUtilities.dp(56), Theme.getColor(Theme.key_chats_actionBackground), Theme.getColor(Theme.key_chats_actionPressedBackground));
+        }
         if (Build.VERSION.SDK_INT < 21) {
             Drawable shadowDrawable = context.getResources().getDrawable(R.drawable.floating_shadow).mutate();
             shadowDrawable.setColorFilter(new PorterDuffColorFilter(0xff000000, PorterDuff.Mode.MULTIPLY));
@@ -683,7 +690,11 @@ public class GroupCreateFinalActivity extends BaseFragment implements Notificati
                 @SuppressLint("NewApi")
                 @Override
                 public void getOutline(View view, Outline outline) {
-                    outline.setOval(0, 0, AndroidUtilities.dp(56), AndroidUtilities.dp(56));
+                    if (NaConfig.INSTANCE.getSquareFloatingActionButton().Bool()) {
+                        outline.setRoundRect(0, 0, AndroidUtilities.dp(56), AndroidUtilities.dp(56), AndroidUtilities.dp(18));
+                    } else {
+                        outline.setOval(0, 0, AndroidUtilities.dp(56), AndroidUtilities.dp(56));
+                    }
                 }
             });
         }

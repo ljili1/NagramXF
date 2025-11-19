@@ -415,7 +415,11 @@ public class PhotoAlbumPickerActivity extends BaseFragment implements Notificati
         sizeNotifierFrameLayout.addView(writeButtonContainer, LayoutHelper.createFrame(60, 60, Gravity.RIGHT | Gravity.BOTTOM, 0, 0, 12, 10));
 
         writeButton = new ImageView(context);
-        writeButtonDrawable = Theme.createSimpleSelectorCircleDrawable(AndroidUtilities.dp(56), Theme.getColor(Theme.key_dialogFloatingButton), Theme.getColor(Build.VERSION.SDK_INT >= 21 ? Theme.key_dialogFloatingButtonPressed : Theme.key_dialogFloatingButton));
+        if (NaConfig.INSTANCE.getSquareFloatingActionButton().Bool()) {
+            writeButtonDrawable = Theme.createSimpleSelectorRoundRectDrawable(AndroidUtilities.dp(18), Theme.getColor(Theme.key_dialogFloatingButton), Theme.getColor(Build.VERSION.SDK_INT >= 21 ? Theme.key_dialogFloatingButtonPressed : Theme.key_dialogFloatingButton));
+        } else {
+            writeButtonDrawable = Theme.createSimpleSelectorCircleDrawable(AndroidUtilities.dp(56), Theme.getColor(Theme.key_dialogFloatingButton), Theme.getColor(Build.VERSION.SDK_INT >= 21 ? Theme.key_dialogFloatingButtonPressed : Theme.key_dialogFloatingButton));
+        }
         if (Build.VERSION.SDK_INT < 21) {
             Drawable shadowDrawable = context.getResources().getDrawable(R.drawable.floating_shadow_profile).mutate();
             shadowDrawable.setColorFilter(new PorterDuffColorFilter(0xff000000, PorterDuff.Mode.MULTIPLY));
@@ -433,7 +437,11 @@ public class PhotoAlbumPickerActivity extends BaseFragment implements Notificati
                 @SuppressLint("NewApi")
                 @Override
                 public void getOutline(View view, Outline outline) {
-                    outline.setOval(0, 0, AndroidUtilities.dp(56), AndroidUtilities.dp(56));
+                    if (NaConfig.INSTANCE.getSquareFloatingActionButton().Bool()) {
+                        outline.setRoundRect(0, 0, AndroidUtilities.dp(56), AndroidUtilities.dp(56), AndroidUtilities.dp(18));
+                    } else {
+                        outline.setOval(0, 0, AndroidUtilities.dp(56), AndroidUtilities.dp(56));
+                    }
                 }
             });
         }

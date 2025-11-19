@@ -87,11 +87,11 @@ public class NekoGeneralSettingsActivity extends BaseNekoXSettingsActivity {
     private DrawerProfilePreviewCell profilePreviewCell;
     private ChatBlurAlphaSeekBar chatBlurAlphaSeekbar;
     private UndoView restartTooltip;
-    private Parcelable recyclerViewState = null;
 
     private boolean wasCentered = false;
     private boolean wasCenteredAtBeginning = false;
     private float centeredMeasure = -1;
+    private android.os.Parcelable recyclerViewState;
 
     private final CellGroup cellGroup = new CellGroup(this);
 
@@ -179,6 +179,14 @@ public class NekoGeneralSettingsActivity extends BaseNekoXSettingsActivity {
 
     // Appearance
     private final AbstractConfigCell headerAppearance = cellGroup.appendCell(new ConfigCellHeader(getString(R.string.Appearance)));
+    private final AbstractConfigCell oneUISwitchStyleRow = cellGroup.appendCell(new ConfigCellTextCheck(NaConfig.INSTANCE.getOneUISwitchStyle()));
+    private final AbstractConfigCell sliderStyleRow = cellGroup.appendCell(new ConfigCellSelectBox("SliderStyle", NaConfig.INSTANCE.getSliderStyle(), new String[]{
+            getString(R.string.Default),
+            getString(R.string.SliderStyleModern),
+            getString(R.string.SliderStyleMD3)
+    }, null));
+    private final AbstractConfigCell iosSearchPanelRow = cellGroup.appendCell(new ConfigCellTextCheck(NaConfig.INSTANCE.getIosSearchPanel()));
+    private final AbstractConfigCell squareFloatingActionButtonRow = cellGroup.appendCell(new ConfigCellTextCheck(NaConfig.INSTANCE.getSquareFloatingActionButton()));
     private final AbstractConfigCell typefaceRow = cellGroup.appendCell(new ConfigCellTextCheck(NekoConfig.typeface));
     private final AbstractConfigCell transparentStatusBarRow = cellGroup.appendCell(new ConfigCellTextCheck(NekoConfig.transparentStatusBar));
     private final AbstractConfigCell appBarShadowRow = cellGroup.appendCell(new ConfigCellTextCheck(NekoConfig.disableAppBarShadow));
@@ -195,16 +203,6 @@ public class NekoGeneralSettingsActivity extends BaseNekoXSettingsActivity {
     private final AbstractConfigCell iconReplacements = cellGroup.appendCell(new ConfigCellSelectBox("IconReplacements", NaConfig.INSTANCE.getIconReplacements(), new String[]{
             getString(R.string.Default),
             getString(R.string.IconReplacementSolar),
-    }, null));
-    private final AbstractConfigCell switchStyleRow = cellGroup.appendCell(new ConfigCellSelectBox("SwitchStyle", NaConfig.INSTANCE.getSwitchStyle(), new String[]{
-            getString(R.string.Default),
-            getString(R.string.StyleModern),
-            getString(R.string.StyleMaterialDesign3)
-    }, null));
-    private final AbstractConfigCell sliderStyleRow = cellGroup.appendCell(new ConfigCellSelectBox("SliderStyle", NaConfig.INSTANCE.getSliderStyle(), new String[]{
-            getString(R.string.Default),
-            getString(R.string.StyleModern),
-            getString(R.string.StyleMaterialDesign3)
     }, null));
     private final AbstractConfigCell actionBarDecorationRow = cellGroup.appendCell(new ConfigCellSelectBox(null, NekoConfig.actionBarDecoration, new String[]{
             getString(R.string.DependsOnDate),
@@ -283,6 +281,7 @@ public class NekoGeneralSettingsActivity extends BaseNekoXSettingsActivity {
     private final AbstractConfigCell preferCommonGroupsTabRow = cellGroup.appendCell(new ConfigCellTextCheck(NaConfig.INSTANCE.getPreferCommonGroupsTab(), getString(R.string.PreferCommonGroupsTabNotice)));
     private final AbstractConfigCell autoPauseVideoRow = cellGroup.appendCell(new ConfigCellTextCheck(NekoConfig.autoPauseVideo, getString(R.string.AutoPauseVideoAbout)));
     private final AbstractConfigCell disableNumberRoundingRow = cellGroup.appendCell(new ConfigCellTextCheck(NekoConfig.disableNumberRounding, "4.8K -> 4777"));
+    private final AbstractConfigCell useCamera2ApiRow = cellGroup.appendCell(new ConfigCellTextCheck(NaConfig.INSTANCE.getUseCamera2Api()));
     private final AbstractConfigCell usePersianCalendarRow = cellGroup.appendCell(new ConfigCellTextCheck(NekoConfig.usePersianCalendar, getString(R.string.UsePersianCalendarInfo)));
     private final AbstractConfigCell displayPersianCalendarByLatinRow = cellGroup.appendCell(new ConfigCellTextCheck(NekoConfig.displayPersianCalendarByLatin));
     private final AbstractConfigCell showIdAndDcRow = cellGroup.appendCell(new ConfigCellSelectBox("ShowIdAndDc", NaConfig.INSTANCE.getIdDcType(), new String[]{
@@ -326,6 +325,27 @@ public class NekoGeneralSettingsActivity extends BaseNekoXSettingsActivity {
         wasCentered = isCentered();
         wasCenteredAtBeginning = wasCentered;
 
+        if (NekoConfig.useOSMDroidMap.Bool()) {
+            cellGroup.rows.remove(mapDriftingFixForGoogleMapsRow);
+        }
+        if (NaConfig.INSTANCE.getCustomTitleUserName().Bool()) {
+            cellGroup.rows.remove(customTitleRow);
+        }
+        if (NekoConfig.largeAvatarInDrawer.Int() == 0) {
+            cellGroup.rows.remove(avatarBackgroundBlurRow);
+            cellGroup.rows.remove(avatarBackgroundDarkenRow);
+        }
+        if (NaConfig.INSTANCE.getPushServiceType().Int() != 0) {
+            cellGroup.rows.remove(pushServiceTypeInAppDialogRow);
+        }
+        if (NaConfig.INSTANCE.getHideArchive().Bool()) {
+            cellGroup.rows.remove(openArchiveOnPullRow);
+        }
+        if (!NekoConfig.forceBlurInChat.Bool()) {
+            cellGroup.rows.remove(headerChatBlur);
+            cellGroup.rows.remove(chatBlurAlphaValueRow);
+        }
+
         checkProfileConfigCellRows();
         checkCustomDoHCellRows();
         addRowsToMap(cellGroup);
@@ -363,9 +383,6 @@ public class NekoGeneralSettingsActivity extends BaseNekoXSettingsActivity {
         fragmentView = new FrameLayout(context);
         fragmentView.setBackgroundColor(Theme.getColor(Theme.key_windowBackgroundGray));
         FrameLayout frameLayout = (FrameLayout) fragmentView;
-
-        // Before listAdapter
-        setCanNotChange();
 
         listView = new BlurredRecyclerView(context);
         listView.setVerticalScrollBarEnabled(false);
@@ -458,13 +475,43 @@ public class NekoGeneralSettingsActivity extends BaseNekoXSettingsActivity {
                 parentLayout.rebuildFragments(INavigationLayout.REBUILD_FLAG_REBUILD_LAST | INavigationLayout.REBUILD_FLAG_REBUILD_ONLY_LAST);
             } else if (key.equals(NekoConfig.forceBlurInChat.getKey())) {
                 boolean enabled = (Boolean) newValue;
-                if (chatBlurAlphaSeekbar != null)
-                    chatBlurAlphaSeekbar.setEnabled(enabled);
+                // Update the cell's own enabled state. This is the main fix.
                 ((ConfigCellCustom) chatBlurAlphaValueRow).enabled = enabled;
+
+                if (enabled) {
+                    if (!cellGroup.rows.contains(headerChatBlur)) {
+                        final int index = cellGroup.rows.indexOf(forceBlurInChatRow) + 1;
+                        cellGroup.rows.add(index, headerChatBlur);
+                        cellGroup.rows.add(index + 1, chatBlurAlphaValueRow);
+                        listAdapter.notifyItemRangeInserted(index, 2);
+                    }
+                } else {
+                    if (cellGroup.rows.contains(headerChatBlur)) {
+                        final int index = cellGroup.rows.indexOf(headerChatBlur);
+                        cellGroup.rows.remove(headerChatBlur);
+                        cellGroup.rows.remove(chatBlurAlphaValueRow);
+                        listAdapter.notifyItemRangeRemoved(index, 2);
+                    }
+                }
+                // Also update the seekbar view directly if it already exists.
+                if (chatBlurAlphaSeekbar != null) {
+                    chatBlurAlphaSeekbar.setEnabled(enabled);
+                }
             } else if (key.equals(NekoConfig.useOSMDroidMap.getKey())) {
                 boolean enabled = (Boolean) newValue;
-                ((ConfigCellTextCheck) mapDriftingFixForGoogleMapsRow).setEnabled(!enabled);
-                listAdapter.notifyItemChanged(cellGroup.rows.indexOf(mapDriftingFixForGoogleMapsRow));
+                if (enabled) {
+                    if (cellGroup.rows.contains(mapDriftingFixForGoogleMapsRow)) {
+                        final int index = cellGroup.rows.indexOf(mapDriftingFixForGoogleMapsRow);
+                        cellGroup.rows.remove(mapDriftingFixForGoogleMapsRow);
+                        listAdapter.notifyItemRemoved(index);
+                    }
+                } else {
+                    if (!cellGroup.rows.contains(mapDriftingFixForGoogleMapsRow)) {
+                        final int index = cellGroup.rows.indexOf(useOSMDroidMapRow) + 1;
+                        cellGroup.rows.add(index, mapDriftingFixForGoogleMapsRow);
+                        listAdapter.notifyItemInserted(index);
+                    }
+                }
             } else if (key.equals(NaConfig.INSTANCE.getPushServiceType().getKey())) {
                 if ((int) newValue == 0) {
                     AndroidUtil.setPushService(false);
@@ -472,10 +519,13 @@ public class NekoGeneralSettingsActivity extends BaseNekoXSettingsActivity {
                     ApplicationLoader.startPushService();
                 } else {
                     NaConfig.INSTANCE.getPushServiceTypeInAppDialog().setConfigBool(false);
-                    ((ConfigCellTextCheck) pushServiceTypeInAppDialogRow).setEnabledAndUpdateState(false);
+                    if (cellGroup.rows.contains(pushServiceTypeInAppDialogRow)) {
+                        final int index = cellGroup.rows.indexOf(pushServiceTypeInAppDialogRow);
+                        cellGroup.rows.remove(pushServiceTypeInAppDialogRow);
+                        listAdapter.notifyItemRemoved(index);
+                    }
                     AndroidUtilities.runOnUIThread(() -> context.stopService(new Intent(context, NotificationsService.class)));
                 }
-                listAdapter.notifyItemChanged(cellGroup.rows.indexOf(pushServiceTypeInAppDialogRow));
                 restartTooltip.showWithAction(0, UndoView.ACTION_NEED_RESTART, null, null);
             } else if (key.equals(NaConfig.INSTANCE.getPushServiceTypeInAppDialog().getKey())) {
                 ApplicationLoader.applicationContext.stopService(new Intent(ApplicationLoader.applicationContext, NotificationsService.class));
@@ -486,8 +536,19 @@ public class NekoGeneralSettingsActivity extends BaseNekoXSettingsActivity {
                 restartTooltip.showWithAction(0, UndoView.ACTION_NEED_RESTART, null, null);
             } else if (key.equals(NaConfig.INSTANCE.getCustomTitleUserName().getKey())) {
                 boolean enabled = (Boolean) newValue;
-                ((ConfigCellTextInput) customTitleRow).setEnabled(!enabled);
-                listAdapter.notifyItemChanged(cellGroup.rows.indexOf(customTitleRow));
+                if (enabled) {
+                    if (cellGroup.rows.contains(customTitleRow)) {
+                        final int index = cellGroup.rows.indexOf(customTitleRow);
+                        cellGroup.rows.remove(customTitleRow);
+                        listAdapter.notifyItemRemoved(index);
+                    }
+                } else {
+                    if (!cellGroup.rows.contains(customTitleRow)) {
+                        final int index = cellGroup.rows.indexOf(headerGeneral) + 1;
+                        cellGroup.rows.add(index, customTitleRow);
+                        listAdapter.notifyItemInserted(index);
+                    }
+                }
                 restartTooltip.showWithAction(0, UndoView.ACTION_NEED_RESTART, null, null);
             } else if (key.equals(NaConfig.INSTANCE.getIgnoreUnreadCount().getKey())) {
                 restartTooltip.showWithAction(0, UndoView.ACTION_NEED_RESTART, null, null);
@@ -502,8 +563,20 @@ public class NekoGeneralSettingsActivity extends BaseNekoXSettingsActivity {
                 NaConfig.INSTANCE.getCenterActionBarTitle().setConfigBool(value != 0);
                 animateActionBarUpdate(this);
             } else if (key.equals(NaConfig.INSTANCE.getHideArchive().getKey())) {
-                setCanNotChange();
-                listAdapter.notifyItemChanged(cellGroup.rows.indexOf(openArchiveOnPullRow));
+                boolean enabled = (boolean) newValue;
+                if (enabled) {
+                    if (cellGroup.rows.contains(openArchiveOnPullRow)) {
+                        final int index = cellGroup.rows.indexOf(openArchiveOnPullRow);
+                        cellGroup.rows.remove(openArchiveOnPullRow);
+                        listAdapter.notifyItemRemoved(index);
+                    }
+                } else {
+                    if (!cellGroup.rows.contains(openArchiveOnPullRow)) {
+                        final int index = cellGroup.rows.indexOf(doNotUnarchiveBySwipeRow) + 1;
+                        cellGroup.rows.add(index, openArchiveOnPullRow);
+                        listAdapter.notifyItemInserted(index);
+                    }
+                }
                 restartTooltip.showWithAction(0, UndoView.ACTION_NEED_RESTART, null, null);
             } else if (key.equals(NaConfig.INSTANCE.getDisableBotOpenButton().getKey())) {
                 restartTooltip.showWithAction(0, UndoView.ACTION_NEED_RESTART, null, null);
@@ -511,13 +584,11 @@ public class NekoGeneralSettingsActivity extends BaseNekoXSettingsActivity {
                 restartTooltip.showWithAction(0, UndoView.ACTION_NEED_RESTART, null, null);
             } else if (key.equals(NaConfig.INSTANCE.getIconReplacements().getKey())) {
                 restartTooltip.showWithAction(0, UndoView.ACTION_NEED_RESTART, null, null);
-            } else if (key.equals(NaConfig.INSTANCE.getSwitchStyle().getKey()) || key.equals(NaConfig.INSTANCE.getSliderStyle().getKey())) {
-                if (listView.getLayoutManager() != null) {
-                    recyclerViewState = listView.getLayoutManager().onSaveInstanceState();
-                    parentLayout.rebuildFragments(INavigationLayout.REBUILD_FLAG_REBUILD_LAST);
-                    listView.getLayoutManager().onRestoreInstanceState(recyclerViewState);
-                }
+            } else if (key.equals(NaConfig.INSTANCE.getSquareFloatingActionButton().getKey())) {
+                restartTooltip.showWithAction(0, UndoView.ACTION_NEED_RESTART, null, null);
             } else if (key.equals(NekoConfig.usePersianCalendar.getKey())) {
+                restartTooltip.showWithAction(0, UndoView.ACTION_NEED_RESTART, null, null);
+            } else if (key.equals(NaConfig.INSTANCE.getIosSearchPanel().getKey())) {
                 restartTooltip.showWithAction(0, UndoView.ACTION_NEED_RESTART, null, null);
             } else if (key.equals(NekoConfig.dnsType.getKey())) {
                 checkCustomDoHCellRows();
@@ -643,6 +714,9 @@ public class NekoGeneralSettingsActivity extends BaseNekoXSettingsActivity {
         @Override
         public boolean isEnabled(RecyclerView.ViewHolder holder) {
             int position = holder.getAdapterPosition();
+            if (position < 0 || position >= cellGroup.rows.size()) {
+                return true;
+            }
             AbstractConfigCell a = cellGroup.rows.get(position);
             if (a != null) {
                 return a.isEnabled();
@@ -729,7 +803,6 @@ public class NekoGeneralSettingsActivity extends BaseNekoXSettingsActivity {
         enabled = NaConfig.INSTANCE.getHideArchive().Bool();
         ((ConfigCellTextCheck) openArchiveOnPullRow).setEnabled(!enabled);
     }
-
     private static class ChatBlurAlphaSeekBar extends FrameLayout {
 
         private final SeekBarView sizeBar;

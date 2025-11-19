@@ -39,6 +39,12 @@ object NaConfig {
             ConfigItem.configTypeBool,
             true
         )
+    val forceForward =
+        addConfig(
+            "ForceForward",
+            ConfigItem.configTypeBool,
+            false
+        )
     val showTextBold =
         addConfig(
             "TextBold",
@@ -197,6 +203,12 @@ object NaConfig {
             ConfigItem.configTypeBool,
             true
         )
+    val disableGlobalSearch =
+        addConfig(
+            "DisableGlobalSearch",
+            ConfigItem.configTypeBool,
+            false
+        )
     val zalgoFilter =
         addConfig(
             "ZalgoFilter",
@@ -244,6 +256,12 @@ object NaConfig {
             "IconDecoration",
             ConfigItem.configTypeInt,
             0
+        )
+    val iosSearchPanel =
+        addConfig(
+            "IosSearchPanel",
+            ConfigItem.configTypeBool,
+            false
         )
     val notificationIcon =
         addConfig(
@@ -639,13 +657,13 @@ object NaConfig {
         addConfig(
             "HidePremiumSection",
             ConfigItem.configTypeBool,
-            true
+            false
         )
     val hideHelpSection =
         addConfig(
             "HideHelpSection",
             ConfigItem.configTypeBool,
-            true
+            false
         )
     val llmApiUrl =
         addConfig(
@@ -1108,7 +1126,7 @@ object NaConfig {
         addConfig(
             "HideDividers",
             ConfigItem.configTypeBool,
-            false
+            true
         )
     val iconReplacements =
         addConfig(
@@ -1218,6 +1236,48 @@ object NaConfig {
             ConfigItem.configTypeInt,
             1 // 0: off; 1: release; 2: beta
         )
+    val enableBetaVersion =
+        addConfig(
+            "EnableBetaVersion",
+            ConfigItem.configTypeBool,
+            false // false: release channel; true: beta channel
+        )
+    val checkUpdateOnStartup =
+        addConfig(
+            "CheckUpdateOnStartup",
+            ConfigItem.configTypeBool,
+            true // true: check update on app startup; false: don't check
+        )
+    // Temporarily commented out for testing
+    /*
+    val startupUpdateCheckInterval =
+        addConfig(
+            "StartupUpdateCheckInterval",
+            ConfigItem.configTypeInt,
+            0 // hours between startup update checks (default: 4 hours)
+        )
+    */
+    // Migration function for old update channel system
+    fun migrateUpdateChannelSettings() {
+        try {
+            // Only migrate if config is loaded and values are available
+            if (!configLoaded || autoUpdateChannel.value == null) {
+                return
+            }
+
+            // Migrate old autoUpdateChannel setting to new switches
+            val oldChannel = autoUpdateChannel.Int()
+            if (oldChannel == 2) { // UPDATE_CHANNEL_BETA
+                enableBetaVersion.setConfigBool(true)
+                autoUpdateChannel.setConfigInt(1) // Reset to release channel
+            } else if (oldChannel == 0) { // UPDATE_OFF
+                checkUpdateOnStartup.setConfigBool(false)
+                autoUpdateChannel.setConfigInt(1) // Reset to release channel
+            }
+        } catch (e: Exception) {
+            // Ignore migration errors to prevent crashes
+        }
+    }
     val userAvatarsInMessagePreview =
         addConfig(
             "UserAvatarsInMessagePreview",
@@ -1278,23 +1338,41 @@ object NaConfig {
             ConfigItem.configTypeBool,
             true
         )
-    val switchStyle =
+    var oneUISwitchStyle =
         addConfig(
-            "SwitchStyle",
-            ConfigItem.configTypeInt,
-            0 // 0: default; 1: Modern; 2: MD3
+            "OneUISwitchStyle",
+            ConfigItem.configTypeBool,
+            true
         )
     val sliderStyle =
         addConfig(
             "SliderStyle",
             ConfigItem.configTypeInt,
-            0 // 0: default; 1: Modern; 2: MD3
+            2
         )
     val ignoreUnreadCount =
         addConfig(
             "IgnoreUnreadCount",
             ConfigItem.configTypeInt,
             getIgnoreMutedCountLegacy()
+        )
+    var enableBackButtonMenu =
+        addConfig(
+            "EnableBackButtonMenu",
+            ConfigItem.configTypeBool,
+            true
+        )
+    var showRecentChatsInDrawer =
+        addConfig(
+            "ShowRecentChatsInDrawer",
+            ConfigItem.configTypeBool,
+            true
+        )
+    val useCamera2Api =
+        addConfig(
+            "UseCamera2Api",
+            ConfigItem.configTypeBool,
+            true
         )
     val markdownParser =
         addConfig(
@@ -1307,6 +1385,12 @@ object NaConfig {
             "KeepTranslatorPreferences",
             ConfigItem.configTypeBool,
             false
+        )
+    val showTranslateMessageLLMInMenu =
+        addConfig(
+            "TranslateMessageLLMInMenu",
+            ConfigItem.configTypeBool,
+            true
         )
     val usePinnedReactionsChats =
         addConfig(
@@ -1331,6 +1415,12 @@ object NaConfig {
             "PinnedReactionsChannels",
             ConfigItem.configTypeString,
             "[]"
+        )
+    val squareFloatingActionButton =
+        addConfig(
+            "SquareFloatingActionButton",
+            ConfigItem.configTypeBool,
+            false
         )
     val hideStoriesFromHeader =
         addConfig(
@@ -1390,7 +1480,11 @@ object NaConfig {
             5 -> llmProviderXAIKey
             else -> llmApiKey
         }
-        return keyConfig.String().isNotEmpty()
+        return keyConfig.String().isNotEmpty() && showTranslateMessageLLM.Bool()
+    }
+
+    fun isLLMTranslatorAvailableInMenu(): Boolean {
+        return isLLMTranslatorAvailable() && showTranslateMessageLLMInMenu.Bool()
     }
 
     fun llmIsDefaultProvider(): Boolean {
@@ -1572,6 +1666,7 @@ object NaConfig {
         loadConfig(
             false
         )
+        migrateUpdateChannelSettings()
         updatePreferredTranslateTargetLangList()
         fixConfig()
         if (!BuildVars.LOGS_ENABLED) {

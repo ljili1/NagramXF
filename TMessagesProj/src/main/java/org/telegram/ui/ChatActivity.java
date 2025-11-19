@@ -133,8 +133,6 @@ import androidx.recyclerview.widget.RecyclerView;
 import androidx.viewpager.widget.PagerAdapter;
 import androidx.viewpager.widget.ViewPager;
 
-import tw.nekomimi.nekogram.helpers.TranscribeHelper;
-import tw.nekomimi.nekogram.translate.TranslatorKt;
 import tw.nekomimi.nekogram.ui.components.GroupedIconsView;
 import com.google.android.exoplayer2.ui.AspectRatioFrameLayout;
 import com.google.zxing.common.detector.MathUtils;
@@ -328,6 +326,7 @@ import tw.nekomimi.nekogram.BackButtonMenuRecent;
 import tw.nekomimi.nekogram.NekoConfig;
 import tw.nekomimi.nekogram.helpers.AyuFilter;
 import tw.nekomimi.nekogram.helpers.ChatsHelper;
+import tw.nekomimi.nekogram.helpers.ForceForward;
 import tw.nekomimi.nekogram.helpers.remote.EmojiHelper;
 import tw.nekomimi.nekogram.helpers.remote.PagePreviewRulesHelper;
 import tw.nekomimi.nekogram.menu.copy.CopyPopupWrapper;
@@ -394,13 +393,13 @@ public class ChatActivity extends BaseFragment implements NotificationCenter.Not
     private final static int nkbtn_editPermission = 2020;
     private final static int nkbtn_copy_link_in_pm = 2025;
     private final static int nkbtn_repeatascopy = 2028;
+    private final static int nkbtn_force_forward = 2066;
     private final static int nkbtn_setReminder = 2029;
     private final static int nkbtn_reply_private = 2033;
     private final static int nkbtn_translate_llm = 2034;
     private final static int nkbtn_forward_nocaption = 2035;
     private final static int nkbtn_channelDirectMessage = 2036;
     private final static int nkbtn_translateVoice = 2037;
-    private final static int nkbtn_transcriptionRetry = 2038;
     private final static int nkbtn_clearDeleted = 2100;
 
     public int shareAlertDebugMode = DEBUG_SHARE_ALERT_MODE_NORMAL;
@@ -834,6 +833,7 @@ public class ChatActivity extends BaseFragment implements NotificationCenter.Not
     private CharSequence formwardingNameText;
     public MessageObject forwardingMessage;
     public MessageObject.GroupedMessages forwardingMessageGroup;
+    private ForceForward forceForwardHandler;
     private MessageObject.GroupedMessages replyingQuoteGroup;
     public MessageObject replyingTopMessage;
     private ReplyQuote replyingQuote;
@@ -2750,7 +2750,7 @@ public class ChatActivity extends BaseFragment implements NotificationCenter.Not
                 setQuickReplyId(quickReply.id);
             }
         }
-
+        
         if (chatId != 0) {
             currentChat = getMessagesController().getChat(chatId);
             if (currentChat == null) {
@@ -3033,6 +3033,7 @@ public class ChatActivity extends BaseFragment implements NotificationCenter.Not
         }
 
         super.onFragmentCreate();
+        forceForwardHandler = new ForceForward(this, currentAccount);
 
         if (chatMode == MODE_PINNED) {
             ArrayList<MessageObject> messageObjects = new ArrayList<>();
@@ -4284,24 +4285,25 @@ public class ChatActivity extends BaseFragment implements NotificationCenter.Not
             }
         });
         View backButton = actionBar.getBackButton();
-        backButton.setOnTouchListener(new LongPressListenerWithMovingGesture() {
-            @Override
-            public void onLongPress() {
-                scrimPopupWindow = BackButtonMenu.show(ChatActivity.this, backButton, dialog_id, getTopicId(), themeDelegate);
-                if (scrimPopupWindow != null) {
-                    setSubmenu(scrimPopupWindow);
-                    scrimPopupWindow.setOnDismissListener(() -> {
-                        setSubmenu(null);
-                        scrimPopupWindow = null;
-                        menuDeleteItem = null;
-                        scrimPopupWindowItems = null;
-                        chatLayoutManager.setCanScrollVertically(true);
-                        if (scrimPopupWindowHideDimOnDismiss) {
-                            dimBehindView(false);
-                        } else {
-                            scrimPopupWindowHideDimOnDismiss = true;
-                        }
-                        if (chatActivityEnterView != null && chatActivityEnterView.getEditField() != null) {
+        if (NaConfig.INSTANCE.getEnableBackButtonMenu().Bool()) {
+            backButton.setOnTouchListener(new LongPressListenerWithMovingGesture() {
+                @Override
+                public void onLongPress() {
+                    scrimPopupWindow = BackButtonMenu.show(ChatActivity.this, backButton, dialog_id, getTopicId(), themeDelegate);
+                    if (scrimPopupWindow != null) {
+                        setSubmenu(scrimPopupWindow);
+                        scrimPopupWindow.setOnDismissListener(() -> {
+                            setSubmenu(null);
+                            scrimPopupWindow = null;
+                            menuDeleteItem = null;
+                            scrimPopupWindowItems = null;
+                            chatLayoutManager.setCanScrollVertically(true);
+                            if (scrimPopupWindowHideDimOnDismiss) {
+                                dimBehindView(false);
+                            } else {
+                                scrimPopupWindowHideDimOnDismiss = true;
+                            }
+                            if (chatActivityEnterView != null && chatActivityEnterView.getEditField() != null) {
                             chatActivityEnterView.getEditField().setAllowDrawCursor(true);
                         }
                     });
@@ -4320,7 +4322,8 @@ public class ChatActivity extends BaseFragment implements NotificationCenter.Not
                     }
                 }
             }
-        });
+            });
+        }
         actionBar.setInterceptTouchEventListener((view, motionEvent) -> {
             if (chatThemeBottomSheet != null) {
                 chatThemeBottomSheet.close();
@@ -14272,6 +14275,17 @@ public class ChatActivity extends BaseFragment implements NotificationCenter.Not
         textSelectionHint.show();
     }
 
+    // NagramX: when true, show forward banner and send as copy on send button
+    private boolean isForceForwardPreview = false;
+
+    // NagramX: no confirm now; helper remains for potential reuse
+    public void showForceForwardConfirm(ArrayList<MessageObject> messagesToSend, long targetDialogId) {
+        if (messagesToSend == null || messagesToSend.isEmpty()) return;
+        // no-op: we now use forward banner and send on press
+    }
+
+
+
     public boolean showEmojiHint() {
         if (chatActivityEnterView == null || chatActivityEnterView.getVisibility() != View.VISIBLE) {
             return false;
@@ -15586,7 +15600,15 @@ public class ChatActivity extends BaseFragment implements NotificationCenter.Not
                 if (messagePreviewParams.forwardMessages != null) {
                     messagePreviewParams.forwardMessages.getSelectedMessages(messagesToForward);
                 }
-                forwardMessages(messagesToForward, messagePreviewParams.hideForwardSendersName, messagePreviewParams.hideCaption, notify, scheduleDate != 0 && scheduleDate != 0x7ffffffe ? scheduleDate + 1 : scheduleDate, payStars);
+                if (isForceForwardPreview) {
+                    // run force-forward sending as copies
+                    long targetDid = dialog_id;
+                    isForceForwardPreview = false;
+                    forceForwardHandler.runForceForward(messagesToForward, targetDid, false);
+                    return;
+                } else {
+                    forwardMessages(messagesToForward, messagePreviewParams.hideForwardSendersName, messagePreviewParams.hideCaption, notify, scheduleDate != 0 && scheduleDate != 0x7ffffffe ? scheduleDate + 1 : scheduleDate, payStars);
+                }
             // }
             messagePreviewParams = null;
         }
@@ -32032,8 +32054,8 @@ public class ChatActivity extends BaseFragment implements NotificationCenter.Not
 
         selectedObject = null;
         selectedObjectGroup = null;
-        forwardingMessage = null;
-        forwardingMessageGroup = null;
+        forceForwardHandler.setForwardingMessage(null);
+        forceForwardHandler.setForwardingMessageGroup(null);
         selectedObjectToEditCaption = null;
         for (int a = 1; a >= 0; a--) {
             selectedMessagesCanCopyIds[a].clear();
@@ -34360,17 +34382,46 @@ public class ChatActivity extends BaseFragment implements NotificationCenter.Not
                     messagePreviewParams.setHideForwardSendersName(noForwardQuote);
                     messagePreviewParams.hideCaption = noForwardCaption;
                 }
-                forwardingMessage = selectedObject;
-                forwardingMessageGroup = selectedObjectGroup;
+                // Auto enable force-forward in restricted chats/messages when feature is enabled
+                boolean __autoForceForward = false;
+                if (NaConfig.INSTANCE.getForceForward().Bool()) {
+                    __autoForceForward = (selectedObject != null && selectedObject.messageOwner != null && selectedObject.messageOwner.noforwards)
+                            || (currentChat != null && getMessagesController().isChatNoForwards(currentChat));
+                }
+                forceForwardHandler.setForceForwardMode(__autoForceForward);
+                forceForwardHandler.setForwardingMessage(selectedObject);
+                forceForwardHandler.setForwardingMessageGroup(selectedObjectGroup);
                 Bundle args = new Bundle();
                 args.putBoolean("onlySelect", true);
                 args.putInt("dialogsType", DialogsActivity.DIALOGS_TYPE_FORWARD);
                 args.putInt("messagesCount", 1);
-                args.putInt("hasPoll", forwardingMessage.isTodo() ? 3 : forwardingMessage.isPoll() ? (forwardingMessage.isPublicPoll() ? 2 : 1) : 0);
+                args.putInt("hasPoll", forceForwardHandler.getForwardingMessage().isTodo() ? 3 : forceForwardHandler.getForwardingMessage().isPoll() ? (forceForwardHandler.getForwardingMessage().isPublicPoll() ? 2 : 1) : 0);
                 if (ChatObject.isMonoForum(currentChat) && ChatObject.canManageMonoForum(currentAccount, currentChat) && currentChat.linked_monoforum_id != 0) {
                     args.putLong("forward_into_channel", -currentChat.linked_monoforum_id);
                 }
-                args.putBoolean("hasInvoice", forwardingMessage.isInvoice());
+                args.putBoolean("hasInvoice", forceForwardHandler.getForwardingMessage().isInvoice());
+                args.putBoolean("canSelectTopics", true);
+                DialogsActivity fragment = new DialogsActivity(args);
+                fragment.setDelegate(this);
+                presentFragment(fragment);
+                break;
+            }
+            case nkbtn_force_forward: {
+                // open select dialog like normal forward, but mark force mode
+                if (getMessagesController().isFrozen()) {
+                    AccountFrozenAlert.show(currentAccount);
+                    selectedObject = null;
+                    selectedObjectToEditCaption = null;
+                    selectedObjectGroup = null;
+                    return;
+                }
+                forceForwardHandler.setForceForwardMode(true);
+                forceForwardHandler.setForwardingMessage(selectedObject);
+                forceForwardHandler.setForwardingMessageGroup(selectedObjectGroup);
+                Bundle args = new Bundle();
+                args.putBoolean("onlySelect", true);
+                args.putInt("dialogsType", DialogsActivity.DIALOGS_TYPE_FORWARD);
+                args.putInt("messagesCount", 1);
                 args.putBoolean("canSelectTopics", true);
                 DialogsActivity fragment = new DialogsActivity(args);
                 fragment.setDelegate(this);
@@ -35337,9 +35388,9 @@ public class ChatActivity extends BaseFragment implements NotificationCenter.Not
                         scrimPopupWindowItems = null;
                     }
                     if (option == nkbtn_translateVoice) {
-                        TranscribeButton.retryOrTranslateVoiceTranscription(selectedObject, false, locale);
+                        DialogTransKt.startTrans(getParentActivity(), Objects.toString(selectedObject.getVoiceTranscription(), ""), locale.getLanguage(), NaConfig.INSTANCE.isLLMTranslatorAvailable() ? Translator.providerLLMTranslator : 0);
                     } else {
-                        if (handleTranslateDuringAutoTrans(TranslatorKt.getLocale2code(locale))) {
+                        if (handleTranslateDuringAutoTrans(Translator.getLocale2code(locale))) {
                             return Unit.INSTANCE;
                         }
                         MessageTransKt.translateMessages(this, locale, option == nkbtn_translate ? 0 : Translator.providerLLMTranslator);;
@@ -35375,15 +35426,15 @@ public class ChatActivity extends BaseFragment implements NotificationCenter.Not
 
     @Override
     public boolean didSelectDialogs(DialogsActivity fragment, ArrayList<MessagesStorage.TopicKey> dids, CharSequence message, boolean param, boolean notify, int scheduleDate, TopicsFragment topicsFragment) {
-        if ((messagePreviewParams == null && (!fragment.isQuote || replyingMessageObject == null) || fragment.isQuote && replyingMessageObject == null) && forwardingMessage == null && selectedMessagesIds[0].size() == 0 && selectedMessagesIds[1].size() == 0) {
+        if ((messagePreviewParams == null && (!fragment.isQuote || replyingMessageObject == null) || fragment.isQuote && replyingMessageObject == null) && forceForwardHandler.getForwardingMessage() == null && selectedMessagesIds[0].size() == 0 && selectedMessagesIds[1].size() == 0) {
             return false;
         }
         ArrayList<MessageObject> fmessages = new ArrayList<>();
-        if (forwardingMessage != null) {
-            if (forwardingMessageGroup != null) {
-                fmessages.addAll(forwardingMessageGroup.messages);
+        if (forceForwardHandler.getForwardingMessage() != null) {
+            if (forceForwardHandler.getForwardingMessageGroup() != null) {
+                fmessages.addAll(forceForwardHandler.getForwardingMessageGroup().messages);
             } else {
-                fmessages.add(forwardingMessage);
+                fmessages.add(forceForwardHandler.getForwardingMessage());
             }
         } else {
             for (int a = 1; a >= 0; a--) {
@@ -35401,28 +35452,31 @@ public class ChatActivity extends BaseFragment implements NotificationCenter.Not
                 }
             }
         }
-        for (int j = 0; j < dids.size(); j++) {
-            TLRPC.Chat chat = getMessagesController().getChat(-dids.get(j).dialogId);
-            if (chat != null) {
-                for (int i = 0; i < fmessages.size(); i++) {
-                    int sendError = SendMessagesHelper.canSendMessageToChat(chat, fmessages.get(i));
-                    if (sendError != 0) {
-                        AlertsCreator.showSendMediaAlert(sendError, fragment, null);
-                        return false;
+        // Skip forward-restriction checks in force-forward mode
+        if (!forceForwardHandler.isForceForwardMode()) {
+            for (int j = 0; j < dids.size(); j++) {
+                TLRPC.Chat chat = getMessagesController().getChat(-dids.get(j).dialogId);
+                if (chat != null) {
+                    for (int i = 0; i < fmessages.size(); i++) {
+                        int sendError = SendMessagesHelper.canSendMessageToChat(chat, fmessages.get(i));
+                        if (sendError != 0) {
+                            AlertsCreator.showSendMediaAlert(sendError, fragment, null);
+                            return false;
+                        }
                     }
                 }
             }
         }
 
-        if (!fragment.isQuote && (dids.size() > 1 || dids.get(0).dialogId == getUserConfig().getClientUserId() || message != null || scheduleDate != 0 || !notify)) {
+        if (!forceForwardHandler.isForceForwardMode() && !fragment.isQuote && (dids.size() > 1 || dids.get(0).dialogId == getUserConfig().getClientUserId() || message != null || scheduleDate != 0 || !notify)) {
             return !AlertsCreator.ensurePaidMessagesMultiConfirmationTopicKeys(currentAccount, dids, fmessages.size() + (TextUtils.isEmpty(message) ? 0 : 1), prices -> {
                 if (fragment.resetDelegate) {
                     fragment.setDelegate(null);
                 }
 
-                if (forwardingMessage != null) {
-                    forwardingMessage = null;
-                    forwardingMessageGroup = null;
+                if (forceForwardHandler.getForwardingMessage() != null) {
+                    forceForwardHandler.setForwardingMessage(null);
+                    forceForwardHandler.setForwardingMessageGroup(null);
                 } else {
                     for (int a = 1; a >= 0; a--) {
                         selectedMessagesCanCopyIds[a].clear();
@@ -35470,10 +35524,10 @@ public class ChatActivity extends BaseFragment implements NotificationCenter.Not
                     }
                 }
             });
-        } else {
-            if (forwardingMessage != null) {
-                forwardingMessage = null;
-                forwardingMessageGroup = null;
+        } else if (!forceForwardHandler.isForceForwardMode()) {
+            if (forceForwardHandler.getForwardingMessage() != null) {
+                forceForwardHandler.setForwardingMessage(null);
+                forceForwardHandler.setForwardingMessageGroup(null);
             } else {
                 for (int a = 1; a >= 0; a--) {
                     selectedMessagesCanCopyIds[a].clear();
@@ -35586,6 +35640,82 @@ public class ChatActivity extends BaseFragment implements NotificationCenter.Not
                     keyboardWasVisible = false;
                 }
             }
+        }
+        // Force forward path: support multi-target; for single target open chat and show forward banner (no confirm)
+        if (forceForwardHandler.isForceForwardMode()) {
+            forceForwardHandler.setForceForwardMode(false);
+            // collect messages to send
+            fmessages.clear();
+            if (forceForwardHandler.getForwardingMessage() != null) {
+                if (forceForwardHandler.getForwardingMessageGroup() != null) fmessages.addAll(forceForwardHandler.getForwardingMessageGroup().messages); else fmessages.add(forceForwardHandler.getForwardingMessage());
+                forceForwardHandler.setForwardingMessage(null);
+                forceForwardHandler.setForwardingMessageGroup(null);
+            } else {
+                for (int a = 1; a >= 0; a--) {
+                    for (int i = 0; i < selectedMessagesIds[a].size(); i++) {
+                        fmessages.add(selectedMessagesIds[a].valueAt(i));
+                    }
+                }
+                for (int a = 1; a >= 0; a--) {
+                    selectedMessagesCanCopyIds[a].clear();
+                    selectedMessagesCanStarIds[a].clear();
+                    selectedMessagesIds[a].clear();
+                }
+                hideActionMode();
+                updatePinnedMessageView(true);
+                updateVisibleRows();
+            }
+
+            // 如果多选目标对话，则直接对每个目标发送为副本，不跳转到任一聊天
+            if (dids.size() > 1) {
+                final ArrayList<MessageObject> sendList = new ArrayList<>(fmessages);
+                for (int a = 0; a < dids.size(); a++) {
+                    final long did = dids.get(a).dialogId;
+                    AndroidUtilities.runOnUIThread(() -> forceForwardHandler.runForceForward(sendList, did, false));
+                }
+                if (fragment != null) {
+                    fragment.finishFragment();
+                }
+                createUndoView();
+                if (undoView != null) {
+                    undoView.showWithAction(0, UndoView.ACTION_FWD_MESSAGES, sendList.size(), dids.size(), null, null);
+                }
+                return true;
+            }
+
+            MessagesStorage.TopicKey topicKey = dids.get(0);
+            final long did = topicKey.dialogId;
+
+            if (did != dialog_id || getTopicId() != topicKey.topicId || chatMode == MODE_PINNED) {
+                Bundle args = new Bundle();
+                args.putBoolean("scrollToTopOnResume", scrollToTopOnResume);
+                if (DialogObject.isEncryptedDialog(did)) {
+                    args.putInt("enc_id", DialogObject.getEncryptedChatId(did));
+                } else {
+                    if (DialogObject.isUserDialog(did)) args.putLong("user_id", did); else args.putLong("chat_id", -did);
+                    if (!getMessagesController().checkCanOpenChat(args, fragment)) return true;
+                }
+                addToPulledDialogsMyself();
+                ChatActivity chatActivity = new ChatActivity(args);
+                if (presentFragment(chatActivity, true)) {
+                    chatActivity.isForceForwardPreview = true;
+                    AndroidUtilities.runOnUIThread(() -> chatActivity.showFieldPanelForForward(true, fmessages), 200);
+                    if (chatActivity.getDialogId() == getDialogId() && !AndroidUtilities.isTablet()) {
+                        removeSelfFromStack();
+                    }
+                } else {
+                    fragment.finishFragment();
+                }
+            } else {
+                // 强制转发到原群组时，也显示预览面板保持一致体验
+                scrollToLastMessage(true, false);
+                isForceForwardPreview = true;
+                AndroidUtilities.runOnUIThread(() -> showFieldPanelForForward(true, fmessages), 200);
+                if (fragment != null) {
+                    fragment.finishFragment();
+                }
+            }
+            return true;
         }
         return true;
     }
@@ -45033,8 +45163,8 @@ public class ChatActivity extends BaseFragment implements NotificationCenter.Not
                     messagePreviewParams.setHideForwardSendersName(noForwardQuote);
                     messagePreviewParams.hideCaption = noForwardCaption;
                 }
-                forwardingMessage = selectedObject;
-                forwardingMessageGroup = selectedObjectGroup;
+                forceForwardHandler.setForwardingMessage(selectedObject);
+                forceForwardHandler.setForwardingMessageGroup(selectedObjectGroup);
                 openForward(false);
                 break;
             }
@@ -45111,10 +45241,7 @@ public class ChatActivity extends BaseFragment implements NotificationCenter.Not
                 MessageTransKt.translateMessages(this, id == nkbtn_translate_llm ? Translator.providerLLMTranslator : 0);
                 break;
             case nkbtn_translateVoice:
-                TranscribeButton.retryOrTranslateVoiceTranscription(selectedObject, false, null);
-                break;
-            case nkbtn_transcriptionRetry:
-                TranscribeButton.retryOrTranslateVoiceTranscription(selectedObject, true, null);
+                DialogTransKt.startTrans(getParentActivity(), Objects.toString(selectedObject.getVoiceTranscription(), ""), NekoConfig.translateToLang.String(), NaConfig.INSTANCE.isLLMTranslatorAvailable() ? Translator.providerLLMTranslator : 0);
                 break;
             case nkbtn_detail: {
                 presentFragment(new MessageDetailsActivity(selectedObject, selectedObjectGroup));
@@ -45533,7 +45660,7 @@ public class ChatActivity extends BaseFragment implements NotificationCenter.Not
     }
 
     interface NagramCopyMesage {
-        void run(boolean isCopy);
+        void run(int isCopy);
     }
 
     public void didLongPressLink(ChatMessageCell cell, MessageObject messageObject, CharacterStyle span, String str) {
@@ -45576,7 +45703,7 @@ public class ChatActivity extends BaseFragment implements NotificationCenter.Not
             });
         }
 
-        NagramCopyMesage run1 = (boolean isCopy) -> {
+        NagramCopyMesage run1 = (int isCopy) -> {
             String urlFinal = str;
             if (str.startsWith("video?") && messageObject != null && !messageObject.scheduled) {
                 MessageObject messageObject1 = messageObject;
@@ -45622,7 +45749,7 @@ public class ChatActivity extends BaseFragment implements NotificationCenter.Not
             } else {
                 // AndroidUtilities.addToClipboard(str);
             }
-            if (isCopy) {
+            if (isCopy == 1) {
                 if (isMail) {
                     urlFinal = urlFinal.substring("mailto:".length());
                 }
@@ -45643,13 +45770,16 @@ public class ChatActivity extends BaseFragment implements NotificationCenter.Not
                 Intent shareIntent = new Intent(Intent.ACTION_SEND);
                 shareIntent.setType("text/plain");
                 shareIntent.putExtra(Intent.EXTRA_TEXT, urlFinal);
+                if (isCopy == 2) {
+                    shareIntent.setPackage(ApplicationLoader.applicationContext.getPackageName());
+                }
                 Intent chooserIntent = Intent.createChooser(shareIntent, LocaleController.getString(R.string.ShareFile));
                 chooserIntent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
                 ApplicationLoader.applicationContext.startActivity(chooserIntent);
             }
         };
         options.add(R.drawable.msg_copy, getString(isHashtag ? R.string.CopyHashtag : isMail ? R.string.CopyMail : R.string.CopyLink), () -> {
-            run1.run(true);
+            run1.run(1);
         });
         options.add(R.drawable.msg_qrcode, getString(R.string.ShareQRCode), () -> {
             // QRCode
@@ -45657,7 +45787,11 @@ public class ChatActivity extends BaseFragment implements NotificationCenter.Not
         });
         options.add(R.drawable.msg_shareout, getString(R.string.ShareMessages), () -> {
             // ShareMessage
-            run1.run(false);
+            run1.run(0);
+        });
+        options.add(R.drawable.msg_forward_noquote, getString(R.string.Forward), () -> {
+            // ShareMessage
+            run1.run(2);
         });
 
         dialog.setItemOptions(options);
@@ -46881,6 +47015,14 @@ public class ChatActivity extends BaseFragment implements NotificationCenter.Not
                         icons.add(R.drawable.menu_reply);
                     }
                 }
+
+                // NagramX: Force Forward menu entry (when forwarding restricted and setting enabled)
+                // ForceForward merged into normal Forward automatically when restricted; hide the separate entry
+                // if (NaConfig.INSTANCE.getForceForward().Bool() && (noforwards || (currentChat != null && getMessagesController().isChatNoForwards(currentChat)))) {
+                //     items.add(LocaleController.getString(R.string.ForceForward));
+                //     options.add(nkbtn_force_forward);
+                //     icons.add(R.drawable.msg_forward_noquote);
+                // }
                 if ((selectedObject.type == MessageObject.TYPE_TEXT || selectedObject.isDice() || selectedObject.isAnimatedEmoji() || selectedObject.isAnimatedEmojiStickers() || getMessageCaption(selectedObject, selectedObjectGroup) != null) && !noforwardsOrPaidMedia && !selectedObject.sponsoredCanReport) {
                     allowCopy = true;
                     if (!GroupedIconsView.useGroupedIcons()) {
@@ -46977,11 +47119,6 @@ public class ChatActivity extends BaseFragment implements NotificationCenter.Not
                             items.add(NaConfig.INSTANCE.isLLMTranslatorAvailable() ? getString(R.string.TranslateMessageLLM) : getString(R.string.Translate));
                             options.add(nkbtn_translateVoice);
                             icons.add(NaConfig.INSTANCE.isLLMTranslatorAvailable() ? R.drawable.magic_stick_solar : R.drawable.msg_translate);
-                            if (TranscribeHelper.useTranscribeAI(selectedObject.currentAccount)) {
-                                items.add(getString(R.string.Retry));
-                                options.add(nkbtn_transcriptionRetry);
-                                icons.add(R.drawable.msg_retry);
-                            }
                         }
                     }
                 } else if (type == 3 && !noforwardsOrPaidMedia) {
@@ -47182,7 +47319,7 @@ public class ChatActivity extends BaseFragment implements NotificationCenter.Not
                     }
                 }
                 if (!selectedObject.isSponsored() && chatMode != MODE_QUICK_REPLIES && chatMode != MODE_SCHEDULED && (!selectedObject.needDrawBluredPreview() || selectedObject.hasExtendedMediaPreview()) &&
-                        !selectedObject.isLiveLocation() && selectedObject.type != MessageObject.TYPE_PHONE_CALL && !noforwards &&
+                        !selectedObject.isLiveLocation() && selectedObject.type != MessageObject.TYPE_PHONE_CALL && (!noforwards || NaConfig.INSTANCE.getForceForward().Bool()) &&
                         selectedObject.type != MessageObject.TYPE_GIFT_PREMIUM && selectedObject.type != MessageObject.TYPE_GIFT_PREMIUM_CHANNEL && selectedObject.type != MessageObject.TYPE_SUGGEST_PHOTO && !selectedObject.isWallpaperAction()
                         && !message.isExpiredStory() && message.type != MessageObject.TYPE_STORY_MENTION && message.type != MessageObject.TYPE_GIFT_STARS
                 ) {
@@ -47244,7 +47381,7 @@ public class ChatActivity extends BaseFragment implements NotificationCenter.Not
                         }
                     }
                     boolean showTranslate = NekoConfig.showTranslate.Bool() || (NaConfig.INSTANCE.getShowTranslateMessageLLM().Bool() && NaConfig.INSTANCE.llmIsDefaultProvider());
-                    boolean showTranslateLLM = NaConfig.INSTANCE.getShowTranslateMessageLLM().Bool() && NaConfig.INSTANCE.isLLMTranslatorAvailable() && !NaConfig.INSTANCE.llmIsDefaultProvider();
+                    boolean showTranslateLLM = NaConfig.INSTANCE.getShowTranslateMessageLLM().Bool() && NaConfig.INSTANCE.isLLMTranslatorAvailableInMenu() && !NaConfig.INSTANCE.llmIsDefaultProvider();
                     boolean isTranslatableMessage = !selectedObject.isAnimatedEmoji() && !selectedObject.isDice() && (messageObject != null || docsWithMessages);
                     if ((showTranslate || showTranslateLLM) && isTranslatableMessage) {
                         boolean isLLMDefault = NaConfig.INSTANCE.llmIsDefaultProvider();
@@ -47474,7 +47611,7 @@ public class ChatActivity extends BaseFragment implements NotificationCenter.Not
                     }
                 }
                 boolean showTranslate = NekoConfig.showTranslate.Bool();
-                boolean showTranslateLLM = NaConfig.INSTANCE.getShowTranslateMessageLLM().Bool() && NaConfig.INSTANCE.isLLMTranslatorAvailable() && !NaConfig.INSTANCE.llmIsDefaultProvider();
+                boolean showTranslateLLM = NaConfig.INSTANCE.getShowTranslateMessageLLM().Bool() && NaConfig.INSTANCE.isLLMTranslatorAvailableInMenu() && !NaConfig.INSTANCE.llmIsDefaultProvider();
                 boolean isTranslatingDialog = isTranslatingDialog(selectedObject);
                 if ((showTranslate || showTranslateLLM) && (selectedObject.isOutOwner() || !isTranslatingDialog)) {
                     if (messageObject != null || docsWithMessages) {

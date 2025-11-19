@@ -412,6 +412,9 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         isActive = true;
+        // Reset startup update check flag for new app session
+        hasCheckedUpdateOnStartup = false;
+
         if (BuildVars.DEBUG_VERSION) {
             StrictMode.setVmPolicy(new StrictMode.VmPolicy.Builder(StrictMode.getVmPolicy())
                 .detectLeakedClosableObjects()
@@ -838,6 +841,9 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
                     NotificationCenter.getInstance(UserConfig.selectedAccount).postNotificationName(NotificationCenter.mainUserInfoChanged);
                 } else if (id == DrawerLayoutAdapter.nkbtnSessions) {
                     presentFragment(new SessionsActivity(SessionsActivity.TYPE_DEVICES));
+                    drawerLayoutContainer.closeDrawer(false);
+                } else if (id == DrawerLayoutAdapter.nkbtnChatHistory) {
+                    presentFragment(new tw.nekomimi.nekogram.ChatHistoryActivity());
                     drawerLayoutContainer.closeDrawer(false);
                 }
             }
@@ -6271,11 +6277,32 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
     }
 
     private boolean firstAppUpdateCheck = true;
+    private boolean hasCheckedUpdateOnStartup = false;
+
     public void checkAppUpdate(boolean force, Browser.Progress progress) {
         checkAppUpdate(force, progress, false);
     }
 
+    public void checkAppUpdate(boolean force, Browser.Progress progress, boolean updateAlways, boolean isStartupCheck) {
+        checkAppUpdate(force, progress, updateAlways, isStartupCheck, false);
+    }
+
+    public void checkAppUpdateOnStartup() {
+        // Only check once per app session to avoid multiple popups
+        if (hasCheckedUpdateOnStartup) {
+            return;
+        }
+        hasCheckedUpdateOnStartup = true;
+
+        // No delay - check every startup for better user experience
+        checkAppUpdate(false, null, false, true, true);
+    }
+
     public void checkAppUpdate(boolean force, Browser.Progress progress, boolean updateAlways) {
+        checkAppUpdate(force, progress, updateAlways, false, false);
+    }
+
+    public void checkAppUpdate(boolean force, Browser.Progress progress, boolean updateAlways, boolean isStartupCheck, boolean silentCheck) {
        /*if (!ApplicationLoader.isStandaloneBuild() && !ApplicationLoader.isBetaBuild()) {
            return;
        }
@@ -6303,7 +6330,8 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
             });
             return;
         }
-        if (!force && Math.abs(System.currentTimeMillis() - SharedConfig.lastUpdateCheckTime) < MessagesController.getInstance(0).updateCheckDelay * 1000) {
+        // Skip delay check for startup checks since they have their own 4-hour interval control
+        if (!force && !isStartupCheck && Math.abs(System.currentTimeMillis() - SharedConfig.lastUpdateCheckTime) < MessagesController.getInstance(0).updateCheckDelay * 1000) {
             return;
         }
         final TLRPC.TL_help_getAppUpdate req = new TLRPC.TL_help_getAppUpdate();
@@ -7270,9 +7298,20 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
         if (UserConfig.getInstance(UserConfig.selectedAccount).unacceptedTermsOfService != null) {
             showTosActivity(UserConfig.selectedAccount, UserConfig.getInstance(UserConfig.selectedAccount).unacceptedTermsOfService);
         } else if (SharedConfig.pendingAppUpdate != null && SharedConfig.pendingAppUpdate.can_not_skip) {
-            showUpdateActivity(UserConfig.selectedAccount, SharedConfig.pendingAppUpdate, true);
+            // Additional check: verify that the forced update is still valid
+            // This prevents showing forced update screen after the app has been updated
+            if (SharedConfig.isAppUpdateAvailable()) {
+                showUpdateActivity(UserConfig.selectedAccount, SharedConfig.pendingAppUpdate, true);
+            } else {
+                // Clear invalid pending update
+                SharedConfig.pendingAppUpdate = null;
+                SharedConfig.saveConfig();
+            }
         }
-        checkAppUpdate(false, null);
+        // Check for updates on startup if enabled
+        if (NaConfig.INSTANCE.getCheckUpdateOnStartup().Bool()) {
+            checkAppUpdateOnStartup();
+        }
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
             ApplicationLoader.canDrawOverlays = Settings.canDrawOverlays(this);

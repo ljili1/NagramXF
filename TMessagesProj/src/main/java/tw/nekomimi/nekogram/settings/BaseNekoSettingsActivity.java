@@ -103,6 +103,7 @@ public abstract class BaseNekoSettingsActivity extends BaseFragment {
         actionBar.setDrawBlurBackground(frameLayout);
 
         listView = new BlurredRecyclerView(context);
+        listView.setBackgroundColor(getThemedColor(Theme.key_windowBackgroundGray));
         listView.addOnScrollListener(new RecyclerView.OnScrollListener() {
             @Override
             public void onScrolled(@NonNull RecyclerView recyclerView, int dx, int dy) {

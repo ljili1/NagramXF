@@ -51,7 +51,6 @@
     <string name="ClearDeleted">削除済みをクリア</string>
     <string name="ClearDeletedAlertMessage">このチャット内のすべての削除済みメッセージをクリアしますか？</string>
     <string name="ForwardsRestrictedInfoAyuDeleted">転送は許可されていません。</string>
-    <string name="RegexFiltersNotice">タップして編集。</string>
     <string name="RegexFiltersImport">インポート</string>
     <string name="RegexFiltersExport">エクスポート</string>
     <string name="RegexFiltersImportSuccess">フィルターがインポートされました。</string>

@@ -51,7 +51,6 @@
     <string name="ClearDeleted">Wyczyść usunięte</string>
     <string name="ClearDeletedAlertMessage">Czy na pewno chcesz wyczyścić wszystkie usunięte wiadomości w tym czacie?</string>
     <string name="ForwardsRestrictedInfoAyuDeleted">Przekierowywanie nie jest dozwolone.</string>
-    <string name="RegexFiltersNotice">Kliknij, aby edytować.</string>
     <string name="RegexFiltersImport">Importuj</string>
     <string name="RegexFiltersExport">Eksportuj</string>
     <string name="RegexFiltersImportSuccess">Filtry zaimportowane.</string>

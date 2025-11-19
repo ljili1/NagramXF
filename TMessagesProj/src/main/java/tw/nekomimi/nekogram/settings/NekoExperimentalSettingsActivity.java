@@ -107,12 +107,13 @@ public class NekoExperimentalSettingsActivity extends BaseNekoXSettingsActivity 
             getString(R.string.VideoPlayerDecoderPreferHW),
             getString(R.string.VideoPlayerDecoderPreferSW),
     }, null));
+    private final AbstractConfigCell showRecentChatsRow = cellGroup.appendCell(new ConfigCellTextCheck(NaConfig.INSTANCE.getShowRecentChatsInDrawer()));
     private final AbstractConfigCell dividerExperimental = cellGroup.appendCell(new ConfigCellDivider());
 
     // Ayu
     private final AbstractConfigCell headerAyuMoments = cellGroup.appendCell(new ConfigCellHeader("AyuMoments"));
     private final AbstractConfigCell GhostModeRow = cellGroup.appendCell(new ConfigCellText("GhostMode", () -> presentFragment(new GhostModeActivity())));
-    private final AbstractConfigCell regexFiltersEnabledRow = cellGroup.appendCell(new ConfigCellTextCheck(NaConfig.INSTANCE.getRegexFiltersEnabled(), getString(R.string.RegexFiltersNotice)));
+    private final AbstractConfigCell regexFiltersEnabledRow = cellGroup.appendCell(new ConfigCellText("RegexFilters", () -> presentFragment(new RegexFiltersSettingActivity())));
     private final AbstractConfigCell enableSaveDeletedMessagesRow = cellGroup.appendCell(new ConfigCellTextCheck(NaConfig.INSTANCE.getEnableSaveDeletedMessages()));
     private final AbstractConfigCell enableSaveEditsHistoryRow = cellGroup.appendCell(new ConfigCellTextCheck(NaConfig.INSTANCE.getEnableSaveEditsHistory()));
     private final AbstractConfigCell messageSavingSaveMediaRow = cellGroup.appendCell(new ConfigCellTextCheck(NaConfig.INSTANCE.getMessageSavingSaveMedia(), getString(R.string.MessageSavingSaveMediaHint)));
@@ -137,11 +138,11 @@ public class NekoExperimentalSettingsActivity extends BaseNekoXSettingsActivity 
     private final AbstractConfigCell dividerAyuMoments = cellGroup.appendCell(new ConfigCellDivider());
 
     // N-Config
-    private final AbstractConfigCell headerNConfig = cellGroup.appendCell(new ConfigCellHeader(getString(R.string.N_Config)));
+    private final AbstractConfigCell headerNConfig = cellGroup.appendCell(new ConfigCellHeader(getString(R.string.Nagram)));
     private final AbstractConfigCell forceCopyRow = cellGroup.appendCell(new ConfigCellTextCheck(NaConfig.INSTANCE.getForceCopy()));
+    private final AbstractConfigCell forceForwardRow = cellGroup.appendCell(new ConfigCellTextCheck(NaConfig.INSTANCE.getForceForward()));
     private final AbstractConfigCell disableFlagSecureRow = cellGroup.appendCell(new ConfigCellTextCheck(NaConfig.INSTANCE.getDisableFlagSecure()));
     private final AbstractConfigCell audioEnhanceRow = cellGroup.appendCell(new ConfigCellTextCheck(NaConfig.INSTANCE.getNoiseSuppressAndVoiceEnhance()));
-    private final AbstractConfigCell showRPCErrorRow = cellGroup.appendCell(new ConfigCellTextCheck(NaConfig.INSTANCE.getShowRPCError()));
     private final AbstractConfigCell disableEmojiDrawLimitRow = cellGroup.appendCell(new ConfigCellTextCheck(NaConfig.INSTANCE.getDisableEmojiDrawLimit()));
     private final AbstractConfigCell sendMp4DocumentAsVideoRow = cellGroup.appendCell(new ConfigCellTextCheck(NaConfig.INSTANCE.getSendMp4DocumentAsVideo()));
     private final AbstractConfigCell enhancedVideoBitrateRow = cellGroup.appendCell(new ConfigCellTextCheck(NaConfig.INSTANCE.getEnhancedVideoBitrate()));
@@ -178,6 +179,14 @@ public class NekoExperimentalSettingsActivity extends BaseNekoXSettingsActivity 
         }
         if (!NaConfig.INSTANCE.getSpringAnimation().Bool()) {
             cellGroup.rows.remove(springAnimationCrossfadeRow);
+        }
+        if (!NaConfig.INSTANCE.getEnableSaveDeletedMessages().Bool()) {
+            cellGroup.rows.remove(messageSavingSaveMediaRow);
+            cellGroup.rows.remove(saveDeletedMessageForBotsUserRow);
+            cellGroup.rows.remove(saveDeletedMessageInBotChatRow);
+            cellGroup.rows.remove(translucentDeletedMessagesRow);
+            cellGroup.rows.remove(useDeletedIconRow);
+            cellGroup.rows.remove(customDeletedMarkRow);
         }
         checkStoriesCellRows();
         checkUseDeletedIconRows();
@@ -247,11 +256,7 @@ public class NekoExperimentalSettingsActivity extends BaseNekoXSettingsActivity 
         listView.setOnItemClickListener((view, position, x, y) -> {
             AbstractConfigCell a = cellGroup.rows.get(position);
             if (a instanceof ConfigCellTextCheck) {
-                if (position == cellGroup.rows.indexOf(regexFiltersEnabledRow) && (LocaleController.isRTL && x > AndroidUtilities.dp(76) || !LocaleController.isRTL && x < (view.getMeasuredWidth() - AndroidUtilities.dp(76)))) {
-                    presentFragment(new RegexFiltersSettingActivity());
-                    return;
-                }
-                if (position == cellGroup.rows.indexOf(messageSavingSaveMediaRow) && (LocaleController.isRTL && x > AndroidUtilities.dp(76) || !LocaleController.isRTL && x < (view.getMeasuredWidth() - AndroidUtilities.dp(76)))) {
+                    if (position == cellGroup.rows.indexOf(messageSavingSaveMediaRow) && (LocaleController.isRTL && x > AndroidUtilities.dp(76) || !LocaleController.isRTL && x < (view.getMeasuredWidth() - AndroidUtilities.dp(76)))) {
                     showBottomSheet();
                     return;
                 }

@@ -3981,6 +3981,13 @@ public class Theme {
     public static final int key_chat_BlurAlphaSlow = colorsCount++;
     public static final int key_chat_editMediaButton = colorsCount++;
 
+    /** Cherrygram start */ //
+    public static final int key_alwaysBlack = colorsCount++;
+    public static final int key_alwaysWhite = colorsCount++;
+    public static final int key_alwaysGray = colorsCount++;
+    public static final int key_alwaysGrayDarkTheme = colorsCount++;
+    /** Cherrygram finish */
+
     public static final int key_voipgroup_listSelector = colorsCount++;
     public static final int key_voipgroup_inviteMembersBackground = colorsCount++;
     public static final int key_voipgroup_actionBar = colorsCount++;
@@ -4329,6 +4336,13 @@ public class Theme {
 
     static {
         defaultColors = ThemeColors.createDefaultColors();
+
+        /** Cherrygram start */ 
+        defaultColors[key_alwaysBlack] = 0xff000000;
+        defaultColors[key_alwaysWhite] = 0xffffffff;
+        defaultColors[key_alwaysGray] = 0xffd8d8d8; // OneUI 开关在亮色主题下、关闭状态的轨道颜色
+        defaultColors[key_alwaysGrayDarkTheme] = 0xff545454; // OneUI 开关在暗色主题下、关闭状态的轨道颜色
+        /** Cherrygram finish */
 
         fallbackKeys.put(key_iv_background, key_windowBackgroundWhite);
         fallbackKeys.put(key_iv_backgroundGray, key_windowBackgroundGray);

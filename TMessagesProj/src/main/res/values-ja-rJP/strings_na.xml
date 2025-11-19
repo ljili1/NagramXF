@@ -19,6 +19,8 @@
     <string name="DateOfForwardedMsg">転送メッセージの日付を表示</string>
     <string name="ShowMessageID">メッセージ ID を表示</string>
     <string name="ShowRPCError">RPC エラーを表示</string>
+    <string name="RPCErrorToastEnabled">RPC エラートーストを有効化</string>
+    <string name="RPCErrorToastDisabled">RPC エラートーストを無効化</string>
     <string name="ShowPremiumStickersAnimation">プレミアムステッカーアニメーションを表示</string>
     <string name="AlwaysSaveChatOffset">常にチャットオフセットを保存</string>
     <string name="AppIconColorful">カラフル</string>
@@ -71,6 +73,7 @@
     <string name="DisableClickCommandToSend">ボットコマンドを送信する前に確認</string>
     <string name="DisableDialogsFloatingButton">フローティングボタンを非表示</string>
     <string name="DisableFlagSecure">FLAG_SECURE を無効にする</string>
+    <string name="DisableGlobalSearch">グローバル検索を無効にする</string>
     <string name="CenterActionBarTitleType">タイトルを中央揃えにする</string>
     <string name="ShowQuickReplyInBotCommands">ボットコマンドでクイック返信を表示</string>
     <string name="PushServiceType">通知プッシュサービス</string>

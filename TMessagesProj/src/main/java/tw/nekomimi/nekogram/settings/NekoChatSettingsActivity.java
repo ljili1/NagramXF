@@ -124,11 +124,13 @@ public class NekoChatSettingsActivity extends BaseNekoXSettingsActivity implemen
     private final AbstractConfigCell showMessageIDRow = cellGroup.appendCell(new ConfigCellTextCheck(NaConfig.INSTANCE.getShowMessageID()));
     private final AbstractConfigCell alwaysSaveChatOffsetRow = cellGroup.appendCell(new ConfigCellTextCheck(NaConfig.INSTANCE.getAlwaysSaveChatOffset()));
     private final AbstractConfigCell autoInsertGIFCaptionRow = cellGroup.appendCell(new ConfigCellTextCheck(NaConfig.INSTANCE.getAutoInsertGIFCaption(), getString(R.string.AutoInsertGIFCaptionNotice)));
+    private final AbstractConfigCell disableGlobalSearchRow = cellGroup.appendCell(new ConfigCellTextCheck(NaConfig.INSTANCE.getDisableGlobalSearch()));
     private final AbstractConfigCell disableZalgoSymbolsRow = cellGroup.appendCell(new ConfigCellTextCheck(NaConfig.INSTANCE.getZalgoFilter(), getString(R.string.ZalgoFilterNotice)));
     private final AbstractConfigCell showOnlineStatusRow = cellGroup.appendCell(new ConfigCellTextCheck(NaConfig.INSTANCE.getShowOnlineStatus(), getString(R.string.ShowOnlineStatusNotice)));
     private final AbstractConfigCell dontAutoPlayNextVoiceRow = cellGroup.appendCell(new ConfigCellTextCheck(NaConfig.INSTANCE.getDontAutoPlayNextVoice()));
     private final AbstractConfigCell coloredAdminTitleRow = cellGroup.appendCell(new ConfigCellTextCheck(NaConfig.INSTANCE.getColoredAdminTitle()));
     private final AbstractConfigCell sendHighQualityPhotoRow = cellGroup.appendCell(new ConfigCellTextCheck(NaConfig.INSTANCE.getSendHighQualityPhoto()));
+    private final AbstractConfigCell enableBackButtonMenuRow = cellGroup.appendCell(new ConfigCellTextCheck(NaConfig.INSTANCE.getEnableBackButtonMenu()));
     private final AbstractConfigCell leftButtonActionRow = cellGroup.appendCell(new ConfigCellSelectBox(null, NaConfig.INSTANCE.getLeftBottomButton(), new String[]{
             getString(R.string.NoQuoteForward),
             getString(R.string.Reply),
@@ -196,7 +198,7 @@ public class NekoChatSettingsActivity extends BaseNekoXSettingsActivity implemen
             add(new ConfigCellTextCheckIcon(NekoConfig.showDeleteDownloadedFile, getString(R.string.DeleteDownloadedFile), R.drawable.msg_clear));
             add(new ConfigCellTextCheckIcon(NekoConfig.showViewHistory, getString(R.string.ViewHistory), R.drawable.menu_recent));
             add(new ConfigCellTextCheckIcon(NekoConfig.showTranslate, getString(R.string.Translate), R.drawable.msg_translate));
-            add(new ConfigCellTextCheckIcon(NaConfig.INSTANCE.getShowTranslateMessageLLM(), R.drawable.magic_stick_solar));
+            add(new ConfigCellTextCheckIcon(NaConfig.INSTANCE.getShowTranslateMessageLLMInMenu(), getString(R.string.TranslateMessageLLM), R.drawable.magic_stick_solar));
             add(new ConfigCellTextCheckIcon(NekoConfig.showShareMessages, getString(R.string.ShareMessages), R.drawable.msg_shareout));
             add(new ConfigCellTextCheckIcon(NekoConfig.showMessageHide, getString(R.string.Hide), R.drawable.msg_disable));
             add(new ConfigCellTextCheckIcon(NekoConfig.showReport, getString(R.string.ReportChat), R.drawable.msg_report));
@@ -473,8 +475,11 @@ public class NekoChatSettingsActivity extends BaseNekoXSettingsActivity implemen
         if (NaConfig.INSTANCE.getUseEditedIcon().Bool()) {
             cellGroup.rows.remove(customEditedMessageRow);
         }
-        if (NaConfig.INSTANCE.getTranscribeProvider().Int() != TranscribeHelper.TRANSCRIBE_OPENAI) {
-            cellGroup.rows.remove(transcribeProviderOpenAiRow);
+        if (NaConfig.INSTANCE.getConfirmAllLinks().Bool()) {
+            cellGroup.rows.remove(skipOpenLinkConfirmRow);
+        }
+        if (!NekoConfig.labelChannelUser.Bool()) {
+            cellGroup.rows.remove(channelAliasRow);
         }
         if (!BuildVars.LOGS_ENABLED) {
             cellGroup.rows.remove(markdownParserRow);
@@ -653,11 +658,33 @@ public class NekoChatSettingsActivity extends BaseNekoXSettingsActivity implemen
             } else if (key.equals(NekoConfig.showSeconds.getKey())) {
                 tooltip.showWithAction(0, UndoView.ACTION_NEED_RESTART, null, null);
             } else if (key.equals(NaConfig.INSTANCE.getConfirmAllLinks().getKey())) {
-                setCanNotChange();
-                listAdapter.notifyItemChanged(cellGroup.rows.indexOf(skipOpenLinkConfirmRow));
+                if ((boolean) newValue) {
+                    if (cellGroup.rows.contains(skipOpenLinkConfirmRow)) {
+                        final int index = cellGroup.rows.indexOf(skipOpenLinkConfirmRow);
+                        cellGroup.rows.remove(skipOpenLinkConfirmRow);
+                        listAdapter.notifyItemRemoved(index);
+                    }
+                } else {
+                    if (!cellGroup.rows.contains(skipOpenLinkConfirmRow)) {
+                        final int index = cellGroup.rows.indexOf(confirmAllLinksRow) - 1;
+                        cellGroup.rows.add(index, skipOpenLinkConfirmRow);
+                        listAdapter.notifyItemInserted(index);
+                    }
+                }
             } else if (key.equals(NekoConfig.labelChannelUser.getKey())) {
-                setCanNotChange();
-                listAdapter.notifyItemChanged(cellGroup.rows.indexOf(channelAliasRow));
+                if (!(boolean) newValue) {
+                    if (cellGroup.rows.contains(channelAliasRow)) {
+                        final int index = cellGroup.rows.indexOf(channelAliasRow);
+                        cellGroup.rows.remove(channelAliasRow);
+                        listAdapter.notifyItemRemoved(index);
+                    }
+                } else {
+                    if (!cellGroup.rows.contains(channelAliasRow)) {
+                        final int index = cellGroup.rows.indexOf(labelChannelUserRow) + 1;
+                        cellGroup.rows.add(index, channelAliasRow);
+                        listAdapter.notifyItemInserted(index);
+                    }
+                }
             } else if (key.equals(NaConfig.INSTANCE.getUseEditedIcon().getKey())) {
                 if ((boolean) newValue) {
                     if (cellGroup.rows.contains(customEditedMessageRow)) {
@@ -682,20 +709,6 @@ public class NekoChatSettingsActivity extends BaseNekoXSettingsActivity implemen
                 stickerSizeCell.invalidate();
             } else if (key.equals(NaConfig.INSTANCE.getPremiumItemCustomColorInReplies().getKey())) {
                 stickerSizeCell.invalidate();
-            } else if (key.equals(NaConfig.INSTANCE.getTranscribeProvider().getKey())) {
-                if ((int) newValue == TranscribeHelper.TRANSCRIBE_OPENAI) {
-                    if (!cellGroup.rows.contains(transcribeProviderOpenAiRow)) {
-                        final int index = cellGroup.rows.indexOf(transcribeProviderGeminiApiKeyRow) + 1;
-                        cellGroup.rows.add(index, transcribeProviderOpenAiRow);
-                        listAdapter.notifyItemInserted(index);
-                    }
-                } else {
-                    if (cellGroup.rows.contains(transcribeProviderOpenAiRow)) {
-                        final int index = cellGroup.rows.indexOf(transcribeProviderOpenAiRow);
-                        cellGroup.rows.remove(transcribeProviderOpenAiRow);
-                        listAdapter.notifyItemRemoved(index);
-                    }
-                }
             } else if (key.equals("PremiumElements")) {
                 addRowsToMap(cellGroup);
             }
@@ -986,12 +999,5 @@ public class NekoChatSettingsActivity extends BaseNekoXSettingsActivity implemen
     }
 
     private void setCanNotChange() {
-        boolean enabled;
-
-        enabled = NaConfig.INSTANCE.getConfirmAllLinks().Bool();
-        ((ConfigCellTextCheck) skipOpenLinkConfirmRow).setEnabled(!enabled);
-
-        enabled = NekoConfig.labelChannelUser.Bool();
-        ((ConfigCellTextCheck) channelAliasRow).setEnabled(enabled);
     }
 }

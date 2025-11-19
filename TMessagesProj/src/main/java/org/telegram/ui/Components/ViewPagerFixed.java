@@ -2130,6 +2130,10 @@ public class ViewPagerFixed extends FrameLayout {
         }
 
         public void selectTabWithId(int id, float progress) {
+            selectTabWithId(id, progress, true);
+        }
+
+        public void selectTabWithId(int id, float progress, boolean withScrollAnimation) {
             int position = idToPosition.get(id, -1);
             if (position < 0) {
                 return;
@@ -2150,7 +2154,12 @@ public class ViewPagerFixed extends FrameLayout {
             animatingIndicatorProgress = progress;
             listView.invalidateViews();
             invalidate();
-            scrollToChild(position);
+            if (withScrollAnimation) {
+                scrollToChild(position);
+            } else {
+                // Directly scroll to position without animation
+                listView.scrollToPosition(position);
+            }
 
             if (progress >= 1.0f) {
                 manualScrollingToPosition = -1;

@@ -43,7 +43,7 @@
     <string name="CustomEditedMessage">آیکون پیام ویرایش شده سفارشی</string>
     <string name="DisableEmojiDrawLimit">رفع محدودیت نوشتن ایموجی</string>
     <string name="IconDecoration">تزئین آیکون‌ها</string>
-    <string name="NotificationIcon">ﺁﻳﮑﻮﻥ ﺍﻋﻼﻥ‌ها</string>
+    <string name="NotificationIcon">ﺁﻳﮑﻮﻥ ﺍﻹﺍﻹ</string>
     <string name="Official">رسمی</string>
     <string name="HalloWeen">هالوين</string>
     <string name="ShowOnlineStatus">نمایش وضعیت آنلاین</string>
@@ -71,6 +71,7 @@
     <string name="DisableClickCommandToSend">اجازه گرفتن قبل از ارسال دستور به ربات</string>
     <string name="DisableDialogsFloatingButton">مخفی کردن دکمه شناور</string>
     <string name="DisableFlagSecure">غیرفعال کردن FLAG_SECURE</string>
+    <string name="DisableGlobalSearch">غیرفعال کردن جستجوی سراسری</string>
     <string name="CenterActionBarTitleType">نمایش عنوان به‌صورت وسط‌چین</string>
     <string name="ShowQuickReplyInBotCommands">نمایش پاسخ سریع در دستورهای ربات</string>
     <string name="PushServiceType">نوع سرویس اعلان</string>
@@ -113,4 +114,6 @@
     <string name="VideoPlayerDecoderPreferSW">ترجیح دادن SW</string>
     <string name="VideoPlayerDecoderHardware">فقط HW</string>
     <string name="VideoPlayerDecoderPreferHW">ترجیح دادن HW</string>
+    <string name="RPCErrorToastEnabled">فعال‌سازی اعلان خطای RPC</string>
+    <string name="RPCErrorToastDisabled">غیرفعال‌سازی اعلان خطای RPC</string>
 </resources>

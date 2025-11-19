@@ -51,7 +51,6 @@
     <string name="ClearDeleted">Очистити видалені</string>
     <string name="ClearDeletedAlertMessage">Ви дійсно хочете очистити всі видалені повідомлення в цьому чаті?</string>
     <string name="ForwardsRestrictedInfoAyuDeleted">Пересилка заборона.</string>
-    <string name="RegexFiltersNotice">Натисніть для Редагування.</string>
     <string name="RegexFiltersImport">Імпорт</string>
     <string name="RegexFiltersExport">Експорт</string>
     <string name="RegexFiltersImportSuccess">Фільтри імпортовано.</string>
@@ -247,7 +246,6 @@
     <string name="PinnedReactions_Apply">Оновити закріплені реакції</string>
     <string name="HideStoriesFromHeader">Приховати з заголовка</string>
     <string name="DisableAvatarBlur">Вимкнути розмиття аватара</string>
-    <string name="ExportSettingsIncludeApiKeys">Включити ключі API</string>
     <string name="DisableInAppBrowserGestures">Вимкнути жести</string>
     <string name="HowToObtain">Як отримати?</string>
 </resources>

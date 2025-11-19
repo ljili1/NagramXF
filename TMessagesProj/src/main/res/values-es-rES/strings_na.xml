@@ -19,6 +19,8 @@
     <string name="DateOfForwardedMsg">Mostrar fecha en los mensajes reenviados</string>
     <string name="ShowMessageID">Mostrar ID del mensaje</string>
     <string name="ShowRPCError">Errores RPC Toast</string>
+    <string name="RPCErrorToastEnabled">Notificaciones de error RPC activadas</string>
+    <string name="RPCErrorToastDisabled">Notificaciones de error RPC desactivadas</string>
     <string name="ShowPremiumStickersAnimation">Mostrar Animación de Stickers Premium</string>
     <string name="AlwaysSaveChatOffset">Guardar siempre el Desplazamiento de Chat</string>
     <string name="AppIconColorful">Colorido</string>
@@ -71,6 +73,7 @@
     <string name="DisableClickCommandToSend">Preguntar antes de enviar un comando al bot</string>
     <string name="DisableDialogsFloatingButton">Ocultar botón flotante</string>
     <string name="DisableFlagSecure">Desactivar FLAG_SECURE</string>
+    <string name="DisableGlobalSearch">Desactivar búsqueda global</string>
     <string name="CenterActionBarTitleType">Usar título centrado</string>
     <string name="ShowQuickReplyInBotCommands">Mostrar respuesta rápida en los comandos del bot</string>
     <string name="PushServiceType">Tipo de servicio Push</string>

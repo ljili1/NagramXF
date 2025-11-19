@@ -32,6 +32,7 @@ import android.text.TextPaint;
 import android.text.TextUtils;
 import android.util.Property;
 import android.util.SparseIntArray;
+import android.view.Gravity;
 import android.view.HapticFeedbackConstants;
 import android.view.View;
 import android.view.ViewGroup;
@@ -60,6 +61,9 @@ import org.telegram.messenger.Utilities;
 import org.telegram.tgnet.ConnectionsManager;
 import org.telegram.tgnet.TLRPC;
 import org.telegram.ui.ActionBar.Theme;
+import org.telegram.ui.Components.SizeNotifierFrameLayout;
+import org.telegram.ui.Components.SnowflakesEffect;
+import org.telegram.ui.Components.FireworksEffect;
 import org.telegram.ui.Stories.recorder.HintView2;
 
 import java.util.ArrayList;
@@ -67,6 +71,7 @@ import java.util.ArrayList;
 import tw.nekomimi.nekogram.NekoConfig;
 import tw.nekomimi.nekogram.NekoXConfig;
 import tw.nekomimi.nekogram.folder.FolderIconHelper;
+import tw.nekomimi.nekogram.ui.GlobalSearchView;
 import xyz.nextalone.nagram.NaConfig;
 import xyz.nextalone.nagram.TabStyle;
 
@@ -994,6 +999,7 @@ public class FilterTabsView extends FrameLayout {
     public FilterTabsView(Context context, Theme.ResourcesProvider resourcesProvider) {
         super(context);
         this.resourcesProvider = resourcesProvider;
+        setWillNotDraw(false);
         textCounterPaint.setTextSize(AndroidUtilities.dp(13));
         textCounterPaint.setTypeface(AndroidUtilities.bold());
         textPaint.setTextSize(AndroidUtilities.dp(15));
@@ -1222,7 +1228,40 @@ public class FilterTabsView extends FrameLayout {
                 invalidate();
             }
         });
-        addView(listView, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT));
+
+        // Initialize GlobalSearchView for iOS search panel
+        globalSearchView = new GlobalSearchView(context, new SizeNotifierFrameLayout(context));
+        globalSearchView.getSearchFrame().setOnClickListener(v -> {
+            if (searchClickListener != null) {
+                searchClickListener.run();
+            }
+        });
+        boolean iosPanel = NaConfig.INSTANCE.getIosSearchPanel().Bool();
+        boolean hasFolders = MessagesController.getInstance(UserConfig.selectedAccount).getDialogFilters() != null && MessagesController.getInstance(UserConfig.selectedAccount).getDialogFilters().size() > 1;
+        boolean showSearchBar = iosPanel && hasFolders;
+        globalSearchView.setVisibility(showSearchBar ? View.VISIBLE : View.GONE);
+        addView(globalSearchView, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, 42, Gravity.TOP, 0, 0, 0, 0));
+
+        // If filters likely not loaded yet at first launch, add top margin preemptively to prevent overlap.
+        int initialTopMargin = iosPanel ? AndroidUtilities.dp(42) : 0;
+        addView(listView, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT, Gravity.TOP, 0, showSearchBar ? 42 : initialTopMargin, 0, 0));
+    }
+
+    public void setGlobalSearchVisible(boolean visible) {
+        if (globalSearchView != null) {
+            globalSearchView.setVisibility(visible ? View.VISIBLE : View.GONE);
+        }
+        ViewGroup.LayoutParams lp = listView.getLayoutParams();
+        if (lp instanceof FrameLayout.LayoutParams) {
+            FrameLayout.LayoutParams flp = (FrameLayout.LayoutParams) lp;
+            int top = visible ? AndroidUtilities.dp(42) : 0;
+            if (flp.topMargin != top) {
+                flp.topMargin = top;
+                listView.setLayoutParams(flp);
+            }
+        }
+        requestLayout();
+        invalidate();
     }
 
     public void setDelegate(FilterTabsViewDelegate filterTabsViewDelegate) {
@@ -1522,8 +1561,16 @@ public class FilterTabsView extends FrameLayout {
                 float rtpRad = 0;
                 if (customTabStyle >= TabStyle.PILLS.getValue()) {
                     inlinePadding = AndroidUtilities.dp(10);
-                    topBound = height / 2 - AndroidUtilities.dp(15);
-                    bottomBound = height / 2 + AndroidUtilities.dp(15);
+                    int searchPanelHeight = getTabsHeight();
+                    if (searchPanelHeight > 0) {
+                        int tabAreaHeight = height - searchPanelHeight;
+                        int tabCenterY = searchPanelHeight + tabAreaHeight / 2 + AndroidUtilities.dp(10);
+                        topBound = tabCenterY - AndroidUtilities.dp(15);
+                        bottomBound = tabCenterY + AndroidUtilities.dp(15);
+                    } else {
+                        topBound = height / 2 - AndroidUtilities.dp(15);
+                        bottomBound = height / 2 + AndroidUtilities.dp(15);
+                    }
                     selectorDrawable.setColor(ColorUtils.setAlphaComponent(Theme.getColor(tabLineColorKey), 50));
                 } else {
                     selectorDrawable.setColor(Theme.getColor(tabLineColorKey));
@@ -1624,6 +1671,7 @@ public class FilterTabsView extends FrameLayout {
             updateTabsWidths();
             invalidated = false;
         }
+
         super.onMeasure(widthMeasureSpec, heightMeasureSpec);
     }
 
@@ -1642,6 +1690,47 @@ public class FilterTabsView extends FrameLayout {
             return;
         }
         super.requestLayout();
+    }
+
+    @Override
+    protected void onDraw(Canvas canvas) {
+        super.onDraw(canvas);
+        checkDecorationEffects(canvas);
+    }
+
+    private void checkDecorationEffects(Canvas canvas) {
+        int decorationType = NekoConfig.actionBarDecoration.Int();
+
+        if (decorationType == 3) {
+            return;
+        }
+
+        boolean shouldShowDecoration = false;
+        if (decorationType == 0) {
+            shouldShowDecoration = NekoConfig.newYear.Bool();
+            if (shouldShowDecoration) {
+                if (snowflakesEffect == null) {
+                    snowflakesEffect = new SnowflakesEffect(0);
+                }
+                snowflakesEffect.onDraw(this, canvas);
+            }
+        } else if (decorationType == 1) {
+            shouldShowDecoration = true;
+            if (snowflakesEffect == null) {
+                snowflakesEffect = new SnowflakesEffect(0);
+            }
+            snowflakesEffect.onDraw(this, canvas);
+        } else if (decorationType == 2) {
+            shouldShowDecoration = true;
+            if (fireworksEffect == null) {
+                fireworksEffect = new FireworksEffect();
+            }
+            fireworksEffect.onDraw(this, canvas);
+        }
+
+        if (shouldShowDecoration) {
+            postInvalidateDelayed(16); 
+        }
     }
 
     private void scrollToChild(int position) {
@@ -2130,5 +2219,56 @@ public class FilterTabsView extends FrameLayout {
             }
         }
         finishAddingTabs(true);
+    }
+
+    // iOS Search Panel support
+    private GlobalSearchView globalSearchView;
+    private Runnable searchClickListener;
+
+    // Decoration effects
+    private SnowflakesEffect snowflakesEffect;
+    private FireworksEffect fireworksEffect;
+
+    private int getTabsHeight() {
+        return NaConfig.INSTANCE.getIosSearchPanel().Bool() ? AndroidUtilities.dp(22) : 0;
+    }
+
+    public void setSearchClickListener(Runnable listener) {
+        this.searchClickListener = listener;
+    }
+
+    public GlobalSearchView getGlobalSearchView() {
+        return globalSearchView;
+    }
+
+    public void updateSearchPanelVisibility() {
+        if (globalSearchView != null && listView != null) {
+            boolean showSearchPanel = NaConfig.INSTANCE.getIosSearchPanel().Bool();
+            globalSearchView.setVisibility(showSearchPanel ? View.VISIBLE : View.GONE);
+
+            // Update listView layout parameters
+            FrameLayout.LayoutParams listViewParams = (FrameLayout.LayoutParams) listView.getLayoutParams();
+            listViewParams.topMargin = showSearchPanel ? AndroidUtilities.dp(42) : 0;
+            listViewParams.bottomMargin = 0;
+            listView.setLayoutParams(listViewParams);
+
+            requestLayout();
+        }
+    }
+
+    @Override
+    protected void onAttachedToWindow() {
+        super.onAttachedToWindow();
+    }
+
+    @Override
+    protected void onDetachedFromWindow() {
+        super.onDetachedFromWindow();
+        if (snowflakesEffect != null) {
+            snowflakesEffect = null;
+        }
+        if (fireworksEffect != null) {
+            fireworksEffect = null;
+        }
     }
 }

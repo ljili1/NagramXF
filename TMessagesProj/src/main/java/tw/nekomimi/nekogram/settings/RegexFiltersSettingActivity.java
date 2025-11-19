@@ -57,6 +57,7 @@ import xyz.nextalone.nagram.NaConfig;
 public class RegexFiltersSettingActivity extends BaseNekoSettingsActivity {
 
     private final long dialogId;
+    private int regexFiltersEnabledRow;
     private int filtersOptionHeaderRow;
     private int regexFiltersEnableInChatsRow;
     private int ignoreBlockedRow;
@@ -81,6 +82,7 @@ public class RegexFiltersSettingActivity extends BaseNekoSettingsActivity {
         super.updateRows();
 
         filtersOptionHeaderRow = rowCount++;
+        regexFiltersEnabledRow = rowCount++;
         regexFiltersEnableInChatsRow = rowCount++;
         ignoreBlockedRow = rowCount++;
         filtersOptionDividerRow = rowCount++;
@@ -299,7 +301,12 @@ public class RegexFiltersSettingActivity extends BaseNekoSettingsActivity {
 
     @Override
     protected void onItemClick(View view, int position, float x, float y) {
-        if (position == regexFiltersEnableInChatsRow) {
+        if (position == regexFiltersEnabledRow) {
+            TextCheckCell cell = (TextCheckCell) view;
+            boolean enabled = !cell.isChecked();
+            cell.setChecked(enabled);
+            NaConfig.INSTANCE.getRegexFiltersEnabled().setConfigBool(enabled);
+        } else if (position == regexFiltersEnableInChatsRow) {
             TextCheckCell cell = (TextCheckCell) view;
             boolean enabled = !cell.isChecked();
             cell.setChecked(enabled);
@@ -434,7 +441,9 @@ public class RegexFiltersSettingActivity extends BaseNekoSettingsActivity {
                     break;
                 case TYPE_CHECK:
                     TextCheckCell textCheckCell = (TextCheckCell) holder.itemView;
-                    if (position == regexFiltersEnableInChatsRow) {
+                    if (position == regexFiltersEnabledRow) {
+                        textCheckCell.setTextAndCheck(getString(R.string.RegexFiltersEnable), NaConfig.INSTANCE.getRegexFiltersEnabled().Bool(), true);
+                    } else if (position == regexFiltersEnableInChatsRow) {
                         textCheckCell.setTextAndCheck(getString(R.string.RegexFiltersEnableInChats), NaConfig.INSTANCE.getRegexFiltersEnableInChats().Bool(), true);
                     } else if (position == ignoreBlockedRow) {
                         textCheckCell.setTextAndCheck(getString(R.string.IgnoreBlocked), NekoConfig.ignoreBlocked.Bool(), true);

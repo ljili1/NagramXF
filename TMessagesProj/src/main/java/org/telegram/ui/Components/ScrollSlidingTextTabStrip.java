@@ -844,7 +844,7 @@ public class ScrollSlidingTextTabStrip extends HorizontalScrollView {
                 child.setTag(unactiveTextColorKey);
                 nextChild.setTag(activeTextColorKey);
             }
-            scrollToChild(tabsContainer.indexOfChild(nextChild), true);
+            scrollToChild(tabsContainer.indexOfChild(nextChild), force);
         }
         if (progress >= 1.0f) {
             currentPosition = position;

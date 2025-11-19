@@ -67,7 +67,7 @@ public class BlockingUpdateView extends FrameLayout implements NotificationCente
         addView(view, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, AndroidUtilities.dp(176) + (Build.VERSION.SDK_INT >= 21 ? AndroidUtilities.statusBarHeight : 0)));
 
         ImageView imageView = new ImageView(context);
-        imageView.setImageResource(R.mipmap.ic_launcher_nagram_blue);
+        imageView.setImageResource(R.mipmap.ic_launcher_nagram_dark_blue);
         imageView.setScaleType(ImageView.ScaleType.CENTER);
         imageView.setPadding(0, 0, 0, AndroidUtilities.dp(14));
         view.addView(imageView, LayoutHelper.createFrame(LayoutHelper.WRAP_CONTENT, LayoutHelper.WRAP_CONTENT, Gravity.CENTER, 0, top, 0, 0));
@@ -300,6 +300,12 @@ public class BlockingUpdateView extends FrameLayout implements NotificationCente
                         SharedConfig.pendingAppUpdate = null;
                         SharedConfig.saveConfig();
                     }
+                } else {
+                    // If no update is available from server, clear any pending forced update
+                    // This handles the case where the app was updated but the forced update flag persists
+                    setVisibility(GONE);
+                    SharedConfig.pendingAppUpdate = null;
+                    SharedConfig.saveConfig();
                 }
             }));
         }

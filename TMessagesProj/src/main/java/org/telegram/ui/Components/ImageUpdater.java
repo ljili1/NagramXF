@@ -290,10 +290,6 @@ public class ImageUpdater implements NotificationCenter.NotificationCenterDelega
 
         items.add(LocaleController.getString(R.string.ChooseFromGallery));
         icons.add(R.drawable.msg_photos);
-        ids.add(ID_UPLOAD_FROM_GALLERY);
-
-        items.add(LocaleController.getString(R.string.ChooseFromGallery));
-        icons.add(R.drawable.msg_photos);
         ids.add(ID_OPEN_ATTACH);
 
         items.add(LocaleController.getString(R.string.ChooseTakePhoto));
@@ -341,9 +337,7 @@ public class ImageUpdater implements NotificationCenter.NotificationCenterDelega
                 case ID_TAKE_PHOTO:
                     openCamera();
                     break;
-                case ID_UPLOAD_FROM_GALLERY:
-                    openGallery();
-                    break;
+
                 case ID_SEARCH_WEB:
                     openSearch();
                     break;

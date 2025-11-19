@@ -42,10 +42,16 @@ public class ConfigItem {
     // 读配置
 
     public boolean Bool() {
+        if (value == null) {
+            return (boolean) defaultValue;
+        }
         return (boolean) value;
     }
 
     public int Int() {
+        if (value == null) {
+            return (int) defaultValue;
+        }
         return (int) value;
     }
 

@@ -19,6 +19,8 @@
     <string name="DateOfForwardedMsg">Mostrar Data nas Mensagens Encaminhadas</string>
     <string name="ShowMessageID">Mostrar ID da Mensagem</string>
     <string name="ShowRPCError">Erros de RPC do Toast</string>
+    <string name="RPCErrorToastEnabled">Notificações de erro RPC ativadas</string>
+    <string name="RPCErrorToastDisabled">Notificações de erro RPC desativadas</string>
     <string name="ShowPremiumStickersAnimation">Mostrar Animação de Stickers Premium</string>
     <string name="AlwaysSaveChatOffset">Sempre salvar o deslocamento do chat</string>
     <string name="AppIconColorful">Colorido</string>

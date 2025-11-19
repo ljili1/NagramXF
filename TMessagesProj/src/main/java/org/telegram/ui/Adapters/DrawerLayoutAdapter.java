@@ -62,7 +62,8 @@ public class DrawerLayoutAdapter extends RecyclerListView.SelectionAdapter imple
     public static int nkbtnRestartApp = 1004;
     public static int nkbtnBrowser = 1005;
     public static int nkbtnGhostMode = 1006;
-    public static int nkbtnSessions = 1007;
+    public static int nkbtnChatHistory = 1007;
+    public static int nkbtnSessions = 1008;
 
     public DrawerLayoutAdapter(Context context, SideMenultItemAnimator animator, DrawerLayoutContainer drawerLayoutContainer) {
         mContext = context;
@@ -399,6 +400,7 @@ public class DrawerLayoutAdapter extends RecyclerListView.SelectionAdapter imple
         if (NaConfig.INSTANCE.getDrawerItemContacts().Bool()) items.add(new Item(6, LocaleController.getString(R.string.Contacts), contactsIcon));
         if (NaConfig.INSTANCE.getDrawerItemCalls().Bool()) items.add(new Item(10, LocaleController.getString(R.string.Calls), callsIcon));
         if (NaConfig.INSTANCE.getDrawerItemSaved().Bool()) items.add(new Item(11, LocaleController.getString(R.string.SavedMessages), savedIcon));
+        if (NaConfig.INSTANCE.getShowRecentChatsInDrawer().Bool()) items.add(new Item(nkbtnChatHistory, LocaleController.getString(R.string.RecentChats), R.drawable.msg_recent_solar));
         if (NaConfig.INSTANCE.getDrawerItemSettings().Bool()) items.add(new Item(8, LocaleController.getString(R.string.Settings), settingsIcon));
 //        items.add(null); // divider
 //        items.add(new Item(7, LocaleController.getString(R.string.InviteFriends), inviteIcon));

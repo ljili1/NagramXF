@@ -1,6 +1,17 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="NagramX" translatable="false">Nagram X</string>
+    <string name="NagranX_About">About NagramX</string>
+    <string name="NagranX_About_Desc">Updates, source code and more</string>
+    <string name="NagramX_Links">Link</string>
+    <string name="NagramX_Info">lnfo</string> 
+    <string name="Updates">Updates</string>
+    <string name="OneUISwitchStyle">OneUI Switch Style</string>
+    <string name="IosSearchPanel">iOS Search Panel</string>
+    <string name="EnableBackButtonMenu">Back Button Quick Navigation</string>
+    <string name="ForceForward">Force Forward</string>
+    <string name="SquareFloatingActionButton">Square Floating Button</string>
+    <string name="Fork">Fork Channel</string>
     <string name="XChannel">Nagram X Channel</string>
     <string name="EnableSaveDeletedMessages">Save Deleted Messages</string>
     <string name="DeletedMessage">deleted</string>
@@ -26,7 +37,7 @@
     <string name="LlmProviderGeminiModel" translatable="false">gemini-flash-lite-latest</string>
     <string name="LlmProviderGroqModel" translatable="false">meta-llama/llama-4-maverick-17b-128e-instruct</string>
     <string name="LlmProviderDeepSeekModel" translatable="false">deepseek-chat</string>
-    <string name="LlmProviderXAIModel" translatable="false">grok-4-fast-non-reasoning</string>
+    <string name="LlmProviderXAIModel" translatable="false">grok-4</string>
     <string name="LlmProviderPreset">Model Provider</string>
     <string name="LlmProviderCustom">Custom</string>
     <string name="LlmProviderOpenAIKey">OpenAI API Key</string>
@@ -59,7 +70,6 @@
     <string name="ClearDeleted">Clear Deleted</string>
     <string name="ClearDeletedAlertMessage">Are you sure you want to clear all deleted messages in this chat?</string>
     <string name="ForwardsRestrictedInfoAyuDeleted">Forwarding is not allowed.</string>
-    <string name="RegexFiltersNotice">Tap to edit.</string>
     <string name="RegexFiltersImport">Import</string>
     <string name="RegexFiltersExport">Export</string>
     <string name="RegexFiltersImportSuccess">Filters imported.</string>
@@ -165,6 +175,9 @@
     <string name="uploadBoost">Upload Speed Boost</string>
     <string name="HideDividers">Hide Dividers</string>
     <string name="IconReplacements">Icon Replacements</string>
+    <string name="SliderStyle">Slider Style</string>
+    <string name="SliderStyleModern">Modern</string>
+    <string name="SliderStyleMD3">Material Design 3</string>
     <string name="IconReplacementSolar">Solar Icons by @Design480</string>
     <string name="DebugMenuEnableInvoicePayment">Enable Invoice Payment</string>
     <string name="DebugMenuDisableInvoicePayment">Disable Invoice Payment</string>
@@ -227,15 +240,16 @@
     <string name="PremiumItemCustomWallpaper">Custom Wallpapers</string>
     <string name="TranslationTargetApp">Follow App</string>
     <string name="DisableAvatarTapToSwitch">Disable Cycling Avatars by Tapping</string>
-    <string name="SwitchStyle">Switch Style</string>
-    <string name="SliderStyle">Slider Style</string>
-    <string name="StyleModern">Modern</string>
-    <string name="StyleMaterialDesign3" translatable="false">Material Design 3</string>
     <string name="SaveDeletedExclusionMenu">Save Deleted</string>
     <string name="SaveDeletedExcluded">Exclude</string>
     <string name="MarkdownParser">Markdown Parser</string>
     <string name="KeepTranslatorPreferences">Keep Translator Preferences</string>
     <string name="KeepTranslatorPreferencesNotice">Preserve the current translator settings when changing App language.</string>
+    <string name="UseCamera2Api">Use Camera 2 API</string>
+    <string name="ShowTranslateMessageLLM">Show AI Translation Option</string>
+    <string name="ShowTranslateMessageLLMNotice">Controls whether AI translation options appear in message menus and text selection menus. When disabled, only regular translation will be available.</string>
+    <string name="EnableBetaVersion">Install Beta Versions</string>
+    <string name="CheckUpdateOnStartup">Check Updates on Startup</string>
     <string name="UsePersianCalendar">Use Persian Calendar</string>
     <string name="UsePersianCalendarInfo">Display date with Solar Hijri calendar</string>
     <string name="DisplayPersianCalendarByLatin">Display Persian calendar by Latin</string>
@@ -246,6 +260,26 @@
     <string name="DnsType">DNS Resolver</string>
     <string name="DnsTypeSystem">System</string>
     <string name="CustomDoH">Custom DoH</string>
+    <string name="SwitchAccountNax">Switch Account</string>
+    <string name="CurrentNax">Current</string>
+    <string name="PrivateChatMessage">Cannot open private chat: %1$s\n\nThis chat is private and can only be accessed from the original account.</string>
+    <string name="DeleteChatTitle">Delete Chat</string>
+    <string name="DeleteChatMessage">Are you sure you want to remove %1$s from recent chats?</string>
+    <string name="ChatRemovedFromRecent">Chat removed from recent chats</string>
+    <string name="ChatHistory_ResultCount">%1$d results</string>
+    <string name="ChatCategoryAll">All</string>
+    <string name="ChatCategoryChannels">Channels</string>
+    <string name="ChatCategoryGroups">Groups</string>
+    <string name="ChatCategoryUsers">Users</string>
+    <string name="ChatCategoryBots">Bots</string>
+    <string name="ChatHistoryDeleteChats">Delete Chats</string>
+    <string name="ChatHistoryDeleteConfirmation">Are you sure you want to delete </string>
+    <string name="ChatHistorySelected">selected</string>
+    <string name="ShowRecentChatsInDrawer">Show recent chats in sidebar</string>
+    <string name="ChatHistory_NoResultsFor">No results found for "%1$s"</string>
+    <string name="ChatHistory_NoRecentChats">No recent chats</string>
+    <string name="ChatHistory_NoCategoryFound">No %1$s found</string>
+    <string name="ChatHistory_EnterSearchQuery">Enter search query</string>
     <string name="PinnedReactions">Pinned Reactions</string>
     <string name="PinnedReactions_Status_Chats">Enable Pinned Reactions in Chats</string>
     <string name="PinnedReactions_Status_Channels">Enable Pinned Reactions in Channels</string>

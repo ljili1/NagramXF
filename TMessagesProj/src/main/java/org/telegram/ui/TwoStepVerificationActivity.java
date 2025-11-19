@@ -382,7 +382,7 @@ public class TwoStepVerificationActivity extends BaseFragment implements Notific
         floatingButtonContainer.setContentDescription(getString(R.string.Next));
         floatingButtonContainer.addView(floatingButtonIcon, LayoutHelper.createFrame(Build.VERSION.SDK_INT >= 21 ? 56 : 60, Build.VERSION.SDK_INT >= 21 ? 56 : 60));
 
-        Drawable drawable = Theme.createSimpleSelectorCircleDrawable(AndroidUtilities.dp(56), Theme.getColor(Theme.key_chats_actionBackground), Theme.getColor(Theme.key_chats_actionPressedBackground));
+        Drawable drawable = Theme.createSimpleSelectorRoundRectDrawable(AndroidUtilities.dp(18), Theme.getColor(Theme.key_chats_actionBackground), Theme.getColor(Theme.key_chats_actionPressedBackground));
         if (Build.VERSION.SDK_INT < 21) {
             Drawable shadowDrawable = context.getResources().getDrawable(R.drawable.floating_shadow).mutate();
             shadowDrawable.setColorFilter(new PorterDuffColorFilter(0xff000000, PorterDuff.Mode.MULTIPLY));

@@ -19,6 +19,8 @@
     <string name="DateOfForwardedMsg">Показывать дату пересылки сообщений</string>
     <string name="ShowMessageID">Показывать ID сообщения</string>
     <string name="ShowRPCError">Показывать ошибки RPC</string>
+    <string name="RPCErrorToastEnabled">Включены всплывающие уведомления об ошибках RPC</string>
+    <string name="RPCErrorToastDisabled">Отключены всплывающие уведомления об ошибках RPC</string>
     <string name="ShowPremiumStickersAnimation">Показывать анимацию Premium-стикеров</string>
     <string name="AlwaysSaveChatOffset">Всегда сохранять смещение чатов</string>
     <string name="AppIconColorful">Красочная</string>
@@ -71,6 +73,7 @@
     <string name="DisableClickCommandToSend">Спрашивать перед отправкой команды бота</string>
     <string name="DisableDialogsFloatingButton">Скрыть плавающую кнопку</string>
     <string name="DisableFlagSecure">Отключить FLAG_SECURE</string>
+    <string name="DisableGlobalSearch">Отключить глобальный поиск</string>
     <string name="CenterActionBarTitleType">Заголовок по центру</string>
     <string name="ShowQuickReplyInBotCommands">Показывать кнопку быстрого ответа в поле ввода</string>
     <string name="PushServiceType">Тип сервиса уведомлений</string>

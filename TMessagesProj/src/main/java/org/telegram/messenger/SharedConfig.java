@@ -1951,7 +1951,7 @@ public class SharedConfig {
     }
 
     public static boolean isUsingCamera2(int currentAccount) {
-        return useCamera2Force == null ? !MessagesController.getInstance(currentAccount).androidDisableRoundCamera2 : useCamera2Force;
+        return xyz.nextalone.nagram.NaConfig.INSTANCE.getUseCamera2Api().Bool() && (useCamera2Force == null ? !MessagesController.getInstance(currentAccount).androidDisableRoundCamera2 : useCamera2Force);
     }
 
     public static void toggleUseCamera2(int currentAccount) {

@@ -230,6 +230,7 @@ import kotlin.Unit;
 import tw.nekomimi.nekogram.BackButtonMenuRecent;
 import tw.nekomimi.nekogram.NekoConfig;
 import tw.nekomimi.nekogram.NekoXConfig;
+import xyz.nextalone.nagram.NaConfig;
 import tw.nekomimi.nekogram.helpers.AppRestartHelper;
 import tw.nekomimi.nekogram.helpers.PasscodeHelper;
 import tw.nekomimi.nekogram.ui.BottomBuilder;
@@ -740,7 +741,11 @@ public class LoginActivity extends BaseFragment implements NotificationCenter.No
                 @SuppressLint("NewApi")
                 @Override
                 public void getOutline(View view, Outline outline) {
-                    outline.setOval(0, 0, AndroidUtilities.dp(56), AndroidUtilities.dp(56));
+                    if (NaConfig.INSTANCE.getSquareFloatingActionButton().Bool()) {
+                        outline.setRoundRect(0, 0, AndroidUtilities.dp(56), AndroidUtilities.dp(56), AndroidUtilities.dp(18));
+                    } else {
+                        outline.setOval(0, 0, AndroidUtilities.dp(56), AndroidUtilities.dp(56));
+                    }
                 }
             });
         }
@@ -8709,7 +8714,12 @@ public class LoginActivity extends BaseFragment implements NotificationCenter.No
         fragmentView.setBackgroundColor(Theme.getColor(Theme.key_windowBackgroundWhite));
 
         Context context = getParentActivity();
-        Drawable drawable = Theme.createSimpleSelectorCircleDrawable(AndroidUtilities.dp(56), Theme.getColor(Theme.key_chats_actionBackground), Theme.getColor(Theme.key_chats_actionPressedBackground));
+        Drawable drawable;
+        if (NaConfig.INSTANCE.getSquareFloatingActionButton().Bool()) {
+            drawable = Theme.createSimpleSelectorRoundRectDrawable(AndroidUtilities.dp(18), Theme.getColor(Theme.key_chats_actionBackground), Theme.getColor(Theme.key_chats_actionPressedBackground));
+        } else {
+            drawable = Theme.createSimpleSelectorCircleDrawable(AndroidUtilities.dp(56), Theme.getColor(Theme.key_chats_actionBackground), Theme.getColor(Theme.key_chats_actionPressedBackground));
+        }
         if (Build.VERSION.SDK_INT < 21) {
             Drawable shadowDrawable = context.getResources().getDrawable(R.drawable.floating_shadow).mutate();
             shadowDrawable.setColorFilter(new PorterDuffColorFilter(0xff000000, PorterDuff.Mode.MULTIPLY));
@@ -8913,7 +8923,7 @@ public class LoginActivity extends BaseFragment implements NotificationCenter.No
             numberView.setTextColor(Theme.getColor(Theme.key_dialogTextBlack));
             editTextView.setTextColor(Theme.getColor(Theme.key_changephoneinfo_image2));
             confirmTextView.setTextColor(Theme.getColor(Theme.key_changephoneinfo_image2));
-            popupFabContainer.setBackground(Theme.createSimpleSelectorCircleDrawable(AndroidUtilities.dp(56), Theme.getColor(Theme.key_chats_actionBackground), Theme.getColor(Theme.key_chats_actionPressedBackground)));
+            popupFabContainer.setBackground(Theme.createSimpleSelectorRoundRectDrawable(AndroidUtilities.dp(18), Theme.getColor(Theme.key_chats_actionBackground), Theme.getColor(Theme.key_chats_actionPressedBackground)));
             floatingProgressView.setProgressColor(Theme.getColor(Theme.key_chats_actionIcon));
         }
 

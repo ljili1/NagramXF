@@ -2523,6 +2523,17 @@ public class ShareAlert extends BottomSheet implements NotificationCenter.Notifi
         delegate = shareAlertDelegate;
     }
 
+    public int getSelectedDialogsCount() {
+        return selectedDialogs.size();
+    }
+
+    public long getFirstSelectedDialogId() {
+        if (selectedDialogs.size() > 0) {
+            return selectedDialogs.keyAt(0);
+        }
+        return 0;
+    }
+
     @Override
     public void dismissInternal() {
         super.dismissInternal();

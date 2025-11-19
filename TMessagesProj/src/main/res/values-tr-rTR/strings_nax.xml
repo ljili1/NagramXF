@@ -51,7 +51,6 @@
     <string name="ClearDeleted">Silinenleri Temizle</string>
     <string name="ClearDeletedAlertMessage">Bu sohbetteki tüm silinmiş mesajları temizlemek istediğinizden emin misiniz?</string>
     <string name="ForwardsRestrictedInfoAyuDeleted">İletmeye izin verilmiyor.</string>
-    <string name="RegexFiltersNotice">Düzenlemek için dokunun.</string>
     <string name="RegexFiltersImport">İçe Aktar</string>
     <string name="RegexFiltersExport">Dışa Aktar</string>
     <string name="RegexFiltersImportSuccess">Filtreler içe aktarıldı.</string>

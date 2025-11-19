@@ -95,7 +95,12 @@ public class TimeStringHelper {
         createSpan();
         SpannableStringBuilder spannableStringBuilder = new SpannableStringBuilder();
 
-        if (canShowLanguage(messageObject)) {
+        // Show "Source Language -> Target Language" format when language codes are available
+        String fromCode = messageObject.messageOwner.originalLanguage;
+        String toCode = messageObject.messageOwner.translatedToLanguage;
+        
+        if (!TextUtils.isEmpty(fromCode) && !TextUtils.isEmpty(toCode) && 
+            !messageObject.messageOwner.originalLanguage.equals(TranslateController.UNKNOWN_LANGUAGE)) {
             spannableStringBuilder
                     .append(Locale.forLanguageTag(messageObject.messageOwner.originalLanguage).getDisplayName())
                     .append(" ")
@@ -114,20 +119,7 @@ public class TimeStringHelper {
         return spannableStringBuilder;
     }
 
-    private static boolean canShowLanguage(MessageObject messageObject) {
-        String fromCode = messageObject.messageOwner.originalLanguage;
-        String toCode = messageObject.messageOwner.translatedToLanguage;
-        if (TextUtils.isEmpty(fromCode) || TextUtils.isEmpty(toCode)) {
-            return false;
-        }
-        if (messageObject.messageOwner.originalLanguage.equals(TranslateController.UNKNOWN_LANGUAGE)) {
-            return false;
-        }
-        if (messageObject.messageOwner.post_author != null) {
-            return false;
-        }
-        return MessagesController.getInstance(UserConfig.selectedAccount).getTranslateController().isManualTranslated(messageObject);
-    }
+
 
     private static void createSpan() {
         if (editedDrawable == null) {

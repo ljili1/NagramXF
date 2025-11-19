@@ -45,9 +45,11 @@ public class SettingsHelper {
             fragment = neko_fragment = new NekoPasscodeSettingsActivity();
         } else {
             switch (segments.get(1)) {
+                /* This case was removed because the startOnAbout() method no longer exists
                 case "about":
                     fragment = new NekoSettingsActivity().startOnAbout();
                     break;
+                */
                 case "chat":
                 case "chats":
                 case "c":

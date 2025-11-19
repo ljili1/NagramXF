@@ -5,6 +5,7 @@ import android.content.DialogInterface
 import android.text.TextUtils
 import android.util.TypedValue
 import android.view.Gravity
+import android.view.HapticFeedbackConstants
 import android.widget.EditText
 import android.widget.FrameLayout
 import android.widget.LinearLayout
@@ -22,6 +23,7 @@ import org.telegram.ui.Cells.RadioButtonCell
 import org.telegram.ui.Cells.TextCell
 import org.telegram.ui.Cells.TextCheckCell
 import org.telegram.ui.Components.LayoutHelper
+import tw.nekomimi.nekogram.NekoConfig
 import java.util.LinkedList
 
 
@@ -123,6 +125,53 @@ class BottomBuilder(val ctx: Context, val needFocus: Boolean = true, val bgColor
             checkBoxCell.checkBox.setOnClickListener { checkBoxCell.performClick() }
         } else {
             checkBoxCell.checkBoxSquare.setOnClickListener { checkBoxCell.performClick() }
+        }
+
+        return checkBoxCell
+    }
+
+    @JvmOverloads
+    fun addCheckItem(text: String, icon: Int, value: Boolean, switch: Boolean = false, listener: ((cell: TextCell, isChecked: Boolean) -> Unit)?): TextCell {
+
+        val checkBoxCell = TextCell(ctx)
+        checkBoxCell.background = Theme.getSelectorDrawable(false)
+        checkBoxCell.minimumHeight = AndroidUtilities.dp(50F)
+
+        // Use TextCell's setTextAndCheckAndIcon method (now creates switch automatically)
+        checkBoxCell.setTextAndCheckAndIcon(text, value, icon, true)
+
+        rootView.addView(checkBoxCell, LayoutHelper.createLinear(-1, -2))
+
+        checkBoxCell.setOnClickListener {
+            val target = !checkBoxCell.isChecked
+            // Animate switch on toggle instead of re-binding the whole cell without animation
+            checkBoxCell.setChecked(target)
+
+            // Add haptic feedback like other settings
+            if (!NekoConfig.disableVibration.Bool()) {
+                try {
+                    checkBoxCell.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP, HapticFeedbackConstants.FLAG_IGNORE_VIEW_SETTING)
+                } catch (e: Exception) {
+                    // Ignore
+                }
+            }
+
+            listener?.invoke(checkBoxCell, target)
+        }
+
+        // Also handle switch click if it exists
+        if (checkBoxCell.checkBox != null) {
+            checkBoxCell.checkBox.setOnClickListener {
+                // Add haptic feedback for switch click too
+                if (!NekoConfig.disableVibration.Bool()) {
+                    try {
+                        checkBoxCell.checkBox.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP, HapticFeedbackConstants.FLAG_IGNORE_VIEW_SETTING)
+                    } catch (e: Exception) {
+                        // Ignore
+                    }
+                }
+                checkBoxCell.performClick()
+            }
         }
 
         return checkBoxCell

@@ -51,7 +51,6 @@
     <string name="ClearDeleted">Очистить удалённые</string>
     <string name="ClearDeletedAlertMessage">Вы уверены, что хотите очистить все удалённые сообщения в этом чате?</string>
     <string name="ForwardsRestrictedInfoAyuDeleted">Пересылка запрещена.</string>
-    <string name="RegexFiltersNotice">Нажмите, чтобы изменить.</string>
     <string name="RegexFiltersImport">Импорт</string>
     <string name="RegexFiltersExport">Экспорт</string>
     <string name="RegexFiltersImportSuccess">Фильтры импортированы.</string>
@@ -247,7 +246,6 @@
     <string name="PinnedReactions_Apply">Обновить закреплённые реакции</string>
     <string name="HideStoriesFromHeader">Скрыть из заголовка</string>
     <string name="DisableAvatarBlur">Отключить размытие аватаров</string>
-    <string name="ExportSettingsIncludeApiKeys">Включать ключи API</string>
     <string name="DisableInAppBrowserGestures">Отключить жесты</string>
     <string name="HowToObtain">Как получить?</string>
     <string name="BlockChannel">Заблокировать канал</string>

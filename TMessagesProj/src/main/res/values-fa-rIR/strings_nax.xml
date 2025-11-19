@@ -50,7 +50,6 @@
     <string name="ClearDeleted">پاک کردن حذف‌شده‌ها</string>
     <string name="ClearDeletedAlertMessage">آیا مطمئنید که می‌خواهید تمام پیام‌های حذف شده در این گفتگو را پاک کنید؟</string>
     <string name="ForwardsRestrictedInfoAyuDeleted">ارسال پیام ممنوع است.</string>
-    <string name="RegexFiltersNotice">برای ویرایش ضربه بزنید.</string>
     <string name="botCommandConfirmTitle">ارسال دستور</string>
     <string name="botCommandConfirmText">آیا می‌خواهید این دستور را ارسال کنید؟\n\n%s</string>
     <string name="DisableScreenshotDetection">غیرفعال کردن تشخیص اسکرین‌شات</string>

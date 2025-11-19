@@ -347,6 +347,16 @@ interface Translator {
             fun onSuccess(pollText: TranslateController.PollText)
             fun onFailed(unsupported: Boolean, message: String)
         }
+
+        @JvmStatic
+        fun getLocale2code(locale: Locale): String {
+            return locale.locale2code
+        }
+
+        @JvmStatic
+        fun getCode2Locale(code: String): Locale {
+            return code.code2Locale
+        }
     }
 
     suspend fun Call.await(): Response {

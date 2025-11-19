@@ -19,6 +19,8 @@
     <string name="DateOfForwardedMsg">显示转发消息日期</string>
     <string name="ShowMessageID">显示消息 ID</string>
     <string name="ShowRPCError">显示 RPC 错误</string>
+    <string name="RPCErrorToastEnabled">启用 RPC 错误提示</string>
+    <string name="RPCErrorToastDisabled">禁用 RPC 错误提示</string>
     <string name="ShowPremiumStickersAnimation">显示 Premium 贴纸动画</string>
     <string name="AlwaysSaveChatOffset">总是保存聊天记录的偏移量</string>
     <string name="AppIconColorful">缤纷</string>
@@ -71,6 +73,7 @@
     <string name="DisableClickCommandToSend">点击机器人指令发送前确认</string>
     <string name="DisableDialogsFloatingButton">隐藏浮动按钮</string>
     <string name="DisableFlagSecure">关闭 FLAG_SECURE</string>
+    <string name="DisableGlobalSearch">禁用全局搜索</string>
     <string name="CenterActionBarTitleType">标题居中</string>
     <string name="ShowQuickReplyInBotCommands">在输入框中显示快速回复按钮</string>
     <string name="PushServiceType">推送服务类型</string>
@@ -89,7 +92,8 @@
     <string name="PreviewSendFile">发送文件</string>
     <string name="UnblockDeleted">解禁已删除账号</string>
     <string name="UnblockDeletedWarn">您确定要解除屏蔽**所有已删除账号**吗？</string>
-    <string name="RegexFilters">消息过滤器</string>
+    <string name="RegexFilters">消息过滤</string>
+    <string name="RegexFiltersEnable">启用消息过滤</string>
     <string name="RegexFiltersHeader">消息过滤</string>
     <string name="RegexFiltersSharedHeader">全局过滤器</string>
     <string name="RegexFiltersSubMenuDescription">您可以选择为此聊天排除全局过滤器。</string>

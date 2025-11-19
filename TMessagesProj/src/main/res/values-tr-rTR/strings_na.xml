@@ -116,4 +116,6 @@
     <string name="VideoPlayerDecoderPreferSW">Yazılım Tercihli</string>
     <string name="VideoPlayerDecoderHardware">Sadece Donanım</string>
     <string name="VideoPlayerDecoderPreferHW">Donanım Tercihli</string>
+    <string name="RPCErrorToastEnabled">RPC Hatası Bildirimini Etkinleştir</string>
+    <string name="RPCErrorToastDisabled">RPC Hatası Bildirimini Devre Dışı Bırak</string>
 </resources>

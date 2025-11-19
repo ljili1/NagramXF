@@ -1,6 +1,17 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="XChannel">Nagram X 频道</string>
+    <string name="NagranX_About">关于 NagramX</string>
+    <string name="NagranX_About_Desc">更新、源代码及更多</string>
+    <string name="NagramX_Links">链接</string>
+    <string name="Updates">更新</string>
+    <string name="NagramX_Info">信息</string> 
+    <string name="OneUISwitchStyle">OneUI 开关风格</string>
+    <string name="IosSearchPanel">iOS 搜索面板</string>
+    <string name="EnableBackButtonMenu">返回按钮历史菜单</string>
+    <string name="ForceForward">强制转发</string>
+    <string name="SquareFloatingActionButton">方形浮动按钮</string>
+    <string name="Fork">Fork 频道</string>   
     <string name="EnableSaveDeletedMessages">保存已删除消息</string>
     <string name="DeletedMessage">已删除</string>
     <string name="EnableSaveEditsHistory">保存编辑历史</string>
@@ -51,7 +62,6 @@
     <string name="ClearDeleted">清除已删除消息</string>
     <string name="ClearDeletedAlertMessage">您确定要清除此聊天中的所有已删除消息吗？</string>
     <string name="ForwardsRestrictedInfoAyuDeleted">不允许转发。</string>
-    <string name="RegexFiltersNotice">点击以编辑。</string>
     <string name="RegexFiltersImport">导入</string>
     <string name="RegexFiltersExport">导出</string>
     <string name="RegexFiltersImportSuccess">过滤器已导入。</string>
@@ -227,6 +237,11 @@
     <string name="MarkdownParser">Markdown 解析器</string>
     <string name="KeepTranslatorPreferences">保留翻译偏好</string>
     <string name="KeepTranslatorPreferencesNotice">更改应用语言时保留当前翻译器设置。</string>
+    <string name="UseCamera2Api">使用 Camera 2 API</string>
+    <string name="ShowTranslateMessageLLM">显示 AI 翻译选项</string>
+    <string name="ShowTranslateMessageLLMNotice">控制消息菜单和文本选择菜单中是否显示 AI 翻译选项。关闭后，仅显示常规翻译选项。</string>
+    <string name="EnableBetaVersion">安装测试版本</string>
+    <string name="CheckUpdateOnStartup">启动时检查更新</string>
     <string name="UsePersianCalendar">使用波斯日历</string>
     <string name="UsePersianCalendarInfo">用太阳回历显示日期</string>
     <string name="DisplayPersianCalendarByLatin">以拉丁字母显示波斯日历</string>
@@ -245,6 +260,26 @@
     <string name="PinnedReactions_Limit">最多可以选择 %d 个表情回应。</string>
     <string name="PinnedReactions_Type">不支持此 Emoji。</string>
     <string name="PinnedReactions_Apply">更新置顶的表情回应</string>
+    <string name="SwitchAccountNax">切换账号</string>
+    <string name="CurrentNax">当前</string>
+    <string name="PrivateChatMessage">无法打开私有聊天：%1$s\n\n此聊天为私有聊天，只能从原始账号访问。</string>
+    <string name="DeleteChatTitle">删除聊天</string>
+    <string name="DeleteChatMessage">您确定要从最近聊天中移除 %1$s 吗？</string>
+    <string name="ChatRemovedFromRecent">已从最近聊天中移除</string>
+    <string name="ChatHistory_ResultCount">共 %1$d 条</string>
+    <string name="ChatHistory_EnterSearchQuery">输入搜索内容</string>
+    <string name="ChatHistory_NoResultsFor">未找到与“%1$s”匹配的结果</string>
+    <string name="ChatHistory_NoRecentChats">无最近聊天</string>
+    <string name="ChatHistory_NoCategoryFound">未找到任何%1$s</string>
+    <string name="ChatHistoryDeleteChats">删除聊天</string>
+    <string name="ChatHistoryDeleteConfirmation">确定要删除已选择的 </string>
+    <string name="ChatHistorySelected">个聊天</string>
+    <string name="ChatCategoryAll">全部</string>
+    <string name="ChatCategoryChannels">频道</string>
+    <string name="ChatCategoryGroups">群组</string>
+    <string name="ChatCategoryUsers">用户</string>
+    <string name="ChatCategoryBots">机器人</string>
+    <string name="ShowRecentChatsInDrawer">在侧边栏显示最近聊天</string>
     <string name="HideStoriesFromHeader">在标题栏中隐藏动态</string>
     <string name="DisableAvatarBlur">禁用头像模糊</string>
     <string name="ExportSettingsIncludeApiKeys">包含 API 密钥</string>

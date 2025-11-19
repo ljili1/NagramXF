@@ -17,11 +17,7 @@
 extern "C" {
 #include <libavformat/avformat.h>
 #include <libavformat/isom.h>
-#include <libavcodec/bytestream.h>
-#include <libavcodec/get_bits.h>
-#include <libavcodec/golomb.h>
 #include <libavutil/eval.h>
-#include <libavutil/intmath.h>
 #include <libswscale/swscale.h>
 }
 

@@ -118,6 +118,7 @@ import org.telegram.ui.AvatarSpan;
 import org.telegram.ui.Cells.ChatMessageCell;
 import org.telegram.ui.Cells.ShareDialogCell;
 import org.telegram.ui.Components.AlertsCreator;
+import xyz.nextalone.nagram.NaConfig;
 import org.telegram.ui.Components.BackupImageView;
 import org.telegram.ui.Components.BlurringShader;
 import org.telegram.ui.Components.Bulletin;
@@ -364,7 +365,8 @@ public class StoryRecorder implements NotificationCenter.NotificationCenterDeleg
             src.backgroundPaint.setColor(Theme.getColor(Theme.key_chats_actionBackground));
             src.iconDrawable = floatingButton.getContext().getResources().getDrawable(R.drawable.story_camera).mutate();
             src.iconSize = AndroidUtilities.dp(56);
-            src.rounding = Math.max(src.screenRect.width(), src.screenRect.height()) / 2f;
+            // Respect Square FAB setting: use dp(18) when square FAB is enabled, else keep circle
+            src.rounding = NaConfig.INSTANCE.getSquareFloatingActionButton().Bool() ? dp(18) : Math.max(src.screenRect.width(), src.screenRect.height()) / 2f;
             return src;
         }
 
