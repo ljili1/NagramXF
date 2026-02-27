@@ -1149,6 +1149,18 @@ object NaConfig {
             ConfigItem.configTypeInt,
             0
         )
+    val mainTabsOrder =
+        addConfig(
+            "MainTabsOrder",
+            ConfigItem.configTypeString,
+            "CHATS,CONTACTS,CALLS_SETTINGS,PROFILE"
+        )
+    val mainTabsShowTitles =
+        addConfig(
+            "MainTabsShowTitles",
+            ConfigItem.configTypeBool,
+            true
+        )
     val showTextMonoCode =
         addConfig(
             "TextMonoCode",

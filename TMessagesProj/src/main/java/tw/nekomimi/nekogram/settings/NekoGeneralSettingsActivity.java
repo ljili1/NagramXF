@@ -57,6 +57,7 @@ import tw.nekomimi.nekogram.config.cell.ConfigCellCustom;
 import tw.nekomimi.nekogram.config.cell.ConfigCellDivider;
 import tw.nekomimi.nekogram.config.cell.ConfigCellHeader;
 import tw.nekomimi.nekogram.config.cell.ConfigCellSelectBox;
+import tw.nekomimi.nekogram.config.cell.ConfigCellText;
 import tw.nekomimi.nekogram.config.cell.ConfigCellTextCheck;
 import tw.nekomimi.nekogram.config.cell.ConfigCellTextDetail;
 import tw.nekomimi.nekogram.config.cell.ConfigCellTextInput;
@@ -178,6 +179,9 @@ public class NekoGeneralSettingsActivity extends BaseNekoXSettingsActivity {
             getString(R.string.TabTitleTypeIcon),
             getString(R.string.TabTitleTypeMix)
     }, null));
+    private final AbstractConfigCell mainTabsCustomizeRow = cellGroup.appendCell(
+            new ConfigCellText("MainTabsCustomize", () -> presentFragment(new MainTabsCustomizeActivity()))
+    );
     private final AbstractConfigCell dividerFolder = cellGroup.appendCell(new ConfigCellDivider());
 
     // Dialogs
