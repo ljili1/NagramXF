@@ -177,6 +177,10 @@ public class ChatHistoryActivity extends BaseFragment {
      * Restore previously saved state (search state and current tab)
      */
     private void restoreState() {
+        restoreState(true);
+    }
+
+    private void restoreState(boolean refreshSearchResults) {
         if (BuildVars.LOGS_ENABLED) Log.d(TAG, "Start restoring state: searchMode=" + savedSearchMode + ", query=" + savedSearchQuery + ", currentTab=" + savedCurrentTab);
         
         // Restore current tab first
@@ -207,8 +211,11 @@ public class ChatHistoryActivity extends BaseFragment {
                 }, 50);
             }
             
-            // Execute search
-            performSearch(savedSearchQuery);
+            // Keep the existing filtered snapshot unless the caller explicitly
+            // asks to rebuild search results.
+            if (refreshSearchResults) {
+                performSearch(savedSearchQuery);
+            }
             if (BuildVars.LOGS_ENABLED) Log.d(TAG, "Search state restored");
         }
     }
@@ -250,7 +257,7 @@ public class ChatHistoryActivity extends BaseFragment {
 
         // Restore saved state (only when returning from chat)
         if (isOpeningChat) {
-            fragmentView.post(() -> restoreState());
+            fragmentView.post(() -> restoreState(false));
         }
 
         return fragmentView;
@@ -769,14 +776,10 @@ public class ChatHistoryActivity extends BaseFragment {
         if (isOpeningChat && hasBeenInitialized) {
             if (BuildVars.LOGS_ENABLED) Log.d(TAG, "Returning from chat");
             isOpeningChat = false; // Reset flag
-            
-            // If user was in search mode, restore search state without refreshing
-            if (savedSearchMode && !android.text.TextUtils.isEmpty(savedSearchQuery)) {
-                if (BuildVars.LOGS_ENABLED) Log.d(TAG, "Restoring search state, no list refresh");
-                restoreState();
-                return; // Don't refresh list, keep search results
-            }
-            
+
+            // Keep the current list snapshot when returning from a chat so
+            // the user lands back at the same visual position they left.
+             
             // If search mode was opened with empty query, exit search mode on return and close search UI
             if (isSearchMode && android.text.TextUtils.isEmpty(searchQuery)) {
                 if (BuildVars.LOGS_ENABLED) Log.d(TAG, "Exiting empty search mode on return");
@@ -788,7 +791,7 @@ public class ChatHistoryActivity extends BaseFragment {
                 exitSearchMode();
             }
             
-            restoreState();
+            restoreState(false);
             restoreScrollPosition();
             
             return; // Don't execute the general refresh logic below
@@ -1150,11 +1153,17 @@ public class ChatHistoryActivity extends BaseFragment {
         if (item.dialogId > 0) {
             // User dialog - check if user exists in current account
             TLRPC.User user = MessagesController.getInstance(selectedAccount).getUser(item.dialogId);
+            if (user == null) {
+                user = loadUserFromDatabase(item.dialogId, selectedAccount);
+            }
             return user != null;
         } else {
             // Chat dialog - check if chat exists in current account
             long chatId = -item.dialogId;
             TLRPC.Chat chat = MessagesController.getInstance(selectedAccount).getChat(chatId);
+            if (chat == null) {
+                chat = loadChatFromDatabase(chatId, selectedAccount);
+            }
             return chat != null;
         }
     }
