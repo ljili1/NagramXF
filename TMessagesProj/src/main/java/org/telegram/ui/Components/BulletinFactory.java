@@ -52,6 +52,7 @@ import org.telegram.ui.ActionBar.BaseFragment;
 import org.telegram.ui.ActionBar.BottomSheet;
 import org.telegram.ui.ActionBar.Theme;
 import org.telegram.ui.ChatActivity;
+import org.telegram.ui.DialogsActivity;
 import org.telegram.ui.LaunchActivity;
 import org.telegram.ui.PeerColorActivity;
 import org.telegram.ui.PremiumPreviewFragment;
@@ -1132,6 +1133,10 @@ public final class BulletinFactory {
         }
 
         layout.textView.setText(text);
+        FrameLayout containerLayout = resolveMuteBulletinContainer(fragment);
+        if (containerLayout != null) {
+            return Bulletin.make(containerLayout, layout, Bulletin.DURATION_SHORT);
+        }
         return Bulletin.make(fragment, layout, Bulletin.DURATION_SHORT);
     }
 
@@ -1154,6 +1159,18 @@ public final class BulletinFactory {
     @CheckResult
     public static Bulletin createMuteBulletin(BaseFragment fragment, boolean muted, Theme.ResourcesProvider resourcesProvider) {
         return createMuteBulletin(fragment, muted ? NotificationsController.SETTING_MUTE_FOREVER : NotificationsController.SETTING_MUTE_UNMUTE, 0, resourcesProvider);
+    }
+
+    private static FrameLayout resolveMuteBulletinContainer(BaseFragment fragment) {
+        if (fragment instanceof DialogsActivity da && da.hasMainTabs) {
+            return Bulletin.BulletinWindow.make(fragment.getParentActivity(), new Bulletin.Delegate() {
+                @Override
+                public int getBottomOffset(int tag) {
+                    return dp(DialogsActivity.MAIN_TABS_HEIGHT_WITH_MARGINS);
+                }
+            });
+        }
+        return null;
     }
 
     @CheckResult
