@@ -466,7 +466,7 @@ public class RegexFiltersSettingActivity extends BaseNekoSettingsActivity {
         public RecyclerView.ViewHolder onCreateViewHolder(@NonNull ViewGroup parent, int viewType) {
             if (viewType == TYPE_ACCOUNT) {
                 FiltersChatCell chatCell = new FiltersChatCell(mContext);
-                chatCell.setBackgroundColor(getThemedColor(Theme.key_windowBackgroundWhite));
+                chatCell.setBackgroundColor(getAdaptedContainerColor());
                 chatCell.setLayoutParams(new RecyclerView.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
                 return new RecyclerListView.Holder(chatCell);
             }

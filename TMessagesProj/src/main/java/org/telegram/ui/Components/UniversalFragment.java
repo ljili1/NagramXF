@@ -67,6 +67,11 @@ public abstract class UniversalFragment extends BaseFragment {
                 savedScrollPosition = -1;
             }
         };
+        if (isMD3Enabled) {
+            listView.setSections(true);
+            listView.adapter.setApplyBackground(false);
+            actionBar.setAdaptiveBackground(listView);
+        }
         contentView.addView(listView, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT));
 
         return fragmentView = contentView;
@@ -109,5 +114,11 @@ public abstract class UniversalFragment extends BaseFragment {
         if (savedScrollPosition >= 0) {
             listView.layoutManager.scrollToPositionWithOffset(savedScrollPosition, savedScrollOffset - listView.getPaddingTop());
         }
+    }
+
+    private boolean isMD3Enabled = false;
+
+    public void setMD3(boolean set) {
+        this.isMD3Enabled = set;
     }
 }

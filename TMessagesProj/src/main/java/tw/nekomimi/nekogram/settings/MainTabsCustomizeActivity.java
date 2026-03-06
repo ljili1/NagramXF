@@ -43,6 +43,12 @@ public class MainTabsCustomizeActivity extends UniversalFragment {
     }
 
     @Override
+    public View createView(Context context) {
+        setMD3(true);
+        return super.createView(context);
+    }
+
+    @Override
     public boolean onFragmentCreate() {
         tabs = MainTabsConfigManager.copyTabs(MainTabsConfigManager.getAllTabs());
         return super.onFragmentCreate();
@@ -78,7 +84,11 @@ public class MainTabsCustomizeActivity extends UniversalFragment {
         });
         container.addView(previewCell, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, previewHeight, Gravity.CENTER, dp(previewSideMargin), dp(previewTopBottomMargin), dp(previewSideMargin), dp(previewTopBottomMargin)));
 
-        items.add(UItem.asCustom(container, previewRowHeight));
+        items.add(UItem.asCustomWithBackground(container, previewRowHeight));
+        UItem space = UItem.asSpaceCG(dp(12));
+        space.id = -1;
+        space.transparent = true;
+        items.add(space);
         items.add(UItem.asShadow(getString(R.string.MainTabsCustomizeDesc)));
         items.add(UItem.asCheck(BUTTON_SHOW_TAB_TITLES, getString(R.string.MainTabsShowTitles)).setChecked(NaConfig.INSTANCE.getMainTabsShowTitles().Bool()));
         items.add(UItem.asCheck(BUTTON_HIDE_BOTTOM_BAR, getString(R.string.MainTabsHideBottomBar)).setChecked(NaConfig.INSTANCE.getMainTabsHideBottomBar().Bool()));

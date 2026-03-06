@@ -729,6 +729,42 @@ public class UItem extends AdapterWithDiffUtils.Item {
         return super.contentsEquals(item);
     }
 
+    public static UItem asCustomWithBackground(int id, View view) {
+        UItem i = new UItem(UniversalAdapter.VIEW_TYPE_CUSTOM_WITH_BACKGROUND, false);
+        i.id = id;
+        i.view = view;
+        i.intValue = LayoutHelper.MATCH_PARENT;
+        return i;
+    }
+
+    public static UItem asCustomWithBackground(View view) {
+        UItem i = new UItem(UniversalAdapter.VIEW_TYPE_CUSTOM_WITH_BACKGROUND, false);
+        i.view = view;
+        i.intValue = LayoutHelper.MATCH_PARENT;
+        return i;
+    }
+
+    public static UItem asCustomWithBackground(int id, View view, int heightDp) {
+        UItem i = new UItem(UniversalAdapter.VIEW_TYPE_CUSTOM_WITH_BACKGROUND, false);
+        i.id = id;
+        i.view = view;
+        i.intValue = heightDp;
+        return i;
+    }
+
+    public static UItem asCustomWithBackground(View view, int heightDp) {
+        UItem i = new UItem(UniversalAdapter.VIEW_TYPE_CUSTOM_WITH_BACKGROUND, false);
+        i.view = view;
+        i.intValue = heightDp;
+        return i;
+    }
+
+    public static UItem asSpaceCG(int height) {
+        UItem item = new UItem(UniversalAdapter.VIEW_TYPE_SPACE_CG, false);
+        item.intValue = height;
+        return item;
+    }
+
     public static int factoryViewTypeStartsWith = 10_000;
     private static int factoryViewType = 10_000;
     public static abstract class UItemFactory<V extends View> {

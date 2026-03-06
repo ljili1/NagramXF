@@ -116,6 +116,8 @@ public class UniversalAdapter extends AdapterWithDiffUtils {
     public static final int VIEW_TYPE_ROUND_GROUP_CHECKBOX = 41;
     public static final int VIEW_TYPE_ANIMATED_HEADER = 42;
     public static final int VIEW_TYPE_TEXT_SETTINGS = 43;
+    public static final int VIEW_TYPE_SPACE_CG = 101;
+    public static final int VIEW_TYPE_CUSTOM_WITH_BACKGROUND = 102;
 
     protected final RecyclerListView listView;
     private final Context context;
@@ -274,10 +276,11 @@ public class UniversalAdapter extends AdapterWithDiffUtils {
     }
 
     public void drawWhiteSections(Canvas canvas, RecyclerListView listView) {
+        final int sectionColor = dialog ? getThemedColor(Theme.key_dialogBackground) : RecyclerListView.getAdaptedSectionSurfaceColor(resourcesProvider);
         for (int i = 0; i < whiteSections.size(); ++i) {
             Section section = whiteSections.get(i);
             if (section.end < 0) continue;
-            listView.drawSectionBackground(canvas, section.start, section.end, getThemedColor(dialog ? Theme.key_dialogBackground : Theme.key_windowBackgroundWhite));
+            listView.drawSectionBackground(canvas, section.start, section.end, sectionColor);
         }
     }
 
@@ -356,6 +359,7 @@ public class UniversalAdapter extends AdapterWithDiffUtils {
             case VIEW_TYPE_TRANSACTION:
             case VIEW_TYPE_PROCEED_OVERVIEW:
             case VIEW_TYPE_SPACE:
+            case VIEW_TYPE_SPACE_CG:
             case VIEW_TYPE_BUSINESS_LINK:
             case VIEW_TYPE_RIGHT_ICON_TEXT:
             case VIEW_TYPE_PROFILE_CELL:
@@ -368,6 +372,7 @@ public class UniversalAdapter extends AdapterWithDiffUtils {
             case VIEW_TYPE_SWITCH:
             case VIEW_TYPE_EXPANDABLE_SWITCH:
             case VIEW_TYPE_TEXT_SETTINGS:
+            case VIEW_TYPE_CUSTOM_WITH_BACKGROUND:
                 return true;
         }
         return false;
@@ -433,6 +438,7 @@ public class UniversalAdapter extends AdapterWithDiffUtils {
                 break;
             case VIEW_TYPE_CUSTOM:
             case VIEW_TYPE_CUSTOM_SHADOW:
+            case VIEW_TYPE_CUSTOM_WITH_BACKGROUND:
                 view = new FrameLayout(context) {
                     @Override
                     protected void onMeasure(int widthMeasureSpec, int heightMeasureSpec) {
@@ -503,6 +509,7 @@ public class UniversalAdapter extends AdapterWithDiffUtils {
                 view = new ChannelMonetizationLayout.ProceedOverviewCell(context, resourcesProvider);
                 break;
             case VIEW_TYPE_SPACE:
+            case VIEW_TYPE_SPACE_CG:
                 view = new View(context);
                 break;
             case VIEW_TYPE_BUSINESS_LINK:
@@ -562,7 +569,10 @@ public class UniversalAdapter extends AdapterWithDiffUtils {
                 break;
         }
         if (shouldApplyBackground(viewType)) {
-            view.setBackgroundColor(getThemedColor(key_background));
+            final int backgroundColor = key_background == Theme.key_windowBackgroundWhite
+                ? RecyclerListView.getAdaptedSectionSurfaceColor(resourcesProvider)
+                : getThemedColor(key_background);
+            view.setBackgroundColor(backgroundColor);
         }
         return new RecyclerListView.Holder(view);
     }
@@ -780,13 +790,14 @@ public class UniversalAdapter extends AdapterWithDiffUtils {
             case VIEW_TYPE_CUSTOM:
             case VIEW_TYPE_CUSTOM_SHADOW:
             case VIEW_TYPE_FULLY_CUSTOM:
+            case VIEW_TYPE_CUSTOM_WITH_BACKGROUND:
                 FrameLayout frameLayout = (FrameLayout) holder.itemView;
                 if (frameLayout.getChildCount() != (item.view == null ? 0 : 1) || frameLayout.getChildAt(0) != item.view) {
                     frameLayout.removeAllViews();
                     if (item.view != null) {
                         AndroidUtilities.removeFromParent(item.view);
                         FrameLayout.LayoutParams lp;
-                        if (viewType == VIEW_TYPE_CUSTOM || viewType == VIEW_TYPE_CUSTOM_SHADOW) {
+                        if (viewType == VIEW_TYPE_CUSTOM || viewType == VIEW_TYPE_CUSTOM_SHADOW || viewType == VIEW_TYPE_CUSTOM_WITH_BACKGROUND) {
                             lp = LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, item.intValue);
                         } else {
                             lp = LayoutHelper.createFrame(LayoutHelper.WRAP_CONTENT, LayoutHelper.WRAP_CONTENT);
@@ -886,6 +897,7 @@ public class UniversalAdapter extends AdapterWithDiffUtils {
                 userCell1.setDivider(divider);
                 break;
             case VIEW_TYPE_SPACE:
+            case VIEW_TYPE_SPACE_CG:
                 if (item.transparent) {
                     holder.itemView.setBackgroundColor(0x00000000);
                 } else if (item.iconResId != 0) {

@@ -488,7 +488,7 @@ public class NekoGeneralSettingsActivity extends BaseNekoXSettingsActivity {
             if (viewType == ConfigCellCustom.CUSTOM_ITEM_CharBlurAlpha) {
                 view = chatBlurAlphaSeekbar = new ChatBlurAlphaSeekBar(mContext);
                 chatBlurAlphaSeekbar.setEnabled(NekoConfig.forceBlurInChat.Bool());
-                view.setBackgroundColor(Theme.getColor(Theme.key_windowBackgroundWhite));
+                view.setBackgroundColor(getAdaptedContainerColor());
             }
             return view;
         }

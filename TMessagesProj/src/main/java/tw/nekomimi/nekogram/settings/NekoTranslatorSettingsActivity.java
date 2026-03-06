@@ -487,7 +487,7 @@ public class NekoTranslatorSettingsActivity extends BaseNekoXSettingsActivity {
             View view = null;
             if (viewType == ConfigCellCustom.CUSTOM_ITEM_Temperature) {
                 view = new TemperatureSeekBar(mContext);
-                view.setBackgroundColor(Theme.getColor(Theme.key_windowBackgroundWhite));
+                view.setBackgroundColor(getAdaptedContainerColor());
             }
             return view;
         }
