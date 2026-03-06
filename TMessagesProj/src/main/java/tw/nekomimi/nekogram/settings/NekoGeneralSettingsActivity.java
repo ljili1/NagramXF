@@ -221,6 +221,7 @@ public class NekoGeneralSettingsActivity extends BaseNekoXSettingsActivity {
             getString(R.string.StyleModern),
             getString(R.string.StyleMaterialDesign3)
     }, null));
+    private final AbstractConfigCell md3ContainersRow = cellGroup.appendCell(new ConfigCellTextCheck(NaConfig.INSTANCE.getMd3Containers()));
     private final AbstractConfigCell actionBarDecorationRow = cellGroup.appendCell(new ConfigCellSelectBox(null, NekoConfig.actionBarDecoration, new String[]{
             getString(R.string.DependsOnDate),
             getString(R.string.Snowflakes),
@@ -373,6 +374,12 @@ public class NekoGeneralSettingsActivity extends BaseNekoXSettingsActivity {
                 tooltip.showWithAction(0, UndoView.ACTION_NEED_RESTART, null, null);
             } else if (key.equals(NaConfig.INSTANCE.getIconReplacements().getKey())) {
                 tooltip.showWithAction(0, UndoView.ACTION_NEED_RESTART, null, null);
+            } else if (key.equals(NaConfig.INSTANCE.getMd3Containers().getKey())) {
+                if (listView.getLayoutManager() != null) {
+                    recyclerViewState = listView.getLayoutManager().onSaveInstanceState();
+                    parentLayout.rebuildFragments(INavigationLayout.REBUILD_FLAG_REBUILD_LAST);
+                    listView.getLayoutManager().onRestoreInstanceState(recyclerViewState);
+                }
             } else if (key.equals(NaConfig.INSTANCE.getSwitchStyle().getKey()) || key.equals(NaConfig.INSTANCE.getSliderStyle().getKey())) {
                 if (listView.getLayoutManager() != null) {
                     recyclerViewState = listView.getLayoutManager().onSaveInstanceState();

@@ -62,6 +62,7 @@ import tw.nekomimi.nekogram.config.cell.WithKey;
 import tw.nekomimi.nekogram.config.cell.WithOnClick;
 import tw.nekomimi.nekogram.ui.cells.HeaderCell;
 import tw.nekomimi.nekogram.helpers.MonetHelper;
+import xyz.nextalone.nagram.NaConfig;
 
 public class BaseNekoXSettingsActivity extends BaseFragment {
     protected BlurredRecyclerView listView;
@@ -122,7 +123,9 @@ public class BaseNekoXSettingsActivity extends BaseFragment {
         tooltip = new UndoView(context);
         frameLayout.addView(tooltip, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, Gravity.BOTTOM | Gravity.LEFT, 8, 0, 8, 8));
 
-        listView.setSections(true);
+        if (NaConfig.INSTANCE.getMd3Containers().Bool()) {
+            listView.setSections(true);
+        }
         actionBar.setAdaptiveBackground(listView);
         return fragmentView;
     }
@@ -158,6 +161,32 @@ public class BaseNekoXSettingsActivity extends BaseFragment {
         if (getListAdapter() != null) {
             getListAdapter().notifyDataSetChanged();
         }
+    }
+
+    protected int getAdaptedContainerColor() {
+        int surfaceColor = getThemedColor(Theme.key_windowBackgroundWhite);
+        if (!NaConfig.INSTANCE.getMd3Containers().Bool()) {
+            return surfaceColor;
+        }
+        int pageColor = getThemedColor(Theme.key_windowBackgroundGray);
+        if (surfaceColor == pageColor) {
+            Theme.ThemeInfo activeTheme = Theme.getActiveTheme();
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && activeTheme != null && activeTheme.isMonetLight()) {
+                int monetSurface = MonetHelper.getColor("n1_0");
+                if (monetSurface != 0 && monetSurface != pageColor) {
+                    return monetSurface;
+                }
+            }
+            float[] hsv = new float[3];
+            Color.colorToHSV(surfaceColor, hsv);
+            if (hsv[2] > 0.5f) {
+                hsv[2] = Math.max(0f, hsv[2] - 0.03f);
+            } else {
+                hsv[2] = Math.min(1f, hsv[2] + 0.03f);
+            }
+            surfaceColor = Color.HSVToColor(Color.alpha(surfaceColor), hsv);
+        }
+        return surfaceColor;
     }
 
     public int getBaseGuid() {

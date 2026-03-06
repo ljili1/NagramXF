@@ -187,6 +187,7 @@
     <string name="TranscribeProviderGeminiPrompt">Prompt (optional)</string>
     <string name="uploadBoost">Upload Speed Boost</string>
     <string name="HideDividers">Hide Dividers</string>
+    <string name="MD3Containers">MD3 Containers</string>
     <string name="IconReplacements">Icon Replacements</string>
     <string name="IconReplacementSolar">Solar Icons by @Design480</string>
     <string name="DebugMenuEnableInvoicePayment">Enable Invoice Payment</string>

@@ -1275,6 +1275,12 @@ object NaConfig {
             ConfigItem.configTypeInt,
             0 // 0: default; 1: Modern; 2: MD3
         )
+    val md3Containers =
+        addConfig(
+            "MD3Containers",
+            ConfigItem.configTypeBool,
+            true
+        )
     val ignoreUnreadCount =
         addConfig(
             "IgnoreUnreadCount",

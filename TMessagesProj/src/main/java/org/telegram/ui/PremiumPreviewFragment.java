@@ -701,7 +701,7 @@ public class PremiumPreviewFragment extends BaseFragment implements Notification
         contentView.setFitsSystemWindows(true);
 
         listView = new RecyclerListView(context);
-        listView.setSections(true);
+        listView.setSections(true, true);
         listView.setClipToPadding(false);
         listView.setPadding(0, AndroidUtilities.statusBarHeight + ActionBar.getCurrentActionBarHeight(), 0, 0);
         listView.setLayoutManager(layoutManager = new FillLastLinearLayoutManager(context, dp(68) + statusBarHeight - dp(16), listView));

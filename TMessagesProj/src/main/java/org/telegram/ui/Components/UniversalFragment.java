@@ -67,7 +67,7 @@ public abstract class UniversalFragment extends BaseFragment {
                 savedScrollPosition = -1;
             }
         };
-        if (isMD3Enabled) {
+        if (isMD3Enabled && RecyclerListView.areMd3ContainersEnabled()) {
             listView.setSections(true);
             listView.adapter.setApplyBackground(false);
             actionBar.setAdaptiveBackground(listView);

@@ -250,7 +250,9 @@ public class UniversalRecyclerView extends RecyclerListView {
 
     @Override
     protected void dispatchDraw(Canvas canvas) {
-        if (!hasSections()) adapter.drawWhiteSections(canvas, this);
+        if (RecyclerListView.areMd3ContainersEnabled() && !hasSections()) {
+            adapter.drawWhiteSections(canvas, this);
+        }
         super.dispatchDraw(canvas);
     }
 

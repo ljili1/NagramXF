@@ -96,6 +96,7 @@ import java.util.Objects;
 
 import tw.nekomimi.nekogram.NekoConfig;
 import tw.nekomimi.nekogram.helpers.MonetHelper;
+import xyz.nextalone.nagram.NaConfig;
 
 @SuppressWarnings("JavaReflectionMemberAccess")
 public class RecyclerListView extends RecyclerView implements IBlur3Capture {
@@ -3269,19 +3270,42 @@ public class RecyclerListView extends RecyclerView implements IBlur3Capture {
 
     public static final int TAG_NOT_SECTION = -33024;
 
+    public static boolean areMd3ContainersEnabled() {
+        return NaConfig.INSTANCE.getMd3Containers().Bool();
+    }
+
+    private void clearSectionsState() {
+        if (sectionsItemDecoration != null) {
+            removeItemDecoration(sectionsItemDecoration);
+            sectionsItemDecoration = null;
+        }
+        isViewTypeSection = null;
+        drawSectionBackground = null;
+        forcedSections = null;
+        setSelectorDrawableColor(getThemedColor(Theme.key_listSelector));
+        invalidate();
+    }
+
     public void setSections() {
-        setSections(dp(12), dp(16), false);
+        setSections(dp(12), dp(16), false, false);
     }
     public void setSections(boolean topPadding) {
-        setSections(dp(12), dp(16), topPadding);
+        setSections(dp(12), dp(16), topPadding, false);
+    }
+    public void setSections(boolean topPadding, boolean force) {
+        setSections(dp(12), dp(16), topPadding, force);
     }
     public void setSections(int padding, float roundRadius, boolean topPadding) {
+        setSections(padding, roundRadius, topPadding, false);
+    }
+    public void setSections(int padding, float roundRadius, boolean topPadding, boolean force) {
         setSections(
             view -> !(view instanceof TextInfoPrivacyCell || view instanceof ShadowSectionCell || view instanceof FiltersSetupActivity.HintInnerCell || view instanceof GraySectionCell) && !Objects.equals(view.getTag(), TAG_NOT_SECTION),
             padding,
             roundRadius,
             this::drawBackgroundRect,
-            topPadding
+            topPadding,
+            force
         );
     }
     private static Pair<Utilities.CallbackReturn<View, Boolean>, Utilities.CallbackReturn<Integer, Boolean>> cachedIsViewTypeShadow(RecyclerListView listView, Utilities.CallbackReturn<View, Boolean> isSectionView) {
@@ -3314,8 +3338,18 @@ public class RecyclerListView extends RecyclerView implements IBlur3Capture {
         Utilities.Callback5<Canvas, RectF, Float, Float, Float> drawSectionBackground,
         boolean topPadding
     ) {
+        setSections(isSectionView, padding, roundRadius, drawSectionBackground, topPadding, false);
+    }
+    public void setSections(
+        Utilities.CallbackReturn<View, Boolean> isSectionView,
+        int padding,
+        float roundRadius,
+        Utilities.Callback5<Canvas, RectF, Float, Float, Float> drawSectionBackground,
+        boolean topPadding,
+        boolean force
+    ) {
         final Pair<Utilities.CallbackReturn<View, Boolean>, Utilities.CallbackReturn<Integer, Boolean>> callbacks = cachedIsViewTypeShadow(this, isSectionView);
-        setSections(callbacks.first, callbacks.second, padding, roundRadius, drawSectionBackground, topPadding);
+        setSections(callbacks.first, callbacks.second, padding, roundRadius, drawSectionBackground, topPadding, force);
     }
     public void setSections(
         Utilities.CallbackReturn<View, Boolean> isSectionView,
@@ -3325,6 +3359,21 @@ public class RecyclerListView extends RecyclerView implements IBlur3Capture {
         Utilities.Callback5<Canvas, RectF, Float, Float, Float> drawSectionBackground,
         boolean topPadding
     ) {
+        setSections(isSectionView, isViewTypeSection, padding, roundRadius, drawSectionBackground, topPadding, false);
+    }
+    public void setSections(
+        Utilities.CallbackReturn<View, Boolean> isSectionView,
+        Utilities.CallbackReturn<Integer, Boolean> isViewTypeSection,
+        int padding,
+        float roundRadius,
+        Utilities.Callback5<Canvas, RectF, Float, Float, Float> drawSectionBackground,
+        boolean topPadding,
+        boolean force
+    ) {
+        if (!force && !areMd3ContainersEnabled()) {
+            clearSectionsState();
+            return;
+        }
         setSelectorDrawableColor(getThemedColor(Theme.key_settings_listSelector));
         this.isViewTypeSection = isViewTypeSection;
         this.sectionRadius = roundRadius;
@@ -3570,6 +3619,9 @@ public class RecyclerListView extends RecyclerView implements IBlur3Capture {
 
     public static int getAdaptedSectionSurfaceColor(Theme.ResourcesProvider resourcesProvider) {
         int surfaceColor = Theme.getColor(Theme.key_windowBackgroundWhite, resourcesProvider);
+        if (!areMd3ContainersEnabled()) {
+            return surfaceColor;
+        }
         int pageColor = Theme.getColor(Theme.key_windowBackgroundGray, resourcesProvider);
         if (surfaceColor == pageColor) {
             Theme.ThemeInfo activeTheme = Theme.getActiveTheme();

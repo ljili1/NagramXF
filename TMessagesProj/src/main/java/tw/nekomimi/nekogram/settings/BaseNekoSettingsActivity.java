@@ -57,6 +57,7 @@ import tw.nekomimi.nekogram.helpers.MonetHelper;
 import tw.nekomimi.nekogram.ui.cells.AccountCell;
 import tw.nekomimi.nekogram.ui.cells.EmojiSetCell;
 import tw.nekomimi.nekogram.ui.cells.HeaderCell;
+import xyz.nextalone.nagram.NaConfig;
 
 public abstract class BaseNekoSettingsActivity extends BaseFragment {
 
@@ -146,7 +147,9 @@ public abstract class BaseNekoSettingsActivity extends BaseFragment {
             return false;
         });
 
-        listView.setSections(true);
+        if (NaConfig.INSTANCE.getMd3Containers().Bool()) {
+            listView.setSections(true);
+        }
         actionBar.setAdaptiveBackground(listView);
         return fragmentView;
     }
@@ -239,6 +242,9 @@ public abstract class BaseNekoSettingsActivity extends BaseFragment {
 
     protected int getAdaptedContainerColor() {
         int surfaceColor = getThemedColor(Theme.key_windowBackgroundWhite);
+        if (!NaConfig.INSTANCE.getMd3Containers().Bool()) {
+            return surfaceColor;
+        }
         int pageColor = getThemedColor(Theme.key_windowBackgroundGray);
         if (surfaceColor == pageColor) {
             Theme.ThemeInfo activeTheme = Theme.getActiveTheme();
