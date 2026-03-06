@@ -61,6 +61,7 @@ import org.telegram.ui.Components.LayoutHelper;
 import org.telegram.ui.Components.LinkPath;
 import org.telegram.ui.Components.LinkSpanDrawable;
 import org.telegram.ui.Components.LoadingDrawable;
+import org.telegram.ui.Components.RecyclerListView;
 import org.telegram.ui.Components.StaticLayoutEx;
 import org.telegram.ui.Components.URLSpanNoUnderline;
 
@@ -137,7 +138,6 @@ public class AboutLinkCell extends FrameLayout {
 
         bottomShadow = new FrameLayout(context);
         Drawable shadowDrawable = context.getResources().getDrawable(R.drawable.gradient_bottom).mutate();
-        shadowDrawable.setColorFilter(new PorterDuffColorFilter(Theme.getColor(Theme.key_windowBackgroundWhite, resourcesProvider), PorterDuff.Mode.SRC_ATOP));
         bottomShadow.setBackground(shadowDrawable);
         addView(bottomShadow, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, 12, Gravity.BOTTOM | Gravity.FILL_HORIZONTAL, 16, 0, 16, 0));
 
@@ -180,7 +180,6 @@ public class AboutLinkCell extends FrameLayout {
         showMoreTextView.setPadding(dp(2), 0, dp(2), 0);
         showMoreTextBackgroundView = new FrameLayout(context);
         showMoreBackgroundDrawable = context.getResources().getDrawable(R.drawable.gradient_left).mutate();
-        showMoreBackgroundDrawable.setColorFilter(new PorterDuffColorFilter(Theme.getColor(Theme.key_windowBackgroundWhite, resourcesProvider), PorterDuff.Mode.MULTIPLY));
         showMoreTextBackgroundView.setBackground(showMoreBackgroundDrawable);
         showMoreTextBackgroundView.setPadding(
             showMoreTextBackgroundView.getPaddingLeft() + dp(4),
@@ -190,7 +189,7 @@ public class AboutLinkCell extends FrameLayout {
         );
         showMoreTextBackgroundView.addView(showMoreTextView, LayoutHelper.createFrame(LayoutHelper.WRAP_CONTENT, LayoutHelper.WRAP_CONTENT));
         addView(showMoreTextBackgroundView, LayoutHelper.createFrame(LayoutHelper.WRAP_CONTENT, LayoutHelper.WRAP_CONTENT, Gravity.RIGHT | Gravity.BOTTOM, 18 - showMoreTextBackgroundView.getPaddingLeft() / AndroidUtilities.density, 0, 18 - showMoreTextBackgroundView.getPaddingRight() / AndroidUtilities.density, 6));
-        backgroundPaint.setColor(Theme.getColor(Theme.key_windowBackgroundWhite, resourcesProvider));
+        updateSurfaceColors();
 
         setWillNotDraw(false);
     }
@@ -199,8 +198,20 @@ public class AboutLinkCell extends FrameLayout {
         return color;
     }
 
+    private void updateSurfaceColors() {
+        int surfaceColor = RecyclerListView.getAdaptedSectionSurfaceColor(resourcesProvider);
+        if (bottomShadow.getBackground() != null) {
+            bottomShadow.getBackground().setColorFilter(new PorterDuffColorFilter(surfaceColor, PorterDuff.Mode.SRC_ATOP));
+        }
+        if (showMoreBackgroundDrawable != null) {
+            showMoreBackgroundDrawable.setColorFilter(new PorterDuffColorFilter(surfaceColor, PorterDuff.Mode.MULTIPLY));
+        }
+        backgroundPaint.setColor(surfaceColor);
+    }
+
     public void updateColors() {
         Theme.profile_aboutTextPaint.linkColor = processColor(Theme.getColor(Theme.key_chat_messageLinkIn, resourcesProvider));
+        updateSurfaceColors();
     }
 
     @Override
@@ -651,6 +662,8 @@ public class AboutLinkCell extends FrameLayout {
             collapseAnimator.start();
         } else {
             expandT = toValue;
+            showMoreTextBackgroundView.setAlpha(1f - expandT);
+            bottomShadow.setAlpha(shouldExpand ? (float) Math.pow(1f - expandT, 2f) : 0f);
             forceLayout();
         }
     }
@@ -770,6 +783,8 @@ public class AboutLinkCell extends FrameLayout {
             }
         }
         showMoreTextView.setVisibility(shouldExpand ? View.VISIBLE : View.GONE);
+        showMoreTextBackgroundView.setAlpha(shouldExpand ? 1f - expandT : 0f);
+        bottomShadow.setAlpha(shouldExpand ? (float) Math.pow(1f - expandT, 2f) : 0f);
         if (!shouldExpand && container.getBackground() == null) {
             container.setBackground(rippleBackground);
         }
@@ -824,3 +839,4 @@ public class AboutLinkCell extends FrameLayout {
         return this.expanded;
     }
 }
+

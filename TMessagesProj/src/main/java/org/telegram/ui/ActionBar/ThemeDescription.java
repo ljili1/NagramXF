@@ -223,6 +223,9 @@ public class ThemeDescription {
             Theme.setColor(currentKey, color, useDefault);
         }
         currentColor = color;
+        if (currentKey == Theme.key_windowBackgroundWhite && ((changeFlags & FLAG_CELLBACKGROUNDCOLOR) != 0 || (changeFlags & FLAG_BACKGROUND) != 0)) {
+            color = RecyclerListView.getAdaptedSectionSurfaceColor(resourcesProvider);
+        }
         if (alphaOverride > 0) {
             color = Color.argb(alphaOverride, Color.red(color), Color.green(color), Color.blue(color));
         }

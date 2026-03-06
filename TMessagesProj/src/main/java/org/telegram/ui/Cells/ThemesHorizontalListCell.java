@@ -695,7 +695,7 @@ public class ThemesHorizontalListCell extends RecyclerListView implements Notifi
         if (type == ThemeActivity.THEME_TYPE_OTHER) {
             setBackgroundColor(Theme.getColor(Theme.key_dialogBackground));
         } else {
-            setBackgroundColor(Theme.getColor(Theme.key_windowBackgroundWhite));
+            setBackgroundColor(RecyclerListView.getAdaptedSectionSurfaceColor(null));
         }
         setItemAnimator(null);
         setLayoutAnimation(null);

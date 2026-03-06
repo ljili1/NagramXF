@@ -2469,6 +2469,10 @@ public class ThemeActivity extends BaseFragment implements NotificationCenter.No
 
         @Override
         public void onBindViewHolder(RecyclerView.ViewHolder holder, int position) {
+            int itemViewType = holder.getItemViewType();
+            if (itemViewType != TYPE_TEXT_INFO_PRIVACY && itemViewType != TYPE_SHADOW) {
+                holder.itemView.setBackgroundColor(RecyclerListView.getAdaptedSectionSurfaceColor(getResourceProvider()));
+            }
             switch (holder.getItemViewType()) {
                 case TYPE_TEXT_SETTING: {
                     TextSettingsCell cell = (TextSettingsCell) holder.itemView;

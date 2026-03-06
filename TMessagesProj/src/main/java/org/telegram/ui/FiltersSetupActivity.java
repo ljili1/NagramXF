@@ -888,7 +888,7 @@ public class FiltersSetupActivity extends BaseFragment implements NotificationCe
                     break;
                 case VIEW_TYPE_FILTER:
                     FilterCell filterCell = new FilterCell(mContext);
-                    filterCell.setBackgroundColor(Theme.getColor(Theme.key_windowBackgroundWhite));
+                    filterCell.setBackgroundColor(RecyclerListView.getAdaptedSectionSurfaceColor(null));
                     filterCell.setOnReorderButtonTouchListener((v, event) -> {
                         if (event.getAction() == MotionEvent.ACTION_DOWN) {
                             itemTouchHelper.startDrag(listView.getChildViewHolder(filterCell));

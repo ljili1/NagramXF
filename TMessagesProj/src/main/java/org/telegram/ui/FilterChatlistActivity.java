@@ -629,15 +629,15 @@ public class FilterChatlistActivity extends BaseFragment {
                     }
                 };
                 actionView.setLayoutParams(new RecyclerView.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
-                actionView.setBackgroundColor(Theme.getColor(Theme.key_windowBackgroundWhite));
+                actionView.setBackgroundColor(RecyclerListView.getAdaptedSectionSurfaceColor(null));
                 view = actionView;
             } else if (viewType == 4) {
                 GroupCreateUserCell userCell = new GroupCreateUserCell(getContext(), 1, 0, false);
-                userCell.setBackgroundColor(Theme.getColor(Theme.key_windowBackgroundWhite));
+                userCell.setBackgroundColor(RecyclerListView.getAdaptedSectionSurfaceColor(null));
                 view = userCell;
             } else if (viewType == 5) {
                 FolderBottomSheet.HeaderCell headerCell = new FolderBottomSheet.HeaderCell(getContext());
-                headerCell.setBackgroundColor(Theme.getColor(Theme.key_windowBackgroundWhite));
+                headerCell.setBackgroundColor(RecyclerListView.getAdaptedSectionSurfaceColor(null));
                 view = headerCell;
             }
             return new RecyclerListView.Holder(view);

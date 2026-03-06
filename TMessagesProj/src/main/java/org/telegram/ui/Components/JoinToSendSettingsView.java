@@ -39,13 +39,16 @@ public class JoinToSendSettingsView extends LinearLayout {
         isJoinRequest = currentChat.join_request;
 
         setOrientation(LinearLayout.VERTICAL);
+        final int sectionSurfaceColor = RecyclerListView.getAdaptedSectionSurfaceColor(null);
+        setBackgroundColor(sectionSurfaceColor);
 
         joinHeaderCell = new HeaderCell(context, 20);
         joinHeaderCell.setText(LocaleController.getString(R.string.ChannelSettingsJoinTitle));
-        joinHeaderCell.setBackgroundColor(Theme.getColor(Theme.key_windowBackgroundWhite));
+        joinHeaderCell.setBackgroundColor(sectionSurfaceColor);
         addView(joinHeaderCell);
 
         joinToSendCell = new TextCheckCell(context, 20);
+        joinToSendCell.setBackground(Theme.getSelectorDrawable(false));
         joinToSendCell.setTextAndCheck(LocaleController.getString(R.string.ChannelSettingsJoinToSend), isJoinToSend, isJoinToSend);
         joinToSendCell.setEnabled(currentChat.creator || currentChat.admin_rights != null && currentChat.admin_rights.ban_users);
         joinToSendCell.setOnClickListener(e -> {
@@ -62,6 +65,7 @@ public class JoinToSendSettingsView extends LinearLayout {
         addView(joinToSendCell);
 
         joinRequestCell = new TextCheckCell(context, 20);
+        joinRequestCell.setBackground(Theme.getSelectorDrawable(false));
         joinRequestCell.setTextAndCheck(LocaleController.getString(R.string.ChannelSettingsJoinRequest), isJoinRequest, false);
         joinRequestCell.setPivotY(0);
         joinRequestCell.setEnabled(currentChat.creator || currentChat.admin_rights != null && currentChat.admin_rights.ban_users);

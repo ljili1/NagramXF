@@ -1702,7 +1702,7 @@ public class PremiumPreviewFragment extends BaseFragment implements Notification
                 Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
 
                 {
-                    paint.setColor(Theme.getColor(Theme.key_dialogBackground));
+                    paint.setColor(RecyclerListView.getAdaptedSectionSurfaceColor(resourceProvider));
                     if (whiteBackground) {
                         paint.setShadowLayer(dp(2), 0, dp(.66f), 0x30000000);
                     }
@@ -1711,6 +1711,7 @@ public class PremiumPreviewFragment extends BaseFragment implements Notification
                 private Path path = new Path();
                 @Override
                 public void dispatchDraw(Canvas c) {
+                    paint.setColor(RecyclerListView.getAdaptedSectionSurfaceColor(resourceProvider));
                     path.rewind();
                     AndroidUtilities.rectTmp.set(0, 0, getWidth(), getHeight());
                     path.addRoundRect(AndroidUtilities.rectTmp, dp(12), dp(12), Path.Direction.CW);

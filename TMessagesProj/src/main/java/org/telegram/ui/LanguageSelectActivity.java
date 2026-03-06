@@ -654,7 +654,7 @@ public class LanguageSelectActivity extends BaseFragment implements Notification
                     break;
                 case VIEW_TYPE_SETTINGS:
                     TextCell textCell = new TextCell(mContext);
-                    textCell.setBackgroundColor(Theme.getColor(Theme.key_windowBackgroundWhite));
+                    textCell.setBackgroundColor(RecyclerListView.getAdaptedSectionSurfaceColor(null));
                     view = textCell;
                     break;
                 case VIEW_TYPE_SETTINGS_2:

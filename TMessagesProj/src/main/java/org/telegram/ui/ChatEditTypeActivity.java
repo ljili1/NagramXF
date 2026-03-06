@@ -312,6 +312,7 @@ public class ChatEditTypeActivity extends BaseFragment implements NotificationCe
         actionBar.setAdaptiveBackground(scrollView);
 
         linearLayout.setOrientation(LinearLayout.VERTICAL);
+        final int sectionSurfaceColor = RecyclerListView.getAdaptedSectionSurfaceColor(resourceProvider);
 
         if (isForcePublic) {
             actionBar.setTitle(LocaleController.getString(R.string.TypeLocationGroup));
@@ -323,6 +324,7 @@ public class ChatEditTypeActivity extends BaseFragment implements NotificationCe
 
         linearLayoutTypeContainer = new LinearLayout(context);
         linearLayoutTypeContainer.setOrientation(LinearLayout.VERTICAL);
+        linearLayoutTypeContainer.setBackgroundColor(sectionSurfaceColor);
         linearLayout.addView(linearLayoutTypeContainer, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
 
         headerCell2 = new HeaderCell(context, 23);
@@ -380,6 +382,7 @@ public class ChatEditTypeActivity extends BaseFragment implements NotificationCe
 
         linkContainer = new LinearLayout(context);
         linkContainer.setOrientation(LinearLayout.VERTICAL);
+        linkContainer.setBackgroundColor(sectionSurfaceColor);
         linearLayout.addView(linkContainer, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
 
         headerCell = new HeaderCell(context, 23);
@@ -564,6 +567,7 @@ public class ChatEditTypeActivity extends BaseFragment implements NotificationCe
 
         adminnedChannelsLayout = new LinearLayout(context);
         adminnedChannelsLayout.setOrientation(LinearLayout.VERTICAL);
+        adminnedChannelsLayout.setBackgroundColor(sectionSurfaceColor);
         linearLayout.addView(adminnedChannelsLayout, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
 
         adminedInfoCell = new ShadowSectionCell(context);
@@ -590,6 +594,7 @@ public class ChatEditTypeActivity extends BaseFragment implements NotificationCe
 
         saveContainer = new LinearLayout(context);
         saveContainer.setOrientation(LinearLayout.VERTICAL);
+        saveContainer.setBackgroundColor(sectionSurfaceColor);
         linearLayout.addView(saveContainer);
 
         saveHeaderCell = new HeaderCell(context, 23);
@@ -1050,9 +1055,9 @@ public class ChatEditTypeActivity extends BaseFragment implements NotificationCe
 
             @Override
             public void onBindViewHolder(@NonNull ViewHolder holder, int position) {
-                switch (holder.getItemViewType()) {
+                    switch (holder.getItemViewType()) {
                     case VIEW_TYPE_HEADER:
-                        ((HeaderCell) holder.itemView).setBackgroundColor(Theme.getColor(Theme.key_windowBackgroundWhite, resourcesProvider));
+                        ((HeaderCell) holder.itemView).setBackgroundColor(RecyclerListView.getAdaptedSectionSurfaceColor(resourcesProvider));
                         ((HeaderCell) holder.itemView).setText(LocaleController.getString(R.string.UsernamesChannelHeader));
                         break;
                     case VIEW_TYPE_USERNAME:
@@ -1115,7 +1120,7 @@ public class ChatEditTypeActivity extends BaseFragment implements NotificationCe
             }
 
             if (top < bottom) {
-                backgroundPaint.setColor(Theme.getColor(Theme.key_windowBackgroundWhite, resourcesProvider));
+                backgroundPaint.setColor(RecyclerListView.getAdaptedSectionSurfaceColor(resourcesProvider));
                 canvas.drawRect(0, top, getWidth(), bottom, backgroundPaint);
             }
 

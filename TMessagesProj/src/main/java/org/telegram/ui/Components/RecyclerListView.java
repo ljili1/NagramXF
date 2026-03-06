@@ -95,6 +95,7 @@ import java.util.List;
 import java.util.Objects;
 
 import tw.nekomimi.nekogram.NekoConfig;
+import tw.nekomimi.nekogram.helpers.MonetHelper;
 
 @SuppressWarnings("JavaReflectionMemberAccess")
 public class RecyclerListView extends RecyclerView implements IBlur3Capture {
@@ -3566,6 +3567,30 @@ public class RecyclerListView extends RecyclerView implements IBlur3Capture {
     private final static Paint sectionBackgroundStrokePaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final static Path sectionBackgroundPath = new Path();
     private final static float[] radii = new float[8];
+
+    public static int getAdaptedSectionSurfaceColor(Theme.ResourcesProvider resourcesProvider) {
+        int surfaceColor = Theme.getColor(Theme.key_windowBackgroundWhite, resourcesProvider);
+        int pageColor = Theme.getColor(Theme.key_windowBackgroundGray, resourcesProvider);
+        if (surfaceColor == pageColor) {
+            Theme.ThemeInfo activeTheme = Theme.getActiveTheme();
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && activeTheme != null && activeTheme.isMonetLight()) {
+                int monetSurface = MonetHelper.getColor("n1_0");
+                if (monetSurface != 0 && monetSurface != pageColor) {
+                    return monetSurface;
+                }
+            }
+            float[] hsv = new float[3];
+            Color.colorToHSV(surfaceColor, hsv);
+            if (hsv[2] > 0.5f) {
+                hsv[2] = Math.max(0f, hsv[2] - 0.03f);
+            } else {
+                hsv[2] = Math.min(1f, hsv[2] + 0.03f);
+            }
+            surfaceColor = Color.HSVToColor(Color.alpha(surfaceColor), hsv);
+        }
+        return surfaceColor;
+    }
+
     public static void drawBackgroundRect(Canvas canvas, RectF rect, float topRadius, float bottomRadius, float alpha, Theme.ResourcesProvider resourcesProvider) {
         if (SharedConfig.shadowsInSections) {
             sectionBackgroundStrokePaint.setShadowLayer(dpf2(0.33f), 0, 0, multAlpha(0x0c000000, alpha));
@@ -3574,7 +3599,7 @@ public class RecyclerListView extends RecyclerView implements IBlur3Capture {
         } else {
             sectionBackgroundPaint.setShadowLayer(0, 0, 0, 0);
         }
-        sectionBackgroundPaint.setColor(multAlpha(Theme.getColor(Theme.key_windowBackgroundWhite, resourcesProvider), alpha));
+        sectionBackgroundPaint.setColor(multAlpha(getAdaptedSectionSurfaceColor(resourcesProvider), alpha));
         if (topRadius == bottomRadius) {
             if (SharedConfig.shadowsInSections) {
                 canvas.drawRoundRect(rect, topRadius, topRadius, sectionBackgroundStrokePaint);
@@ -3661,7 +3686,7 @@ public class RecyclerListView extends RecyclerView implements IBlur3Capture {
         if (prev && next) {
             prev = child.getY() >= rect.top;
             next = child.getY() + child.getHeight() <= rect.bottom;
-            if (prev && next) return Theme.createRoundRectDrawable(0, Theme.getColor(Theme.key_windowBackgroundWhite, resourcesProvider));
+            if (prev && next) return Theme.createRoundRectDrawable(0, getAdaptedSectionSurfaceColor(resourcesProvider));
         }
         final Path clipPath = new Path();
         if (!prev && !next) {
@@ -3682,7 +3707,7 @@ public class RecyclerListView extends RecyclerView implements IBlur3Capture {
                 canvas.save();
                 canvas.translate(-child.getX(), -child.getY());
                 canvas.clipPath(clipPath);
-                paint.setColor(ColorUtils.setAlphaComponent(Theme.getColor(Theme.key_windowBackgroundWhite, resourcesProvider), paint.getAlpha()));
+                paint.setColor(ColorUtils.setAlphaComponent(getAdaptedSectionSurfaceColor(resourcesProvider), paint.getAlpha()));
                 canvas.drawRect(rect, paint);
                 canvas.restore();
             }
