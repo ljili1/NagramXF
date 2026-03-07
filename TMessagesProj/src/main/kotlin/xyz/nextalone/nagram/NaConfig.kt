@@ -1231,7 +1231,7 @@ object NaConfig {
         addConfig(
             "SwitchStyle",
             ConfigItem.configTypeInt,
-            0 // 0: default; 1: Modern; 2: MD3
+            0 // 0: default; 1: Modern; 2: MD3; 3: OneUI
         )
     val sliderStyle =
         addConfig(

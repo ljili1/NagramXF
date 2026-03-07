@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="XChannel">Nagram X 频道</string>
+    <string name="NagramXForkChannel">Nagram XF 频道</string>
     <string name="EnableSaveDeletedMessages">保存已删除消息</string>
     <string name="DeletedMessage">已删除</string>
     <string name="EnableSaveEditsHistory">保存编辑历史</string>
@@ -92,7 +93,9 @@
     <string name="ChatsOnly">仅聊天</string>
     <string name="InstantViewTranslation">即时预览</string>
     <string name="SaveDeletedMessageForBot">在机器人聊天中保存</string>
-    <string name="HideArchive">移除聊天列表中的\"已归档聊天\"</string>
+    <string name="HideArchive">移除聊天列表中的\"已归档聊天\"</string>  
+    <string name="ReplaceBlockedMyInfo">替换屏蔽我的用户信息</string>
+    <string name="ReplaceBlockedMyInfoDescription">对已将你屏蔽的用户，使用灰色头像占位图进行显示。</string>
     <string name="ConfirmAllLinks">打开内联链接前确认</string>
     <string name="ConfirmAllLinksDescription">启用后，打开所有内联链接（包括 Telegram 内部链接，例如机器人内联按钮中的 t.me 链接）前，都会询问是否确认。</string>
     <string name="TranslatorMinimizedChannel">翻译栏已为此频道最小化。</string>
@@ -194,6 +197,9 @@
     <string name="ResetChatNameOverrides">重置聊天名称覆盖</string>
     <string name="ResetChatNameNotification">聊天名称覆盖已清除。</string>
     <string name="LeftBottomButtonAction">左侧按钮操作</string>
+    <string name="MainTabsCustomize">自定义底边栏</string>
+    <string name="MainTabsCustomizeDesc">点按标签可显示或隐藏。长按并拖动可调整顺序。</string>
+    <string name="MainTabsShowTitles">显示标签名称</string>
     <string name="TranscribeProviderOpenAI">OpenAI-Compatible API</string>
     <string name="OpenAiApiCredentialsDialog">配置 OpenAI 兼容的 API。您可以参考此 **文档**。\n</string>
     <string name="OpenAiApiBaseUrlHint">API URL ([…]/chat/completions)</string>
@@ -234,6 +240,7 @@
     <string name="SwitchStyle">开关样式</string>
     <string name="SliderStyle">滑块样式</string>
     <string name="StyleModern">现代</string>
+    <string name="StyleOneUI4" translatable="false">OneUI</string>
     <string name="SaveDeletedExclusionMenu">保存已删除</string>
     <string name="SaveDeletedExcluded">排除</string>
     <string name="MarkdownParser">Markdown 解析器</string>
@@ -320,6 +327,27 @@
     <string name="UnifiedPushLastReceivedNotification">最后一次通过 UnifiedPush 接收到的通知是 %1$d 秒前。\n\n自 Nagram X 启动以来，您已收到 %2$d 条通知。</string>
     <string name="UnifiedPushCurrentEndpoint">当前的 UnifiedPush 端点是：%1$s</string>
     <string name="PlayOnce">播放一次</string>
+    <string name="SwitchAccountNax">&#x5207;&#x6362;&#x8D26;&#x53F7;</string>
+    <string name="CurrentNax">&#x5F53;&#x524D;</string>
+    <string name="PrivateChatMessage">&#x65E0;&#x6CD5;&#x6253;&#x5F00;&#x79C1;&#x804A;&#xFF1A;%1$s\n\n&#x8BE5;&#x804A;&#x5929;&#x4E3A;&#x79C1;&#x6709;&#x804A;&#x5929;&#xFF0C;&#x53EA;&#x80FD;&#x5728;&#x539F;&#x8D26;&#x53F7;&#x4E2D;&#x8BBF;&#x95EE;&#x3002;</string>
+    <string name="DeleteChatTitle">&#x5220;&#x9664;&#x804A;&#x5929;</string>
+    <string name="DeleteChatMessage">&#x4F60;&#x786E;&#x5B9A;&#x8981;&#x4ECE;&#x6700;&#x8FD1;&#x804A;&#x5929;&#x4E2D;&#x79FB;&#x9664; %1$s &#x5417;&#xFF1F;</string>
+    <string name="ChatRemovedFromRecent">&#x5DF2;&#x4ECE;&#x6700;&#x8FD1;&#x804A;&#x5929;&#x4E2D;&#x79FB;&#x9664;</string>
+    <string name="ChatHistory_ResultCount">%1$d &#x6761;&#x7ED3;&#x679C;</string>
+    <string name="ChatCategoryAll">&#x5168;&#x90E8;</string>
+    <string name="ChatCategoryChannels">&#x9891;&#x9053;</string>
+    <string name="ChatCategoryGroups">&#x7FA4;&#x7EC4;</string>
+    <string name="ChatCategoryUsers">&#x7528;&#x6237;</string>
+    <string name="ChatCategoryBots">&#x673A;&#x5668;&#x4EBA;</string>
+    <string name="ChatHistoryDeleteChats">&#x5220;&#x9664;&#x804A;&#x5929;</string>
+    <string name="ChatHistoryDeleteConfirmation">&#x4F60;&#x786E;&#x5B9A;&#x8981;&#x5220;&#x9664;</string>
+    <string name="ChatHistorySelected">&#x5DF2;&#x9009;</string>
+    <string name="ChatHistory_NoResultsFor">&#x672A;&#x627E;&#x5230;&#x201C;%1$s&#x201D;&#x7684;&#x7ED3;&#x679C;</string>
+    <string name="ChatHistory_NoRecentChats">&#x6682;&#x65E0;&#x6700;&#x8FD1;&#x804A;&#x5929;</string>
+    <string name="ChatHistory_NoCategoryFound">&#x672A;&#x627E;&#x5230;%1$s</string>
+    <string name="ChatHistory_EnterSearchQuery">&#x8F93;&#x5165;&#x641C;&#x7D22;&#x5185;&#x5BB9;</string>
+    <string name="ChatHistory_LinkSharedToChat_one">&#x94FE;&#x63A5;&#x5DF2;&#x8F6C;&#x53D1;&#x5230; **1 &#x4E2A;&#x804A;&#x5929;**&#x3002;</string>
+    <string name="ChatHistory_LinkSharedToChat_other">&#x94FE;&#x63A5;&#x5DF2;&#x8F6C;&#x53D1;&#x5230; **%1$d &#x4E2A;&#x804A;&#x5929;**&#x3002;</string>
     <string name="StorageSettings">存储</string>
     <string name="MainTabsSettingsHeader">主标签页</string>
     <string name="MainTabsHideTitles">隐藏标题</string>
