@@ -12425,7 +12425,7 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
             otherItem.addSubItem(logout, R.drawable.msg_leave, LocaleController.getString(R.string.LogOut));
         } else {
             if (!isBot) {
-                if (getDialogId() != 0 && !FiltersListBottomSheet.getCanAddDialogFilters(this, getDialogId()).isEmpty()) {
+                if (!selfUser && !myProfile && getDialogId() != 0 && !FiltersListBottomSheet.getCanAddDialogFilters(this, getDialogId()).isEmpty()) {
                     otherItem.addSubItem(add_to_folder, R.drawable.msg_folders, getString(R.string.FilterAddTo));
                 }
                 otherItem.addSubItem(clear_cache, R.drawable.msg_delete, getString(R.string.ClearCache));
@@ -17325,6 +17325,9 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
     }
 
     private void showAddCurrentChatToFolderSheet() {
+        if (myProfile || userId == getUserConfig().clientUserId) {
+            return;
+        }
         ArrayList<Long> selectedDialogs = new ArrayList<>(1);
         selectedDialogs.add(getDialogId());
         FiltersListBottomSheet sheet = new FiltersListBottomSheet(ProfileActivity.this, selectedDialogs);
