@@ -383,6 +383,10 @@ public class NotificationCenter {
     public static final int contactsPermissionBadgeCheck = totalEvents++;
     public static final int mainTabsLayoutChanged = totalEvents++;
 
+    // pillstack (ported from ayuGram/exteragram)
+    public static final int pillStackSettingsChanged = totalEvents++;
+    public static final int pillStackLayoutChanged = totalEvents++;
+
     public static boolean alreadyLogged;
 
     // custom
