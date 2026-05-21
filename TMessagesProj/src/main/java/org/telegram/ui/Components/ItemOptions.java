@@ -1038,9 +1038,41 @@ public class ItemOptions {
 
     private int minWidthDp;
     private int fixedWidthDp;
+    private boolean flexibleMinWidth;
 
     public ItemOptions setMinWidth(int minWidthDp) {
         this.minWidthDp = minWidthDp;
+        return this;
+    }
+
+    /**
+     * Like {@link #setMinWidth(int)}, but lets items grow wider than {@code minWidthDp}
+     * to fit long text instead of being clamped to a fixed width.
+     */
+    public ItemOptions setMinWidthFlexible(int minWidthDp) {
+        this.minWidthDp = minWidthDp;
+        this.flexibleMinWidth = true;
+        return this;
+    }
+
+    /**
+     * Measures all items at their natural width and sets the layout's minimum width
+     * to the widest item. Call after all items are added.
+     */
+    public ItemOptions fitToContent() {
+        if (lastLayout == null) return this;
+        int maxWidth = dp(minWidthDp > 0 ? minWidthDp : 196);
+        int unspec = View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED);
+        for (int i = 0; i < lastLayout.getItemsCount(); i++) {
+            View child = lastLayout.getItemAt(i);
+            if (child == null || child.getVisibility() == View.GONE) continue;
+            child.measure(unspec, unspec);
+            maxWidth = Math.max(maxWidth, child.getMeasuredWidth());
+        }
+        lastLayout.setMinimumWidth(maxWidth);
+        if (lastLayout.linearLayout != null) {
+            lastLayout.linearLayout.setMinimumWidth(maxWidth);
+        }
         return this;
     }
 

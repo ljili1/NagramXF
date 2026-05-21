@@ -387,6 +387,9 @@ public class NotificationCenter {
     public static final int pillStackSettingsChanged = totalEvents++;
     public static final int pillStackLayoutChanged = totalEvents++;
 
+    // AI Chat
+    public static final int servicesUpdated = totalEvents++;
+
     public static boolean alreadyLogged;
 
     // custom
