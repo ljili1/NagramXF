@@ -20140,7 +20140,6 @@ public class ChatActivity extends BaseFragment implements
     private static final int MESSAGE_TYPE_STICKER_PACK_INSTALLED = 9;
     private static final int MESSAGE_TYPE_THEME = 10;
     private static final int MESSAGE_TYPE_SEND_ERROR_TEXT = 20;
-    private static final int MESSAGE_TYPE_NEKOX_JSON = 21;
     private static final int MESSAGE_TYPE_NEKOX_STICKERS_JSON = 22;
     private static final int MESSAGE_TYPE_NEKOX_SETTINGS_JSON = 23;
     private static final int MESSAGE_TYPE_FONT = 100;
@@ -20208,8 +20207,6 @@ public class ChatActivity extends BaseFragment implements
                                         return MESSAGE_TYPE_THEME;
                                     } else if (mime.endsWith("/xml")) {
                                         return MESSAGE_TYPE_XML;
-                                    } else if ((messageObject.getDocumentName().toLowerCase().endsWith(".nekox.json"))) {
-                                        return MESSAGE_TYPE_NEKOX_JSON;
                                     } else if ((messageObject.getDocumentName().toLowerCase().endsWith(".nekox-stickers.json"))) {
                                         return MESSAGE_TYPE_NEKOX_STICKERS_JSON;
                                     } else if ((messageObject.getDocumentName().toLowerCase().endsWith(".nekox-settings.json"))) {
@@ -20280,9 +20277,6 @@ public class ChatActivity extends BaseFragment implements
                             String mime = messageObject.getDocument().mime_type;
                             if (mime != null && mime.endsWith("text/xml")) {
                                 return MESSAGE_TYPE_XML;
-                            }
-                            if (mime != null && mime.endsWith("/json")) {
-                                return MESSAGE_TYPE_NEKOX_JSON;
                             }
                         }
                         if (messageObject.messageOwner.ttl <= 0) {
@@ -35397,13 +35391,6 @@ public class ChatActivity extends BaseFragment implements
                             builder.setOnPreDismissListener(di -> dimBehindView(false));
                             showDialog(builder.create());
                         }
-                    } else if (locFile.getName().toLowerCase().endsWith(".nekox.json")) {
-                        File finalLocFile1 = locFile;
-                        AlertUtil.showConfirm(getParentActivity(),
-                                getString(R.string.ImportProxyList),
-                                R.drawable.menu_secret, getString(R.string.Import),
-                                false, () -> {}
-                        );
                     } else if (locFile.getName().toLowerCase().endsWith(".nekox-stickers.json") || fileName.endsWith(".nekox-stickers.json")) {
                         File finalLocFile = locFile;
                         AlertUtil.showConfirm(getParentActivity(),
@@ -43716,12 +43703,6 @@ public class ChatActivity extends BaseFragment implements
                     } else {
                         scrollToPositionOnRecreate = -1;
                     }
-                } else if (message.getDocumentName().toLowerCase().endsWith(".nekox.json")) {
-                    File finalLocFile = locFile;
-                    AlertUtil.showConfirm(getParentActivity(),
-                            getString(R.string.ImportProxyList),
-                            R.drawable.menu_secret, getString(R.string.Import),
-                            false, () -> {});
                 } else if (message.getDocumentName().toLowerCase().endsWith(".nekox-stickers.json")) {
                     File finalLocFile = locFile;
                     AlertUtil.showConfirm(getParentActivity(),
@@ -49138,12 +49119,9 @@ public class ChatActivity extends BaseFragment implements
                         options.add(OPTION_SHARE);
                         icons.add(R.drawable.msg_shareout);
                     }
-                } else if (type == MESSAGE_TYPE_NEKOX_JSON || type == MESSAGE_TYPE_NEKOX_STICKERS_JSON || type == MESSAGE_TYPE_NEKOX_SETTINGS_JSON || type == MESSAGE_TYPE_FONT) {
-                    options.add(5);
-                    if (type == MESSAGE_TYPE_NEKOX_JSON) {
-                        items.add(LocaleController.getString(R.string.ImportProxyList));
-                        icons.add(R.drawable.menu_secret);
-                    } else if (type == MESSAGE_TYPE_NEKOX_STICKERS_JSON) {
+                } else if (type == MESSAGE_TYPE_NEKOX_STICKERS_JSON || type == MESSAGE_TYPE_NEKOX_SETTINGS_JSON || type == MESSAGE_TYPE_FONT) {
+                    options.add(OPTION_APPLY_LOCALIZATION_OR_THEME);
+                    if (type == MESSAGE_TYPE_NEKOX_STICKERS_JSON) {
                         items.add(LocaleController.getString(R.string.ImportStickersList));
                         icons.add(R.drawable.msg_sticker);
                     } else if (type == MESSAGE_TYPE_NEKOX_SETTINGS_JSON) {
@@ -49528,10 +49506,6 @@ public class ChatActivity extends BaseFragment implements
                     items.add(LocaleController.getString(R.string.ApplyThemeFile));
                     options.add(OPTION_APPLY_LOCALIZATION_OR_THEME);
                     icons.add(R.drawable.msg_theme);
-                } else if (type == MESSAGE_TYPE_NEKOX_JSON) {
-                    items.add(LocaleController.getString(R.string.ImportProxyList));
-                    options.add(5);
-                    icons.add(R.drawable.proxy_on);
                 } else if (type == MESSAGE_TYPE_STICKER_PACK_NOT_INSTALLED && NaConfig.INSTANCE.getShowAddToStickers().Bool()) {
                     items.add(LocaleController.getString(R.string.AddToStickers));
                     options.add(OPTION_ADD_TO_STICKERS_OR_MASKS);
