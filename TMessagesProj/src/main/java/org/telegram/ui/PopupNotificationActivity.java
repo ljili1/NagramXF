@@ -948,7 +948,7 @@ public class PopupNotificationActivity extends Activity implements NotificationC
                 } else if (NekoConfig.mapPreviewProvider.Int() == 3) {
                     // disabled
                 } else {
-                    String currentUrl = AndroidUtilities.formapMapUrl(false, lat, lon, 100, 100, true, 15);
+                    String currentUrl = AndroidUtilities.formapMapUrl(0, lat, lon, 100, 100, true, 15, -1);
                     imageView.setImage(currentUrl, null, null);
                 }
             }
