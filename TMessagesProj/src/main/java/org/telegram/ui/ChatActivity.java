@@ -9815,6 +9815,7 @@ public class ChatActivity extends BaseFragment implements
         checkUi_chatListViewPaddings();
         checkUi_messagesSearchListPadding();
         invalidateClipRectForBackgroundAndChatList();
+        updateRecentDialogsSidebarInsets();
 
         final boolean inAppInputVisible = windowInsetsStateHolder.inAppViewIsVisible();
         if (lastInAppInputVisible != inAppInputVisible) {
@@ -12281,8 +12282,10 @@ public class ChatActivity extends BaseFragment implements
         }
         int topInset = 0;
         int bottomInset = 0;
-        if (contentView != null && chatActivityEnterView != null && chatActivityEnterView.getTop() > 0) {
-            bottomInset = Math.max(0, contentView.getMeasuredHeight() - chatActivityEnterView.getTop() - AndroidUtilities.dp(1));
+        if (contentView != null && chatActivityEnterView != null) {
+            bottomInset = AndroidUtilities.dp(9 + 7)
+                + (int) inputIslandHeightCurrent
+                + (int) windowInsetsStateHolder.getAnimatedMaxBottomInset();
         }
         recentDialogsSidebarView.setPanelInsets(topInset, bottomInset);
     }
@@ -50094,6 +50097,7 @@ public class ChatActivity extends BaseFragment implements
         }
 
         checkUi_inputIslandHeight();
+        updateRecentDialogsSidebarInsets();
     }
 
     private void invalidateAllGlassAttachedViews() {
