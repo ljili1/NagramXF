@@ -375,4 +375,10 @@
     <string name="HideDialogsSearchField">Hide Search Box</string>
     <string name="DeepLTranslateKey">DeepL API Key</string>
     <string name="DeepLTranslateKeyNotice">Configure DeepL API Key, leave blank to use built-in credentials.</string>
+    <string name="PublicProxy">Public Proxy</string>
+    <string name="WsProvider">Provider</string>
+    <string name="WsEnableTls">Enable TLS</string>
+    <string name="WsGetHelp">You can also deploy it easily by yourself!</string>
+    <string name="WsCustomDescription">Use custom domain to connect to TELEOFFICIAL through WebSocket via Cloudflare.</string>
+    <string name="NullgramWsDescription">Connect to TELEOFFICIAL through WebSocket via Cloudflare.\nProvided by NagramXF</string>
 </resources>

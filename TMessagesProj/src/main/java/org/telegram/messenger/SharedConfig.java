@@ -61,6 +61,7 @@ import java.util.concurrent.CopyOnWriteArraySet;
 import java.util.stream.Collectors;
 
 import tw.nekomimi.nekogram.NekoConfig;
+import tw.nekomimi.nekogram.helpers.WebSocketHelper;
 import xyz.nextalone.nagram.NaConfig;
 
 import java.util.List;
@@ -1551,6 +1552,10 @@ public class SharedConfig {
             ProxyInfo info = currentProxy = new ProxyInfo(proxyAddress, proxyPort, proxyUsername, proxyPassword, proxySecret);
             proxyList.add(0, info);
         }
+        if (!WebSocketHelper.proxyServer.equals(proxyAddress)) {
+            ProxyInfo info = new ProxyInfo(WebSocketHelper.proxyServer, 6356, "", "", "");
+            proxyList.add(0, info);
+        }
     }
 
     public static void saveProxyList() {
@@ -1573,6 +1578,9 @@ public class SharedConfig {
         serializedData.writeInt32(count);
         for (int a = count - 1; a >= 0; a--) {
             ProxyInfo info = infoToSerialize.get(a);
+            if (WebSocketHelper.proxyServer.equals(info.address)) {
+                continue;
+            }
             serializedData.writeString(info.address != null ? info.address : "");
             serializedData.writeInt32(info.port);
             serializedData.writeString(info.username != null ? info.username : "");

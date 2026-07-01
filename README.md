@@ -10,7 +10,7 @@ Includes most features from exteraGram and AyuGram.
 
 ## Compilation Guide
 
-1. Obtain API credentials (`TELEGRAM_APP_ID` and `TELEGRAM_APP_HASH`) from [Telegram Developer Portal](https://my.telegram.org/auth). Create `local.properties` in the project root with:
+1. Obtain API credentials (`TELEGRAM_APP_ID` and `TELEGRAM_APP_HASH`) from [Telegram Developer Portal](https://my.telegram.org/auth). Create `local.properties` in the project root with:(not set ban account)
 
    ```properties
    TELEGRAM_APP_ID=<your_telegram_app_id>
@@ -40,3 +40,4 @@ This project reverse-engineered and uses some code from closed-source projects.
 - [Cherrygram](https://github.com/arsLan4k1390/Cherrygram)
 - [exteraGram](https://github.com/exteraSquad/exteraGram)
 - [OctoGram](https://github.com/OctoGramApp/OctoGram)
+- [Nullgram](https://github.com/qwq233/Nullgram)

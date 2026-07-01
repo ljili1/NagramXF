@@ -198,6 +198,11 @@ public class NekoConfig {
     public static ConfigItem sendOfflinePacketAfterOnlineLocked = addConfig("sendOfflinePacketAfterOnlineLocked", configTypeBool, false);
     // --- Ghost Mode ---
 
+    // --- WebSocket Proxy (Cloudflare) ---
+    public static ConfigItem wsEnableTLS = addConfig("wsEnableTLS", configTypeBool, true);
+    public static ConfigItem wsServerHost = addConfig("wsServerHost", configTypeString, "");
+    public static ConfigItem wsBuiltInProxyBackend = addConfig("wsBuiltInProxyBackend", configTypeInt, 0);
+
     static {
         init();
     }

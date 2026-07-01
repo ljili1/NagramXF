@@ -1,0 +1,103 @@
+name: Build arm64-v8a Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      build_type:
+        description: 'Build type: release or staging'
+        required: false
+        default: 'release'
+        type: choice
+        options:
+          - release
+          - staging
+  push:
+    branches:
+      - main
+      - master
+      - dev
+    paths-ignore:
+      - '**.md'
+      - '.github/**'
+      - '!.github/workflows/build_arm64.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Gradle Build (arm64-v8a)
+    runs-on: ubuntu-latest
+    env:
+      NATIVE_TARGET: "arm64-v8a"
+      # If you use the repo's test keystore, set these in GitHub Secrets instead of hardcoding.
+      # The values below match the placeholder keystore that ships with this fork.
+      KEYSTORE_PASS: ${{ secrets.KEYSTORE_PASS || 'android' }}
+      ALIAS_NAME: ${{ secrets.ALIAS_NAME || 'androidkey' }}
+      ALIAS_PASS: ${{ secrets.ALIAS_PASS || 'android' }}
+      TELEGRAM_APP_ID: ${{ secrets.TELEGRAM_APP_ID || '6' }}
+      TELEGRAM_APP_HASH: ${{ secrets.TELEGRAM_APP_HASH || 'eb06d4abfb49dc3eeb1aeb98ae0f581e' }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          cache-read-only: false
+
+      - name: Set up Android SDK and CMake
+        uses: android-actions/setup-android@v3
+        with:
+          packages: "build-tools;36.0.0 ndk;27.2.12479018 platforms;android-36 cmake;3.31.6"
+
+      - name: Configure SDK path
+        run: |
+          echo "sdk.dir=${ANDROID_HOME}" >> local.properties
+
+      - name: Tune Gradle memory
+        run: |
+          MEMORY_KB=$(awk '/MemTotal/ {print $2}' /proc/meminfo)
+          MEMORY_GB=$((MEMORY_KB / 1024 / 1024))
+          echo "Detected memory size: ${MEMORY_GB}GB"
+          if [ "$MEMORY_GB" -ge 12 ]; then
+            sed -i '/^org\.gradle\.jvmargs=/d' gradle.properties
+            echo "org.gradle.jvmargs=-Xmx8G -XX:MaxMetaspaceSize=2G -XX:+UseParallelGC -XX:+HeapDumpOnOutOfMemoryError -Dfile.encoding=UTF-8" >> gradle.properties
+          fi
+          cat gradle.properties
+
+      - name: Grant execute permission to gradlew
+        run: chmod +x gradlew
+
+      - name: Compute build timestamp
+        id: timestamp
+        run: echo "value=$(date +%s)" >> "$GITHUB_OUTPUT"
+
+      - name: Build APK
+        env:
+          LOCAL_PROPERTIES: ${{ secrets.LOCAL_PROPERTIES }}
+          BUILD_TIMESTAMP: ${{ steps.timestamp.outputs.value }}
+          COMMIT_ID: ${{ github.sha }}
+        run: |
+          ./gradlew TMessagesProj:assemble${{ github.event.inputs.build_type || 'Release' }}
+
+      - name: Locate APK
+        id: locate_apk
+        run: |
+          APK=$(find TMessagesProj/build/outputs/apk -name '*arm64-v8a*.apk' | head -n 1)
+          echo "APK path: $APK"
+          echo "apk_path=$APK" >> "$GITHUB_OUTPUT"
+          echo "apk_name=$(basename "$APK")" >> "$GITHUB_OUTPUT"
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: NagramXF-arm64-v8a-${{ github.run_number }}
+          path: ${{ steps.locate_apk.outputs.apk_path }}
+          if-no-files-found: error
