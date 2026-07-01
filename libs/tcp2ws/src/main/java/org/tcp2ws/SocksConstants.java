@@ -4,7 +4,7 @@ public interface SocksConstants {
 
     // refactor
     int LISTEN_TIMEOUT = 200;
-    int DEFAULT_SERVER_TIMEOUT = 2;
+    int DEFAULT_SERVER_TIMEOUT = 1000;
 
     int DEFAULT_BUF_SIZE = 40;
     int DEFAULT_PROXY_TIMEOUT = 10;

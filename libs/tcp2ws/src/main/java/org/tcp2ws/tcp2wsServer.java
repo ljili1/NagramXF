@@ -171,7 +171,7 @@ public class tcp2wsServer {
         private void handleNextClient(ServerSocket listenSocket) {
             try {
                 final Socket clientSocket = listenSocket.accept();
-                clientSocket.setSoTimeout(SocksConstants.DEFAULT_SERVER_TIMEOUT);
+                // Don't override timeout here - ProxyHandler constructor sets DEFAULT_PROXY_TIMEOUT
                 new Thread(new ProxyHandler(clientSocket)).start();
             } catch (InterruptedIOException e) {
                 //	This exception is thrown when accept timeout is expired

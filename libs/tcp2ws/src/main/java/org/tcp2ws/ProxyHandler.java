@@ -14,7 +14,6 @@ import java.net.Socket;
 import java.net.SocketException;
 import java.util.Arrays;
 import java.util.HashSet;
-import java.util.Iterator;
 
 import javax.crypto.Cipher;
 import javax.crypto.spec.IvParameterSpec;
@@ -38,6 +37,11 @@ public class ProxyHandler implements Runnable {
     Cipher outgoingDecryptCipher;
 
     boolean isHandshake = false;
+
+    // WebSocket keep-alive: Cloudflare closes idle WebSocket after ~100s,
+    // so we send a ping every 55s to keep the connection alive.
+    private volatile boolean keepAliveRunning = false;
+    private Thread keepAliveThread;
 
     public ProxyHandler(Socket clientSocket) {
         m_lock = this;
@@ -63,6 +67,9 @@ public class ProxyHandler implements Runnable {
     }
 
     public void close() {
+        // Stop keep-alive first
+        stopKeepAlive();
+
         try {
             if (m_ClientOutput != null) {
                 m_ClientOutput.flush();
@@ -80,14 +87,14 @@ public class ProxyHandler implements Runnable {
             // ignore
         }
 
-        if (m_ServerSocket != null && m_ServerSocket.isOpen()) {
-            HashSet<WebSocket> set = tcp2wsServer.inactiveWs.get(server);
-            if (set != null) {
-                set.add(m_ServerSocket);
+        // Close WebSocket - don't pool since reuse is unreliable (listener binding issue)
+        if (m_ServerSocket != null) {
+            if (m_ServerSocket.isOpen()) {
+                m_ServerSocket.sendClose();
             }
+            m_ServerSocket = null;
         }
 
-        m_ServerSocket = null;
         m_ClientSocket = null;
     }
 
@@ -116,25 +123,58 @@ public class ProxyHandler implements Runnable {
         prepareServer();
     }
 
-    protected void prepareServer() throws IOException {
-        synchronized (m_lock) {
-            HashSet<WebSocket> set = tcp2wsServer.inactiveWs.get(server);
-            if (set != null) {
-                Iterator<WebSocket> iterator = set.iterator();
-                while (iterator.hasNext()) {
-                    WebSocket _m_ServerSocket = iterator.next();
-                    if (_m_ServerSocket.isOpen()) {
-                        m_ServerSocket = _m_ServerSocket;
-                        return;
-                    } else {
-                        iterator.remove();
-                        _m_ServerSocket.sendClose();
+    private void startKeepAlive() {
+        if (keepAliveRunning || m_ServerSocket == null) return;
+        keepAliveRunning = true;
+        keepAliveThread = new Thread(() -> {
+            while (keepAliveRunning && m_ServerSocket != null && m_ServerSocket.isOpen()) {
+                try {
+                    Thread.sleep(55000); // Ping every 55s, well within CF 100s timeout
+                    if (keepAliveRunning && m_ServerSocket != null && m_ServerSocket.isOpen()) {
+                        m_ServerSocket.sendPing();
                     }
+                } catch (InterruptedException e) {
+                    break;
+                } catch (Exception e) {
+                    // WebSocket might be closed, stop keep-alive
+                    break;
                 }
             }
+            keepAliveRunning = false;
+        });
+        keepAliveThread.setDaemon(true);
+        keepAliveThread.setName("ws-keepalive-" + server);
+        keepAliveThread.start();
+    }
+
+    private void stopKeepAlive() {
+        keepAliveRunning = false;
+        if (keepAliveThread != null) {
+            keepAliveThread.interrupt();
+            keepAliveThread = null;
+        }
+    }
+
+    protected void prepareServer() throws IOException {
+        synchronized (m_lock) {
+            // Don't reuse pooled WebSockets: they retain old ProxyHandler listeners,
+            // causing data to be sent to closed SOCKS sockets and triggering reconnect loops.
+            // Instead, close stale pooled connections and always create fresh ones.
+            HashSet<WebSocket> set = tcp2wsServer.inactiveWs.get(server);
+            if (set != null) {
+                for (WebSocket ws : set) {
+                    if (ws.isOpen()) {
+                        ws.sendClose();
+                    }
+                }
+                set.clear();
+            }
+
             int count_520 = 0;
             while (count_520 < 10) {
                 try {
+                    // Clear stale WebSocket from pool if present
+                    m_ServerSocket = null;
                     m_ServerSocket = new WebSocketFactory()
                         .setConnectionTimeout(5000)
                         .createSocket((tcp2wsServer.tls ? "wss://" : "ws://") + server + "/api")
@@ -144,11 +184,23 @@ public class ProxyHandler implements Runnable {
                             }
 
                             public void onDisconnected(WebSocket websocket, WebSocketFrame serverCloseFrame, WebSocketFrame clientCloseFrame, boolean closedByServer) {
-                                if (closedByServer) {
-                                    System.out.println(server + "," + clientCloseFrame.getCloseCode() + clientCloseFrame.getCloseReason());
+                                // Handle ALL disconnect cases, not just server-initiated ones
+                                System.out.println("WebSocket disconnected: server=" + server + ", closedByServer=" + closedByServer +
+                                    (serverCloseFrame != null ? ", closeCode=" + serverCloseFrame.getCloseCode() : ""));
+                                stopKeepAlive();
+                                if (m_ServerSocket != null && m_ServerSocket.isOpen()) {
                                     m_ServerSocket.sendClose();
-                                    close();
                                 }
+                                close();
+                            }
+
+                            public void onError(WebSocket websocket, WebSocketException cause) {
+                                System.out.println("WebSocket error: server=" + server + ", " + cause.getMessage());
+                                stopKeepAlive();
+                                if (m_ServerSocket != null && m_ServerSocket.isOpen()) {
+                                    m_ServerSocket.sendClose();
+                                }
+                                close();
                             }
                         })
                         .addExtension("permessage-deflate")
@@ -158,9 +210,15 @@ public class ProxyHandler implements Runnable {
                         .connect();
                     break;
                 } catch (WebSocketException e) {
-                    if (e.getMessage().contains("520"))
+                    if (e.getMessage().contains("520")) {
                         count_520++;
-                    else {
+                        // Add backoff delay between 520 retries to avoid hammering Cloudflare
+                        try {
+                            Thread.sleep(Math.min(500 * count_520, 3000));
+                        } catch (InterruptedException ie) {
+                            break;
+                        }
+                    } else {
                         System.out.println(server);
                         e.printStackTrace();
                         break;
@@ -204,6 +262,7 @@ public class ProxyHandler implements Runnable {
                 case SocksConstants.SC_CONNECT:
                     comm.connect();
                     processHandshake();
+                    startKeepAlive();  // Start WebSocket ping keep-alive after handshake
                     relay();
                     break;
 
@@ -250,7 +309,14 @@ public class ProxyHandler implements Runnable {
                 isActive = false;
             }
             if (dlen > 0) {
-                m_ServerSocket.sendBinary(Arrays.copyOf(m_Buffer, dlen));
+                try {
+                    m_ServerSocket.sendBinary(Arrays.copyOf(m_Buffer, dlen));
+                } catch (Exception e) {
+                    // WebSocket send failed - connection is broken
+                    System.out.println("WebSocket send failed: server=" + server);
+                    close();
+                    isActive = false;
+                }
             }
 
             Thread.yield();
