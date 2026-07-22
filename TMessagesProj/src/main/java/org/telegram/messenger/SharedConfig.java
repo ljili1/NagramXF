@@ -61,6 +61,7 @@ import java.util.concurrent.CopyOnWriteArraySet;
 import java.util.stream.Collectors;
 
 import tw.nekomimi.nekogram.NekoConfig;
+import tw.nekomimi.nekogram.helpers.WebSocketHelper;
 import xyz.nextalone.nagram.NaConfig;
 
 import java.util.List;
@@ -1519,6 +1520,9 @@ public class SharedConfig {
                         info.ping = data.readInt64(false);
                         info.availableCheckTime = data.readInt64(false);
 
+                        if (TextUtils.isEmpty(info.address) || info.port <= 0) {
+                            continue;
+                        }
                         proxyList.add(0, info);
                         if (currentProxy == null && !TextUtils.isEmpty(proxyAddress)) {
                             if (proxyAddress.equals(info.address) && proxyPort == info.port && proxyUsername.equals(info.username) && proxyPassword.equals(info.password)) {
@@ -1537,6 +1541,9 @@ public class SharedConfig {
                             data.readString(false),
                             data.readString(false),
                             data.readString(false));
+                    if (TextUtils.isEmpty(info.address) || info.port <= 0) {
+                        continue;
+                    }
                     proxyList.add(0, info);
                     if (currentProxy == null && !TextUtils.isEmpty(proxyAddress)) {
                         if (proxyAddress.equals(info.address) && proxyPort == info.port && proxyUsername.equals(info.username) && proxyPassword.equals(info.password)) {
@@ -1547,8 +1554,12 @@ public class SharedConfig {
             }
             data.cleanup();
         }
-        if (currentProxy == null && !TextUtils.isEmpty(proxyAddress)) {
+        if (currentProxy == null && !TextUtils.isEmpty(proxyAddress) && proxyPort > 0) {
             ProxyInfo info = currentProxy = new ProxyInfo(proxyAddress, proxyPort, proxyUsername, proxyPassword, proxySecret);
+            proxyList.add(0, info);
+        }
+        if (!WebSocketHelper.proxyServer.equals(proxyAddress)) {
+            ProxyInfo info = new ProxyInfo(WebSocketHelper.proxyServer, 6356, "", "", "");
             proxyList.add(0, info);
         }
     }
@@ -1573,6 +1584,9 @@ public class SharedConfig {
         serializedData.writeInt32(count);
         for (int a = count - 1; a >= 0; a--) {
             ProxyInfo info = infoToSerialize.get(a);
+            if (WebSocketHelper.proxyServer.equals(info.address)) {
+                continue;
+            }
             serializedData.writeString(info.address != null ? info.address : "");
             serializedData.writeInt32(info.port);
             serializedData.writeString(info.username != null ? info.username : "");
