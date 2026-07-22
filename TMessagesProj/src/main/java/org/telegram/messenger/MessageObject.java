@@ -44,6 +44,7 @@ import android.text.style.RelativeSizeSpan;
 import android.text.style.URLSpan;
 import android.text.util.Linkify;
 import android.util.Base64;
+import android.util.Pair;
 import android.view.View;
 
 import androidx.annotation.NonNull;
@@ -208,6 +209,30 @@ public class MessageObject {
     public CharSequence youtubeDescription;
     public MessageObject replyMessageObject;
     public int type = 1000;
+    // Strike mode: remembers the source text (messageOwner.message) the current struck
+    // replacement was generated from, so checkLayout() can detect when a filtered message is
+    // EDITED (source changed) and re-apply the strike to the new content instead of showing the
+    // stale replacement. Null when not (or no longer) strike-filtered.
+    public String strikeSource;
+    // Consecutive strike-filtered merge: when the "RegexFiltersStrikeThroughMerge" setting is on,
+    // ChatActivity groups maximal runs of consecutive strike-filtered messages. The first message
+    // of a run is the head and renders the combined struck text (mergedStrikeText); every other
+    // member has filterMergeHidden = true and is collapsed to zero height by ChatMessageCell.
+    public boolean filterMergeHead;
+    public boolean filterMergeHidden;
+    public CharSequence mergedStrikeText;
+    // Album (grouped media) hide: when ANY member of an album (sharing getGroupId() != 0) matches
+    // the regex filter, EVERY member is hidden together with it, even members without a caption
+    // (which individually could never match a text rule). Set per-pass by ChatActivity.applyFilterMerge().
+    public boolean filterGroupStruck;
+    // Tracks the message text last used to evaluate the regex-filter verdict (isFiltered).
+    // The global isFiltered cache is keyed by message id, NOT content, so when a message is
+    // EDITED (id unchanged, text changed) the cached verdict goes stale and the strike state
+    // would not update until the chat is reopened. checkLayout() compares this against the
+    // current text and invalidates the per-message filter cache on change, forcing a fresh
+    // verdict from the new content on the same pass. Kept independent of strikeSource so that
+    // even messages that were never struck get their verdict re-evaluated after an edit.
+    public String filterEvalSource;
     public long reactionsLastCheckTime;
     public long extendedMediaLastCheckTime;
     public String customName;
@@ -6078,6 +6103,16 @@ public class MessageObject {
             messageText = "";
         }
 
+        // Strike mode: for filtered media messages, the real content lives in messageOwner.message
+        // (the body / caption), while messageText currently holds only a media placeholder
+        // ("Photo", "Album", ...). Seed messageText with the real content so the strike
+        // replacement (AyuFilter.getStrikeReplacementText via addEntitiesToText) produces the
+        // matched hit rules instead of striking the placeholder. setType() below will additionally
+        // force TYPE_TEXT so the cell renders this as text-only and hides all media.
+        if (AyuFilter.shouldStrikeFilteredMessage(this, null) && messageOwner != null && !TextUtils.isEmpty(messageOwner.message)) {
+            messageText = messageOwner.message;
+        }
+
         isEmbedVideoCached = null;
         cachedStartsTimestamp = null;
         cachedSavedTimestamp = null;
@@ -6600,6 +6635,15 @@ public class MessageObject {
         int oldType = type;
         type = 1000;
         isRoundVideoCached = 0;
+        // Strike mode: force filtered messages down the text-only render path so ALL media
+        // (photo/video/album/GIF/sticker/webpage/file/voice/music/contact/geo) is suppressed
+        // and only the struck matched hit-rule text + footer mark are shown. updateMessageText()
+        // above already seeded messageText with the real content for this case.
+        if (AyuFilter.shouldStrikeFilteredMessage(this, null)) {
+            contentType = 0;
+            type = TYPE_TEXT;
+            return;
+        }
         if (isSponsored()) {
             type = TYPE_TEXT;
         } else if (channelJoined) {
@@ -6782,6 +6826,54 @@ public class MessageObject {
     }
 
     public boolean checkLayout() {
+        // Strike mode: filtered messages must render text-only so ALL media is hidden. A filtered
+        // media message can only be detected once its caption has been generated, which happens
+        // AFTER updateMessageText()/setType() during construction - so the TYPE_TEXT override in
+        // setType() often has not fired yet for media messages, leaving them as a media type here.
+        // checkLayout() runs at layout time (caption is available now), so re-apply the override:
+        // updateMessageText() re-seeds the body with the real content and setType() forces
+        // TYPE_TEXT, after which the standard text path renders the struck matched hit-rules.
+        String src = messageOwner != null ? messageOwner.message : null;
+        // Edit detection: the message text changed since we last evaluated the regex-filter
+        // verdict. Because the isFiltered cache is keyed by message id (not content), an edited
+        // message would otherwise keep its OLD strike verdict until the chat is reopened
+        // ("editing a message does not take effect immediately"). Invalidate the per-message
+        // cache here so the verdict below is re-derived from the NEW content on this same pass.
+        // Kept independent of strikeSource so even messages that were never struck get their
+        // verdict refreshed after an edit.
+        if (!TextUtils.equals(filterEvalSource, src)) {
+            AyuFilter.invalidateMessageCache(this);
+            filterEvalSource = src;
+        }
+        if (filterMergeHead && mergedStrikeText != null) {
+            // Head of a merged run of consecutive strike-filtered messages: render the combined
+            // struck text instead of this message's own content. Reference equality avoids
+            // re-layout when nothing changed; the merged text is built by ChatActivity.
+            if (messageText != mergedStrikeText) {
+                messageText = mergedStrikeText;
+                setType();
+                layoutCreated = false;
+                strikeSource = mergedStrikeText.toString();
+            }
+        } else if (AyuFilter.shouldStrikeFilteredMessage(this, null)) {
+            // Re-apply the strike whenever the source text changes (i.e. the message was edited),
+            // not only when the type still differs - after the first render type is already
+            // TYPE_TEXT, so the original guard would never fire again on edit and the stale struck
+            // text would persist until the chat is reopened.
+            if (type != TYPE_TEXT || !TextUtils.equals(strikeSource, src)) {
+                updateMessageText();
+                setType();
+                layoutCreated = false;
+                strikeSource = src;
+            }
+        } else if (strikeSource != null) {
+            // Used to be strike-filtered but no longer is (rule edited/toggled off): restore the
+            // normal rendering of the (possibly edited) content.
+            updateMessageText();
+            setType();
+            layoutCreated = false;
+            strikeSource = null;
+        }
         if (type != TYPE_TEXT && type != TYPE_EMOJIS && type != TYPE_ARTICLE || messageOwner.peer_id == null || messageText == null || messageText.length() == 0 && !isBotPendingDraft) {
             return false;
         }
@@ -7584,6 +7676,13 @@ public class MessageObject {
 
     public void generateCaption() {
         if (isRoundVideo()) return;
+        // Strike mode: the matched hit-rule text is already rendered as the message body
+        // (messageText) via the forced TYPE_TEXT path. Drop any caption so it is not drawn a
+        // second time below the struck body.
+        if (AyuFilter.shouldStrikeFilteredMessage(this, null)) {
+            caption = null;
+            return;
+        }
         if (caption != null &&
             (translated && (messageOwner.translatedText != null || summarized && messageOwner.translatedSummaryText != null)) == captionTranslated &&
             summarized == captionSummarized
@@ -7933,7 +8032,28 @@ public class MessageObject {
             added = addEntitiesToText(text, entities, isOutOwner(), true, photoViewer, useManualParse);
         } else {
             ArrayList<TLRPC.MessageEntity> entities = MessageHelper.getEntitiesForText(this, text, summarized);
-            entities = AyuFilter.addSpoilerEntities(this, entities, text);
+            Pair<CharSequence, ArrayList<TLRPC.MessageEntity>> strike = AyuFilter.getStrikeReplacementText(this, text);
+            if (strike != null) {
+                // Strike mode: replace the whole message with its regex-matched content (struck
+                // through). getStrikeReplacementText returns a plain String, but the 6-arg
+                // addEntitiesToText below only applies entities onto a Spannable (it returns
+                // early for a raw String), so we must wrap the replacement first. We also have
+                // to write it back onto the owning field (messageText / caption); otherwise the
+                // cell keeps rendering the original cached text -> "message is not replaced".
+                CharSequence replaced = strike.first;
+                if (!(replaced instanceof Spannable)) {
+                    replaced = new SpannableStringBuilder(replaced);
+                }
+                if (text == messageText) {
+                    messageText = replaced;
+                } else if (text == caption) {
+                    caption = replaced;
+                }
+                text = replaced;
+                entities = strike.second;
+            } else {
+                entities = AyuFilter.addSpoilerEntities(this, entities, text);
+            }
             added = addEntitiesToText(text, entities, isOutOwner(), true, photoViewer, useManualParse);
         }
         if (text instanceof Spannable spannable) {

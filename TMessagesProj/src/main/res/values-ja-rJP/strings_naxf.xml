@@ -40,6 +40,8 @@
     <string name="RegexFiltersMaskMessages">フィルタまたはブロックされたメッセージを非表示ではなくマスクする</string>
     <string name="RegexFiltersMaskMessagesShort">非表示の代わりにマスク</string>
     <string name="RegexFiltersMaskMessagesAbout">フィルタまたはブロックされたメッセージは削除されず、マスクされたプレースホルダーとしてチャット内に残ります。有効にすると反転表現は機能しなくなります。</string>
+    <string name="RegexFiltersStrikeThroughShort">一致部分に取り消し線</string>
+    <string name="RegexFiltersStrikeThroughAbout">フィルタまたはブロックされたメッセージは、一致した部分（ヒットしたルール）のみに置き換えて取り消し線を引いた状態で表示され、それ以外の部分は非表示になります。</string>
     <string name="RegexFiltersHideOnlyMatchedShort">正規表現の一致部分のみ非表示</string>
     <string name="RegexFiltersHideOnlyMatchedAbout">メッセージ全体をマスクする代わりに、正規表現に一致した部分のみをネタバレで非表示にします。</string>
     <string name="UseSystemAiService">システム AI サービスを使用</string>

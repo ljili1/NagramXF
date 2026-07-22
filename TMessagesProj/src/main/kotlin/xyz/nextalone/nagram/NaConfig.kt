@@ -493,6 +493,18 @@ object NaConfig {
             ConfigItem.configTypeBool,
             false
         )
+    val regexFiltersStrikeThrough =
+        addConfig(
+            "RegexFiltersStrikeThrough",
+            ConfigItem.configTypeBool,
+            false
+        )
+    val regexFiltersStrikeThroughMerge =
+        addConfig(
+            "RegexFiltersStrikeThroughMerge",
+            ConfigItem.configTypeBool,
+            true
+        )
     val regexChatFiltersData =
         addConfig(
             "RegexChatFiltersData",

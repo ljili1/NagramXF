@@ -24,13 +24,13 @@ public interface RegexFilterDao {
 
     // --- Filters ---
 
-    @Query("SELECT * FROM RegexFilter ORDER BY rowid DESC")
+    @Query("SELECT * FROM RegexFilter ORDER BY rowid ASC")
     List<RegexFilter> getAll();
 
-    @Query("SELECT * FROM RegexFilter WHERE dialogId IS NULL ORDER BY rowid DESC")
+    @Query("SELECT * FROM RegexFilter WHERE dialogId IS NULL ORDER BY rowid ASC")
     List<RegexFilter> getShared();
 
-    @Query("SELECT * FROM RegexFilter WHERE dialogId = :dialogId ORDER BY rowid DESC")
+    @Query("SELECT * FROM RegexFilter WHERE dialogId = :dialogId ORDER BY rowid ASC")
     List<RegexFilter> getByDialogId(long dialogId);
 
     @Query("SELECT * FROM RegexFilter WHERE id = :id LIMIT 1")

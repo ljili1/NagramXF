@@ -13442,6 +13442,12 @@ public class ChatActivity extends BaseFragment implements
     }
 
     public MessageObject.GroupedMessages getValidGroupedMessage(MessageObject message) {
+        // Struck album representative: render as standalone text bubble, NOT as an album
+        // grid member.  Without this, the adapter still looks up the GroupedMessages and
+        // positions the cell in a narrow album column, clipping the full-width struck text.
+        if (message.filterGroupStruck) {
+            return null;
+        }
         MessageObject.GroupedMessages groupedMessages = null;
         if (message.getGroupId() != 0) {
             groupedMessages = groupedMessagesMap.get(message.getGroupId());
@@ -26067,6 +26073,50 @@ public class ChatActivity extends BaseFragment implements
         // --- Regex filters updated
         else if (id == NotificationCenter.regexFiltersUpdated) {
             // Regex filters changed, refresh chat to show/hide filtered messages
+            // Force visible message cells to regenerate their cached message text.
+            // The strikethrough / masked rendering is baked into MessageObject.messageText
+            // at generation time (applyEntities -> AyuFilter.getStrikeReplacementText), so a
+            // plain notifyDataSetChanged() reuses the stale cached text for already-bound
+            // cells. The filter mark icon, by contrast, is computed live in
+            // updateCurrentTimeString on every measure, so it would appear while the message
+            // body stayed unmodified ("icon shows but message is not rewritten").
+            // Resetting each visible cell makes setMessageObject treat it as a new message
+            // (currentMessageObject is cleared) and re-run applyEntities with the current
+            // filter config. Off-screen messages regenerate automatically when scrolled into
+            // view, since their recycled cell binds with messageChanged == true.
+            // The strike media-suppression override lives on the MessageObject itself: setType()
+            // forces TYPE_TEXT and updateMessageText() seeds the body with the real content when
+            // the message is filtered. Both are cached (type / messageText / layoutCreated), so a
+            // cell reset alone is not enough - when toggling the filter OFF the cached type is
+            // still TYPE_TEXT, and when toggling ON the cached type is a media type (which makes
+            // checkLayout() early-return before it can re-run setType). Invalidate the
+            // MessageObject cache first (resetLayout + updateMessageText + setType), then reset the
+            // cell so setMessageObject rebuilds from the refreshed MessageObject.
+            // Recompute consecutive strike-filtered merge groups before resetting cells, so the
+            // head's mergedStrikeText is in place when each visible cell re-binds.
+            if (chatAdapter != null) {
+                chatAdapter.applyFilterMerge(chatAdapter.getDisplayedMessages());
+            }
+            if (chatListView != null) {
+                for (int i = 0, n = chatListView.getChildCount(); i < n; i++) {
+                    View child = chatListView.getChildAt(i);
+                    if (child instanceof ChatMessageCell) {
+                        ChatMessageCell cell = (ChatMessageCell) child;
+                        MessageObject cellMessageObject = cell.getMessageObject();
+                        if (cellMessageObject != null) {
+                            cellMessageObject.resetLayout();
+                            cellMessageObject.updateMessageText();
+                            cellMessageObject.setType();
+                            // Rebuild the caption too: turning the filter OFF restores a media
+                            // message, whose caption was dropped while it was rendered as strike
+                            // text (and the media render path in checkLayout does not regenerate
+                            // it). generateCaption() re-drops it when the filter is ON.
+                            cellMessageObject.generateCaption();
+                        }
+                        cell.forceResetMessageObject();
+                    }
+                }
+            }
             if (chatAdapter != null) {
                 chatAdapter.notifyDataSetChanged();
             }
@@ -38991,6 +39041,112 @@ public class ChatActivity extends BaseFragment implements
             return UserObject.isBotForumWithEditableTopics(currentUser) && getTopicId() == 0 && !hasSendingMessagesInBotForum && chatMode == 0;
         }
 
+        private ArrayList<MessageObject> getDisplayedMessages() {
+            if (isFrozen) {
+                return frozenMessages;
+            } else if (isFiltered) {
+                return filteredMessages;
+            }
+            return ChatActivity.this.messages;
+        }
+
+        // Group maximal runs of consecutive strike-filtered messages into a single merged head.
+        // The head (first of the run) gets filterMergeHead + mergedStrikeText; the remaining
+        // members get filterMergeHidden (collapsed to zero height by ChatMessageCell). All flags
+        // are reset first because MessageObjects are reused across the list and stale flags would
+        // create ghost merges. Only runs of length > 1 are merged; a lone strike-filtered message
+        // keeps its normal (own) rendering.
+        private void applyFilterMerge(ArrayList<MessageObject> list) {
+            if (list == null || list.isEmpty()) {
+                return;
+            }
+            // Reset all per-pass flags. MessageObjects are reused across the list, so stale
+            // flags would create ghost merges / ghost group-hides.
+            for (int i = 0; i < list.size(); i++) {
+                MessageObject m = list.get(i);
+                m.filterMergeHead = false;
+                m.filterMergeHidden = false;
+                m.mergedStrikeText = null;
+                m.filterGroupStruck = false;
+            }
+            // Album (grouped media) hide: if ANY member of an album (sharing getGroupId() != 0)
+            // matches the regex filter, hide the WHOLE album. Members without a caption can never
+            // match a text rule on their own, so a hit on the captioned member must propagate to
+            // the rest of the group. Independent of the merge toggle below.
+            if (AyuFilter.shouldStrikeFilteredMessages()) {
+                HashMap<Long, ArrayList<MessageObject>> groups = new HashMap<>();
+                for (int i = 0; i < list.size(); i++) {
+                    MessageObject m = list.get(i);
+                    long gid = m.getGroupId();
+                    if (gid == 0) {
+                        continue;
+                    }
+                    ArrayList<MessageObject> g = groups.get(gid);
+                    if (g == null) {
+                        g = new ArrayList<>();
+                        groups.put(gid, g);
+                    }
+                    g.add(m);
+                }
+                for (ArrayList<MessageObject> g : groups.values()) {
+                    // Pick the first text-bearing (captioned, regex-matched) member as the single
+                    // visible bubble: it shows the struck (replaced) hit-rule text via filterGroupStruck.
+                    // Every other member of the album collapses to zero height (filterMergeHidden) so
+                    // the album grid disappears and only one struck bubble remains - instead of the
+                    // whole album still showing as a stack of empty bubbles with a strikethrough on top.
+                    MessageObject representative = null;
+                    for (int i = 0; i < g.size(); i++) {
+                        if (AyuFilter.isFiltered(g.get(i), null)) {
+                            if (representative == null) {
+                                representative = g.get(i);
+                            }
+                        }
+                    }
+                    if (representative != null) {
+                        for (int i = 0; i < g.size(); i++) {
+                            MessageObject m = g.get(i);
+                            m.filterGroupStruck = true;
+                            if (m != representative) {
+                                m.filterMergeHidden = true;
+                            }
+                        }
+                    }
+                }
+            }
+            if (!AyuFilter.shouldMergeStrikeMessages()) {
+                return;
+            }
+            // Concatenate consecutive strike-filtered messages into a single merged bubble. Each
+            // message in the run keeps its own struck display (as it would show on its own); the
+            // head renders the combined text and the other members are collapsed (filterMergeHidden)
+            // so the run shows once. The "same rule only one" de-duplication is per-message inside
+            // AyuFilter.getStrikeReplacementText, not across messages here. Album members
+            // (filterGroupStruck) are handled above and skipped so the grouped-media layout is never
+            // broken.
+            int i = 0;
+            while (i < list.size()) {
+                MessageObject m = list.get(i);
+                if (!AyuFilter.shouldStrikeFilteredMessage(m, null) || m.filterGroupStruck) {
+                    i++;
+                    continue;
+                }
+                int j = i;
+                ArrayList<MessageObject> run = new ArrayList<>();
+                while (j < list.size() && AyuFilter.shouldStrikeFilteredMessage(list.get(j), null) && !list.get(j).filterGroupStruck) {
+                    run.add(list.get(j));
+                    j++;
+                }
+                if (run.size() > 1) {
+                    run.get(0).filterMergeHead = true;
+                    run.get(0).mergedStrikeText = AyuFilter.buildMergedStrikeText(run);
+                    for (int k = 1; k < run.size(); k++) {
+                        run.get(k).filterMergeHidden = true;
+                    }
+                }
+                i = j;
+            }
+        }
+
         private void updateRowsInternal() {
             rowCount = 0;
             final ArrayList<MessageObject> messages;
@@ -39001,6 +39157,7 @@ public class ChatActivity extends BaseFragment implements
             } else {
                 messages = ChatActivity.this.messages;
             }
+            applyFilterMerge(messages);
             if (chatMode == MODE_SAVED && isInsideContainer) {
                 hintRow = rowCount++;
             } else {

@@ -228,6 +228,7 @@ public class NekoAyuMomentsSettingsActivity extends BaseNekoXSettingsActivity {
                         config.changed(newValue);
                         config.saveConfig();
                         TimeStringHelper.invalidateDeletedStyle();
+                        TimeStringHelper.invalidateFilterMarkStyle();
                         cellGroup.runCallback(key, newValue);
                         updateRows();
                         scrollToRow(key, unknown);
@@ -353,6 +354,7 @@ public class NekoAyuMomentsSettingsActivity extends BaseNekoXSettingsActivity {
                 Integer index = (Integer) v.getTag();
                 NaConfig.INSTANCE.getDeletedIconStyle().setConfigInt(index);
                 TimeStringHelper.invalidateDeletedStyle();
+                TimeStringHelper.invalidateFilterMarkStyle();
                 cellGroup.runCallback(NaConfig.INSTANCE.getDeletedIconStyle().getKey(), index);
                 builder.getDismissRunnable().run();
             });
@@ -387,6 +389,7 @@ public class NekoAyuMomentsSettingsActivity extends BaseNekoXSettingsActivity {
                 deletedMessagesColorPickerCell.setOnColorSelected(colorId -> {
                     NaConfig.INSTANCE.getDeletedIconColor().setConfigInt(colorId);
                     TimeStringHelper.invalidateDeletedStyle();
+                    TimeStringHelper.invalidateFilterMarkStyle();
                     cellGroup.runCallback(NaConfig.INSTANCE.getDeletedIconColor().getKey(), colorId);
                 });
                 return deletedMessagesColorPickerCell;

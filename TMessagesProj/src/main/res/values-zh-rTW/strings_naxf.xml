@@ -40,6 +40,8 @@
     <string name="RegexFiltersEnabled">啟用訊息過濾</string>
     <string name="RegexFiltersMaskMessagesShort">遮罩而不隱藏</string>
     <string name="RegexFiltersMaskMessagesAbout">過濾或被封鎖的訊息會以遮罩佔位形式保留在聊天中，而不是直接隱藏。</string>
+    <string name="RegexFiltersStrikeThroughShort">命中內容加刪除線</string>
+    <string name="RegexFiltersStrikeThroughAbout">過濾或被封鎖的訊息會被替換為命中的內容（命中規則）並加刪除線，未命中的部分不再顯示。</string>
     <string name="RegexFiltersHideOnlyMatchedShort">只隱藏正則內容</string>
     <string name="RegexFiltersHideOnlyMatchedAbout">僅將正則匹配到的內容以劇透遮罩隱藏，而不是遮罩整條訊息。</string>
     <string name="UseSystemAiService">使用系統 AI 服務</string>

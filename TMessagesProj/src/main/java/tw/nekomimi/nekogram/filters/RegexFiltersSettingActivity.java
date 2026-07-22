@@ -33,6 +33,7 @@ import org.telegram.messenger.DialogObject;
 import org.telegram.messenger.FileLog;
 import org.telegram.messenger.MessagesController;
 import org.telegram.messenger.MessagesStorage;
+import org.telegram.messenger.NotificationCenter;
 import org.telegram.messenger.R;
 import org.telegram.messenger.UserConfig;
 import org.telegram.tgnet.TLObject;
@@ -95,6 +96,10 @@ public class RegexFiltersSettingActivity extends BaseNekoXSettingsActivity {
     private final AbstractConfigCell regexFiltersMaskMessagesInfoRow = new ConfigCellCustom("RegexFiltersMaskMessagesAbout", CellGroup.ITEM_TYPE_TEXT, false);
     private final AbstractConfigCell regexFiltersHideOnlyMatchedRow = new ConfigCellCustom("RegexFiltersHideOnlyMatchedShort", CellGroup.ITEM_TYPE_TEXT_CHECK, true);
     private final AbstractConfigCell regexFiltersHideOnlyMatchedInfoRow = new ConfigCellCustom("RegexFiltersHideOnlyMatchedAbout", CellGroup.ITEM_TYPE_TEXT, false);
+    private final AbstractConfigCell regexFiltersStrikeThroughRow = new ConfigCellCustom("RegexFiltersStrikeThroughShort", CellGroup.ITEM_TYPE_TEXT_CHECK, true);
+    private final AbstractConfigCell regexFiltersStrikeThroughInfoRow = new ConfigCellCustom("RegexFiltersStrikeThroughAbout", CellGroup.ITEM_TYPE_TEXT, false);
+    private final AbstractConfigCell regexFiltersStrikeThroughMergeRow = new ConfigCellCustom("RegexFiltersStrikeThroughMerge", CellGroup.ITEM_TYPE_TEXT_CHECK, true);
+    private final AbstractConfigCell regexFiltersStrikeThroughMergeInfoRow = new ConfigCellCustom("RegexFiltersStrikeThroughMergeAbout", CellGroup.ITEM_TYPE_TEXT, false);
     private final AbstractConfigCell filtersHeaderRow = new ConfigCellHeader(getString(R.string.RegexFiltersGlobalHeader));
     private final AbstractConfigCell sharedFiltersPageRow = new ConfigCellCustom("RegexFiltersSharedHeader", CellGroup.ITEM_TYPE_TEXT_SETTINGS_CELL, true);
     private final AbstractConfigCell userFiltersPageRow = new ConfigCellCustom("ShadowBan", CellGroup.ITEM_TYPE_TEXT_SETTINGS_CELL, true);
@@ -123,6 +128,10 @@ public class RegexFiltersSettingActivity extends BaseNekoXSettingsActivity {
             addCell(regexFiltersHideOnlyMatchedRow);
             addCell(regexFiltersHideOnlyMatchedInfoRow);
         }
+        addCell(regexFiltersStrikeThroughRow);
+        addCell(regexFiltersStrikeThroughInfoRow);
+        addCell(regexFiltersStrikeThroughMergeRow);
+        addCell(regexFiltersStrikeThroughMergeInfoRow);
         addCell(filtersHeaderRow);
         addCell(sharedFiltersPageRow);
         addCell(userFiltersPageRow);
@@ -233,6 +242,24 @@ public class RegexFiltersSettingActivity extends BaseNekoXSettingsActivity {
             boolean enabled = !cell.isChecked();
             cell.setChecked(enabled);
             NaConfig.INSTANCE.getRegexFiltersHideOnlyMatched().setConfigBool(enabled);
+            AyuFilter.invalidateFilteredCache();
+        } else if (row == regexFiltersStrikeThroughRow) {
+            TextCheckCell cell = (TextCheckCell) view;
+            boolean enabled = !cell.isChecked();
+            cell.setChecked(enabled);
+            if (enabled && !NaConfig.INSTANCE.getRegexFiltersEnabled().Bool()) {
+                NaConfig.INSTANCE.getRegexFiltersEnabled().setConfigBool(true);
+                if (listAdapter != null) {
+                    listAdapter.notifyDataSetChanged();
+                }
+            }
+            NaConfig.INSTANCE.getRegexFiltersStrikeThrough().setConfigBool(enabled);
+            AyuFilter.invalidateFilteredCache();
+        } else if (row == regexFiltersStrikeThroughMergeRow) {
+            TextCheckCell cell = (TextCheckCell) view;
+            boolean enabled = !cell.isChecked();
+            cell.setChecked(enabled);
+            NaConfig.INSTANCE.getRegexFiltersStrikeThroughMerge().setConfigBool(enabled);
             AyuFilter.invalidateFilteredCache();
         } else if (row == sharedFiltersPageRow) {
             presentFragment(new RegexSharedFiltersListActivity());
@@ -1132,6 +1159,20 @@ public class RegexFiltersSettingActivity extends BaseNekoXSettingsActivity {
                 TextInfoPrivacyCell infoCell = (TextInfoPrivacyCell) holder.itemView;
                 infoCell.setBackground(Theme.getThemedDrawable(mContext, R.drawable.greydivider, Theme.key_windowBackgroundGrayShadow));
                 infoCell.setText(getString(R.string.RegexFiltersHideOnlyMatchedAbout));
+            } else if (row == regexFiltersStrikeThroughRow) {
+                TextCheckCell textCheckCell = (TextCheckCell) holder.itemView;
+                textCheckCell.setTextAndCheck(getString(R.string.RegexFiltersStrikeThroughShort), NaConfig.INSTANCE.getRegexFiltersStrikeThrough().Bool(), false);
+            } else if (row == regexFiltersStrikeThroughInfoRow) {
+                TextInfoPrivacyCell infoCell = (TextInfoPrivacyCell) holder.itemView;
+                infoCell.setBackground(Theme.getThemedDrawable(mContext, R.drawable.greydivider, Theme.key_windowBackgroundGrayShadow));
+                infoCell.setText(getString(R.string.RegexFiltersStrikeThroughAbout));
+            } else if (row == regexFiltersStrikeThroughMergeRow) {
+                TextCheckCell textCheckCell = (TextCheckCell) holder.itemView;
+                textCheckCell.setTextAndCheck(getString(R.string.RegexFiltersStrikeThroughMerge), NaConfig.INSTANCE.getRegexFiltersStrikeThroughMerge().Bool(), false);
+            } else if (row == regexFiltersStrikeThroughMergeInfoRow) {
+                TextInfoPrivacyCell infoCell = (TextInfoPrivacyCell) holder.itemView;
+                infoCell.setBackground(Theme.getThemedDrawable(mContext, R.drawable.greydivider, Theme.key_windowBackgroundGrayShadow));
+                infoCell.setText(getString(R.string.RegexFiltersStrikeThroughMergeAbout));
             } else if (row == sharedFiltersPageRow) {
                 TextSettingsCell settingsCell = (TextSettingsCell) holder.itemView;
                 settingsCell.setTextAndValue(getString(R.string.RegexFiltersSharedHeader), String.valueOf(AyuFilter.getRegexFilters().size()), true);
