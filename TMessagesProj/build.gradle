@@ -84,9 +84,12 @@ android {
         def appHash = 'eb06d4abfb49dc3eeb1aeb98ae0f581e'
 
         if (properties != null) {
-            appId = properties.getProperty('TELEGRAM_APP_ID') ?: System.getenv('TELEGRAM_APP_ID') ?: appId
-            appHash = properties.getProperty('TELEGRAM_APP_HASH') ?: System.getenv('TELEGRAM_APP_HASH') ?: appHash
+            appId = properties.getProperty('TELEGRAM_APP_ID') ?: appId
+            appHash = properties.getProperty('TELEGRAM_APP_HASH') ?: appHash
         }
+
+        appId = System.getenv('TELEGRAM_APP_ID') ?: appId
+        appHash = System.getenv('TELEGRAM_APP_HASH') ?: appHash
 
         buildConfigField 'String', 'BUILD_VERSION_STRING', '"' + verName + '"'
         buildConfigField 'String', 'OFFICIAL_VERSION', '"' + officialVer + '"'
@@ -96,6 +99,9 @@ android {
         buildConfigField 'long', 'BUILD_TIMESTAMP', buildTimestamp + 'L'
         buildConfigField 'boolean', 'DEBUG_VERSION', 'false'
         buildConfigField 'boolean', 'DEBUG_PRIVATE_VERSION', 'false'
+        buildConfigField 'String', 'APP_NAME', '"' + APP_NAME + '"'
+
+        resValue "string", "AppName", APP_NAME
 
         externalNativeBuild {
             cmake {
@@ -174,13 +180,17 @@ android {
 
     sourceSets.main.jniLibs.srcDirs = ['./jni/']
 
+    buildFeatures {
+        resValues = true
+    }
+
     namespace = 'org.telegram.messenger'
 }
 
 androidComponents {
     onVariants(selector().all()) { variant ->
         variant.outputs.forEach { output ->
-            String gramName = 'NagramXF'
+            String gramName = APP_NAME.replace(' ', '')
             String first = String.format('%s-v%s(%s)', gramName, verName, verCode)
             output.outputFileName.set(
                 output.outputFileName.get()
@@ -271,6 +281,9 @@ dependencies {
 
     // wear auth
     implementation 'com.google.android.gms:play-services-wearable:18.0.0'
+
+    // WebSocket proxy (Cloudflare)
+    implementation project(':libs:tcp2ws')
 
     compileOnly fileTree('libs')
 }
