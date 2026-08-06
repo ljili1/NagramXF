@@ -27,3 +27,4 @@ dependencyResolutionManagement {
 
 rootProject.name = "NagramX"
 include ':TMessagesProj'
+include ':libs:tcp2ws'

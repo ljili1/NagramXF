@@ -226,6 +226,10 @@ public class NekoConfig {
             v -> AyuGhostController.getInstance(UserConfig.selectedAccount).setSendOfflinePacketAfterOnlineLocked(v));
     // --- Ghost Mode ---
 
+    // --- WebSocket Proxy (Cloudflare) ---
+    public static ConfigItem wsEnableTLS = addConfig("wsEnableTLS", configTypeBool, true);
+    public static ConfigItem wsServerHost = addConfig("wsServerHost", configTypeString, "");
+    public static ConfigItem wsBuiltInProxyBackend = addConfig("wsBuiltInProxyBackend", configTypeInt, 0);
     private static ConfigItem ghostDelegate(String key, boolean defaultValue,
                                             java.util.function.BooleanSupplier getter,
                                             java.util.function.Consumer<Boolean> setter) {
