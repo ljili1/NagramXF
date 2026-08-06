@@ -144,6 +144,7 @@ import com.radolyn.ayugram.utils.AyuMessageUtils;
 import com.radolyn.ayugram.ui.AyuMessageHistory;
 import com.radolyn.ayugram.ui.AyuViewDeleted;
 import com.radolyn.ayugram.ui.DummyView;
+import com.radolyn.ayugram.ui.FilterHiddenView;
 import com.radolyn.ayugram.utils.AyuGhostPreferences;
 import com.radolyn.ayugram.utils.AyuGhostUtils;
 import com.radolyn.ayugram.utils.AyuState;
@@ -9626,6 +9627,7 @@ public class ChatActivity extends BaseFragment implements
     private boolean lastInAppInputVisible;
 
     private boolean hideFilteredMessages = true;
+    private final HashSet<Integer> revealedFilteredMessages = new HashSet<>();
 
     private ActionBarMenuSubItem showFilteredMenuItem;
     private boolean showFilteredMenuItemRevealed = false;
@@ -39660,6 +39662,8 @@ public class ChatActivity extends BaseFragment implements
                 };
             } else if (viewType == -1000) { // hide message
                 view = new DummyView(mContext);
+            } else if (viewType == -1001) { // hidden by filter, placeholder
+                view = new FilterHiddenView(mContext);
             } else {
                 view = new View(mContext);
             }
@@ -40254,6 +40258,16 @@ public class ChatActivity extends BaseFragment implements
                 } else if (view instanceof DummyView) { // hide message
                     DummyView dummyView = (DummyView) view;
                     dummyView.setMessageObject(message);
+                } else if (view instanceof FilterHiddenView) { // hidden by filter, placeholder
+                    FilterHiddenView filterHiddenView = (FilterHiddenView) view;
+                    filterHiddenView.setMessageObject(message);
+                    filterHiddenView.setOnClickListener(v -> {
+                        revealedFilteredMessages.add(message.getId());
+                        int adapterPosition = holder.getAdapterPosition();
+                        if (adapterPosition >= 0) {
+                            notifyItemChanged(adapterPosition);
+                        }
+                    });
                 }
             }
         }
@@ -40303,7 +40317,13 @@ public class ChatActivity extends BaseFragment implements
                         }
                         if (AyuFilter.shouldHideFilteredMessage(filterMsg, filterGroup)) {
                             revealShowFilteredMenuItem();
-                            return -1000;
+                            if (!revealedFilteredMessages.contains(msg.getId())) {
+                                return -1001;
+                            }
+                            msg.skipAyuFiltering = true;
+                            if (msg.replyMessageObject != null) {
+                                msg.replyMessageObject.skipAyuFiltering = true;
+                            }
                         }
                     }
                 }

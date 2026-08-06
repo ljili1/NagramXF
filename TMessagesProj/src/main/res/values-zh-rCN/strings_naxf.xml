@@ -51,6 +51,7 @@
     <string name="RegexFiltersShadowBanEmpty">还没有静默屏蔽对象，点击 + 添加一个。</string>
     <string name="RegexFiltersFilterEnabled">启用过滤器</string>
     <string name="RegexFiltersShadowBannedBot">机器人</string>
+    <string name="FilterHiddenHint">该消息已被过滤器隐藏，点击显示</string>
     <string name="RegexFiltersShadowBannedUser">用户</string>
     <string name="RegexFiltersShadowBannedChannel">频道</string>
     <string name="RegexFiltersShadowBannedGroup">群组</string>
