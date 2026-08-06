@@ -7062,13 +7062,6 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
                 }
             }
             drawSummarizeButton = !NaConfig.INSTANCE.getHideAiSummary().Bool() && TranslateController.isSummarizable(messageObject);
-            // Strike mode: filtered (struck) messages must not show a side/share/summarize button.
-            // Zero the assignment here (not only at paint time) so recycled/merged cells never draw
-            // or accept taps on a button that should not exist.
-            if (AyuFilter.shouldStrikeFilteredMessage(messageObject, null)) {
-                drawSideButton = 0;
-                drawSummarizeButton = false;
-            }
             hasReplyQuote = false;
             isReplyQuote = false;
             isReplyTaskOrPollOption = false;
@@ -7512,20 +7505,6 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
                 if (messageObject.isStoryMention()) {
                     hasLinkPreview = true;
                     webpage = messageObject.getStoryMentionWebpage();
-                }
-
-                // Strike mode: suppress link/game/invoice previews for filtered messages so only
-                // the struck matched hit-rule text + footer mark are shown (media is hidden by the
-                // forced TYPE_TEXT path; these previews render inside the text branch and must be
-                // gated separately). Also kill the link-preview "Open" / instant-view button.
-                if (AyuFilter.shouldStrikeFilteredMessage(messageObject, null)) {
-                    hasLinkPreview = false;
-                    hasGamePreview = false;
-                    hasInvoicePreview = false;
-                    hasInvoicePrice = false;
-                    drawInstantView = false;
-                    hasEmbed = false;
-                    webpage = null;
                 }
 
                 drawInstantView = hasLinkPreview && webpage.cached_page != null;
@@ -10888,7 +10867,7 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
             }
 
             final int separatorHeight = dp(4 + 4);
-            if (!messageObject.isRestrictedMessage && !messageObject.isRepostPreview && (currentPosition == null || currentMessagesGroup != null && currentMessagesGroup.isDocuments && currentPosition.last) && (inlineButtons != null) && !messageObject.hasExtendedMedia() && !AyuFilter.shouldStrikeFilteredMessage(messageObject, null)) {
+            if (!messageObject.isRestrictedMessage && !messageObject.isRepostPreview && (currentPosition == null || currentMessagesGroup != null && currentMessagesGroup.isDocuments && currentPosition.last) && (inlineButtons != null) && !messageObject.hasExtendedMedia()) {
                 int rows, separators;
 
                 if (inlineButtons != null) {
@@ -14557,20 +14536,7 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
             }
 
             if (!(enterTransitionInProgress && !currentMessageObject.isVoice())) {
-                // Strike mode: suppress the entire webpage preview card (the grey card with
-                // site name / description and the open-link arrow button below the message).
-                // Gate on the message's ACTUAL strike state (strikeSource), not just a fresh
-                // shouldStrikeFilteredMessage() call at paint time: the struck text is baked into
-                // messageText during checkLayout() (which also sets strikeSource), so if the
-                // filter verdict is re-evaluated between layout and paint (e.g. the isFiltered
-                // cache is invalidated by an edit/async reload), shouldStrikeFilteredMessage()
-                // can flip to false while the struck text is still on screen - yielding a message
-                // that is struck yet still shows the link card. Tying the card to strikeSource
-                // keeps it in lockstep with the text. The extra shouldStrikeFilteredMessage() check
-                // is a safety net for the first paint before checkLayout has run.
-                if (currentMessageObject.strikeSource == null && !AyuFilter.shouldStrikeFilteredMessage(currentMessageObject, null)) {
-                    drawLinkPreview(canvas, 1f);
-                }
+                drawLinkPreview(canvas, 1f);
                 getIconForCurrentState(); // sets colors
             }
 
@@ -18631,7 +18597,6 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
             }
         }
         boolean showAyuDeletedMark = ayuDeleted && shouldShowAyuDeletedMark(currentMessageObject);
-        boolean showAyuFilterMark = AyuFilter.shouldStrikeFilteredMessage(currentMessageObject, null);
         // bookmark start
         boolean showBookmarkInTime = false;
         int senderNameColor = 0;
@@ -18703,15 +18668,6 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
                 currentTimeString.insert(0, toInsert);
             }
         }
-        if (showAyuFilterMark) {
-            SpannableStringBuilder filterMark = TimeStringHelper.getFilterMarkSpan();
-            if (filterMark != null) {
-                SpannableStringBuilder prefixed = new SpannableStringBuilder(filterMark);
-                prefixed.append(" ");
-                prefixed.append(currentTimeString);
-                currentTimeString = prefixed;
-            }
-        }
         if (currentMessageObject.isStakedDice()) {
             currentTimeString = new SpannableStringBuilder(TextUtils.concat("💎", StarsIntroActivity.formatTON(currentMessageObject.getStakedDiceAmount()), "  ", currentTimeString));
             currentTimeString = StarsIntroActivity.replaceDiamond(currentTimeString, 0.55f, null, 0, dp(-.33f), 1.05f);
@@ -18761,14 +18717,6 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
             if (showBookmarkInTime && TimeStringHelper.bookmarkDrawable != null) {
                 timeTextWidth = timeWidth += TimeStringHelper.bookmarkDrawable.getIntrinsicWidth();
             }
-        }
-        if (showAyuFilterMark && TimeStringHelper.filterMarkDrawable != null) {
-            // The filter mark is a ColoredImageSpan (getFilterMarkSpan -> setSize(dp(13)))
-            // prepended to currentTimeString. measureText() above does not account for
-            // ReplacementSpan width, so reserve it here (mirroring the edited/deleted/translated
-            // icons); otherwise the mark overlaps the views / forwards / replies counters that
-            // are laid out immediately after the time text.
-            timeTextWidth = timeWidth += dp(13);
         }
         if (currentMessageObject.scheduled && currentMessageObject.messageOwner.date == 0x7FFFFFFE || currentMessageObject.notime) {
             timeWidth -= dp(8);
@@ -20422,15 +20370,6 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
         if (currentMessageObject == null) {
             return;
         }
-        // Filter strike mode: suppress the photo/any media for a matched message so the ENTIRE
-        // message (including all its images) is replaced by the struck hit-rule text. This is a
-        // rendering-layer safety net independent of MessageObject.setType timing, which only runs
-        // at construction and can leave type==TYPE_PHOTO (and thus drawPhotoImage=true) when the
-        // filter cache was cold at construction time, even though checkLayout() later strikes the
-        // text. Mask mode is unaffected (it uses the spoiler/blur path, not strikeSource).
-        if (currentMessageObject.strikeSource != null || AyuFilter.shouldStrikeFilteredMessage(currentMessageObject, null) || currentMessageObject.filterMergeHidden) {
-            drawPhotoImage = false;
-        }
         if (shouldTranslucentDeleted() && ayuDeleted) {
             canvas.saveLayerAlpha(null, (int) (255 * 0.75f), Canvas.ALL_SAVE_FLAG);
         }
@@ -21632,12 +21571,7 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
 
         }
 
-        // Strike mode: suppress the share/forward side-button (→ arrow) that appears
-        // next to filtered messages. drawSideButton draws outside drawLinkPreview
-        // and was not previously gated.
-        if (currentMessageObject.strikeSource == null && !AyuFilter.shouldStrikeFilteredMessage(currentMessageObject, null)) {
-            drawSideButton(canvas);
-        }
+        drawSideButton(canvas);
         drawSummarizeButton(canvas);
     }
 

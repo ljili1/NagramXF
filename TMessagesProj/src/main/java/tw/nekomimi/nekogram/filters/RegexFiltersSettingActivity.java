@@ -96,8 +96,8 @@ public class RegexFiltersSettingActivity extends BaseNekoXSettingsActivity {
     private final AbstractConfigCell regexFiltersMaskMessagesInfoRow = new ConfigCellCustom("RegexFiltersMaskMessagesAbout", CellGroup.ITEM_TYPE_TEXT, false);
     private final AbstractConfigCell regexFiltersHideOnlyMatchedRow = new ConfigCellCustom("RegexFiltersHideOnlyMatchedShort", CellGroup.ITEM_TYPE_TEXT_CHECK, true);
     private final AbstractConfigCell regexFiltersHideOnlyMatchedInfoRow = new ConfigCellCustom("RegexFiltersHideOnlyMatchedAbout", CellGroup.ITEM_TYPE_TEXT, false);
-    private final AbstractConfigCell regexFiltersStrikeThroughRow = new ConfigCellCustom("RegexFiltersStrikeThroughShort", CellGroup.ITEM_TYPE_TEXT_CHECK, true);
-    private final AbstractConfigCell regexFiltersStrikeThroughInfoRow = new ConfigCellCustom("RegexFiltersStrikeThroughAbout", CellGroup.ITEM_TYPE_TEXT, false);
+    private final AbstractConfigCell regexFiltersShowPlaceholderRow = new ConfigCellCustom("RegexFiltersShowPlaceholderShort", CellGroup.ITEM_TYPE_TEXT_CHECK, true);
+    private final AbstractConfigCell regexFiltersShowPlaceholderInfoRow = new ConfigCellCustom("RegexFiltersShowPlaceholderAbout", CellGroup.ITEM_TYPE_TEXT, false);
     private final AbstractConfigCell filtersHeaderRow = new ConfigCellHeader(getString(R.string.RegexFiltersGlobalHeader));
     private final AbstractConfigCell sharedFiltersPageRow = new ConfigCellCustom("RegexFiltersSharedHeader", CellGroup.ITEM_TYPE_TEXT_SETTINGS_CELL, true);
     private final AbstractConfigCell userFiltersPageRow = new ConfigCellCustom("ShadowBan", CellGroup.ITEM_TYPE_TEXT_SETTINGS_CELL, true);
@@ -126,8 +126,8 @@ public class RegexFiltersSettingActivity extends BaseNekoXSettingsActivity {
             addCell(regexFiltersHideOnlyMatchedRow);
             addCell(regexFiltersHideOnlyMatchedInfoRow);
         }
-        addCell(regexFiltersStrikeThroughRow);
-        addCell(regexFiltersStrikeThroughInfoRow);
+        addCell(regexFiltersShowPlaceholderRow);
+        addCell(regexFiltersShowPlaceholderInfoRow);
         addCell(filtersHeaderRow);
         addCell(sharedFiltersPageRow);
         addCell(userFiltersPageRow);
@@ -239,17 +239,11 @@ public class RegexFiltersSettingActivity extends BaseNekoXSettingsActivity {
             cell.setChecked(enabled);
             NaConfig.INSTANCE.getRegexFiltersHideOnlyMatched().setConfigBool(enabled);
             AyuFilter.invalidateFilteredCache();
-        } else if (row == regexFiltersStrikeThroughRow) {
+        } else if (row == regexFiltersShowPlaceholderRow) {
             TextCheckCell cell = (TextCheckCell) view;
             boolean enabled = !cell.isChecked();
             cell.setChecked(enabled);
-            if (enabled && !NaConfig.INSTANCE.getRegexFiltersEnabled().Bool()) {
-                NaConfig.INSTANCE.getRegexFiltersEnabled().setConfigBool(true);
-                if (listAdapter != null) {
-                    listAdapter.notifyDataSetChanged();
-                }
-            }
-            NaConfig.INSTANCE.getRegexFiltersStrikeThrough().setConfigBool(enabled);
+            NaConfig.INSTANCE.getRegexFiltersShowPlaceholder().setConfigBool(enabled);
             AyuFilter.invalidateFilteredCache();
         } else if (row == sharedFiltersPageRow) {
             presentFragment(new RegexSharedFiltersListActivity());
@@ -1149,13 +1143,13 @@ public class RegexFiltersSettingActivity extends BaseNekoXSettingsActivity {
                 TextInfoPrivacyCell infoCell = (TextInfoPrivacyCell) holder.itemView;
                 infoCell.setBackground(Theme.getThemedDrawable(mContext, R.drawable.greydivider, Theme.key_windowBackgroundGrayShadow));
                 infoCell.setText(getString(R.string.RegexFiltersHideOnlyMatchedAbout));
-            } else if (row == regexFiltersStrikeThroughRow) {
+            } else if (row == regexFiltersShowPlaceholderRow) {
                 TextCheckCell textCheckCell = (TextCheckCell) holder.itemView;
-                textCheckCell.setTextAndCheck(getString(R.string.RegexFiltersStrikeThroughShort), NaConfig.INSTANCE.getRegexFiltersStrikeThrough().Bool(), false);
-            } else if (row == regexFiltersStrikeThroughInfoRow) {
+                textCheckCell.setTextAndCheck(getString(R.string.RegexFiltersShowPlaceholderShort), NaConfig.INSTANCE.getRegexFiltersShowPlaceholder().Bool(), false);
+            } else if (row == regexFiltersShowPlaceholderInfoRow) {
                 TextInfoPrivacyCell infoCell = (TextInfoPrivacyCell) holder.itemView;
                 infoCell.setBackground(Theme.getThemedDrawable(mContext, R.drawable.greydivider, Theme.key_windowBackgroundGrayShadow));
-                infoCell.setText(getString(R.string.RegexFiltersStrikeThroughAbout));
+                infoCell.setText(getString(R.string.RegexFiltersShowPlaceholderAbout));
         } else if (row == sharedFiltersPageRow) {
                 TextSettingsCell settingsCell = (TextSettingsCell) holder.itemView;
                 settingsCell.setTextAndValue(getString(R.string.RegexFiltersSharedHeader), String.valueOf(AyuFilter.getRegexFilters().size()), true);

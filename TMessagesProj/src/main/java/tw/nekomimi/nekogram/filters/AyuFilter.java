@@ -56,14 +56,6 @@ import xyz.nextalone.nagram.NaConfig;
 public class AyuFilter {
     private static final Object cacheLock = new Object();
 
-    // Cache for the struck (replacement) text of a message so the regex evaluation in
-    // getStrikeReplacementText (collectAllMatchedRangesWithRule) is not re-run on every layout pass,
-    // cell (re)bind, or album computeHeight/computeWidth during scrolling. Keyed by
-    // dialogId + messageId + text, so an edited message (different text) simply misses and
-    // re-evaluates. Cleared together with the isFiltered cache on filter-rule/config changes.
-    private static final int STRIKE_TEXT_CACHE_LIMIT = 2000;
-    private static final LruCache<String, Pair<CharSequence, ArrayList<TLRPC.MessageEntity>>> strikeTextCache =
-            new LruCache<>(STRIKE_TEXT_CACHE_LIMIT);
     private static volatile ArrayList<FilterModel> filterModels;
     private static volatile ArrayList<ChatFilterEntry> chatFilterEntries;
     private static volatile HashMap<Long, HashSet<String>> excludedSharedFilterIdsByDialog;
@@ -224,7 +216,7 @@ public class AyuFilter {
             chatFilterEntries = null;
             excludedSharedFilterIdsByDialog = null;
         }
-        // Delegate the cache-clear (AyuFilterCache + strikeTextCache) and the UI refresh
+        // Delegate the cache-clear (AyuFilterCache) and the UI refresh
         // notification to invalidateFilteredCache() so the two refresh paths stay in lockstep.
         invalidateFilteredCache();
     }
@@ -232,7 +224,6 @@ public class AyuFilter {
     public static void invalidateFilteredCache() {
         synchronized (cacheLock) {
             AyuFilterCache.clearAll();
-            strikeTextCache.evictAll();
         }
         // Also notify open chats so the (possibly already-bound) visible cells re-evaluate the
         // filter verdict immediately. Without this, toggling a filter switch (strike / mask /
@@ -252,9 +243,8 @@ public class AyuFilter {
         }
         // Reversed expressions match "text does NOT contain pattern". Under mask mode that
         // would mask/hide messages lacking the keyword, which is nonsensical, so disable
-        // reversed filters entirely while masking or striking.
-        if (filter.reversed && (NaConfig.INSTANCE.getRegexFiltersMaskMessages().Bool()
-                || NaConfig.INSTANCE.getRegexFiltersStrikeThrough().Bool())) {
+        // reversed filters entirely while masking.
+        if (filter.reversed && NaConfig.INSTANCE.getRegexFiltersMaskMessages().Bool()) {
             return false;
         }
         boolean matched = filter.pattern.matcher(text).find();
@@ -446,8 +436,7 @@ public class AyuFilter {
 
     public static boolean shouldMaskFilteredMessages() {
         return NaConfig.INSTANCE.getRegexFiltersEnabled().Bool()
-                && NaConfig.INSTANCE.getRegexFiltersMaskMessages().Bool()
-                && !NaConfig.INSTANCE.getRegexFiltersStrikeThrough().Bool();
+                && NaConfig.INSTANCE.getRegexFiltersMaskMessages().Bool();
     }
 
     public static boolean shouldHideOnlyMatched() {
@@ -456,14 +445,9 @@ public class AyuFilter {
                 && NaConfig.INSTANCE.getRegexFiltersHideOnlyMatched().Bool();
     }
 
-    public static boolean shouldStrikeFilteredMessages() {
-        return NaConfig.INSTANCE.getRegexFiltersEnabled().Bool() && NaConfig.INSTANCE.getRegexFiltersStrikeThrough().Bool();
-    }
-
     public static boolean shouldHideFilteredMessages() {
         return NaConfig.INSTANCE.getRegexFiltersEnabled().Bool()
-                && !NaConfig.INSTANCE.getRegexFiltersMaskMessages().Bool()
-                && !NaConfig.INSTANCE.getRegexFiltersStrikeThrough().Bool();
+                && !NaConfig.INSTANCE.getRegexFiltersMaskMessages().Bool();
     }
 
     public static boolean shouldMaskIgnoredBlockedMessages() {
@@ -489,104 +473,14 @@ public class AyuFilter {
         return shouldMaskFilteredMessages() && isFiltered(msg, group);
     }
 
-    public static boolean shouldStrikeFilteredMessage(MessageObject msg, MessageObject.GroupedMessages group) {
-        if (msg != null && msg.filterGroupStruck) {
-            return true;
-        }
-        return shouldStrikeFilteredMessages() && isFiltered(msg, group);
-    }
-
 
     public static boolean shouldMaskMessage(MessageObject msg, MessageObject.GroupedMessages group) {
         return shouldMaskFilteredMessage(msg, group) || (shouldMaskIgnoredBlockedMessages() && isIgnoredBlockedMessage(msg));
     }
 
-    /**
-     * For strike mode, returns the display text made up only of the regex-matched portions
-     * (the hit rules) joined by a forward slash ("/") separator, plus the matching strike entities for
-     * the matched parts (the separator is intentionally left unstruck). The original message
-     * is thus replaced by its matched content. Returns {@code null} when there is no concrete
-     * matched range, so the caller can fall back to striking the whole original message instead.
-     */
-    public static Pair<CharSequence, ArrayList<TLRPC.MessageEntity>> getStrikeReplacementText(MessageObject msg, CharSequence text) {
-        if (!shouldStrikeFilteredMessage(msg, null)) {
-            return null;
-        }
-        if (TextUtils.isEmpty(text)) {
-            return null;
-        }
-        // Serve a cached replacement when available: this method is hit from addEntitiesToText
-        // (every generateLayout), so without caching the regex would run
-        // on every layout pass and on every album computeHeight during a scroll.
-        String cacheKey = msg.getDialogId() + "_" + msg.getId() + "_" + text;
-        synchronized (cacheLock) {
-            Pair<CharSequence, ArrayList<TLRPC.MessageEntity>> cached = strikeTextCache.get(cacheKey);
-            if (cached != null) {
-                return cached;
-            }
-        }
-        ArrayList<RuleRange> ranges = collectAllMatchedRangesWithRule(text, msg.getDialogId());
-        if (ranges.isEmpty()) {
-            return null;
-        }
-        // De-duplicate by rule: a single message hitting the SAME rule multiple times shows only
-        // the first matched fragment of that rule (keep first occurrence of each rule key).
-        HashSet<String> seen = new HashSet<>();
-        ArrayList<RuleRange> deduped = new ArrayList<>();
-        for (RuleRange r : ranges) {
-            if (seen.add(r.ruleKey)) {
-                deduped.add(r);
-            }
-        }
-        StringBuilder sb = new StringBuilder();
-        ArrayList<TLRPC.MessageEntity> entities = new ArrayList<>();
-        String separator = "\\";
-        for (int i = 0; i < deduped.size(); i++) {
-            if (i > 0) {
-                sb.append(separator);
-            }
-            int start = sb.length();
-            sb.append(text.subSequence(deduped.get(i).start, deduped.get(i).end));
-            int end = sb.length();
-            TLRPC.TL_messageEntityStrike strike = new TLRPC.TL_messageEntityStrike();
-            strike.offset = start;
-            strike.length = end - start;
-            entities.add(strike);
-        }
-        Pair<CharSequence, ArrayList<TLRPC.MessageEntity>> result = new Pair<>(sb.toString(), entities);
-        synchronized (cacheLock) {
-            strikeTextCache.put(cacheKey, result);
-        }
-        return result;
-    }
-
     public static ArrayList<TLRPC.MessageEntity> addSpoilerEntities(MessageObject msg, ArrayList<TLRPC.MessageEntity> original, CharSequence text) {
         if (msg == null || TextUtils.isEmpty(text)) {
             return original;
-        }
-
-        // "Strikethrough hit rules": keep the message visible and strike through only the
-        // regex-matched portions (the hit rule content) using the native
-        // TL_messageEntityStrike entity, instead of hiding/masking the whole message.
-        // Takes precedence over the spoiler (mask) rendering below.
-        if (shouldStrikeFilteredMessage(msg, null)) {
-            ArrayList<RuleRange> ranges = collectAllMatchedRangesWithRule(text, msg.getDialogId());
-            ArrayList<TLRPC.MessageEntity> result = original != null ? new ArrayList<>(original) : new ArrayList<>();
-            if (!ranges.isEmpty()) {
-                for (RuleRange range : ranges) {
-                    TLRPC.TL_messageEntityStrike strike = new TLRPC.TL_messageEntityStrike();
-                    strike.offset = range.start;
-                    strike.length = range.end - range.start;
-                    result.add(strike);
-                }
-                return result;
-            }
-            // No concrete ranges (reversed/type-tag-only match): fall back to whole-message strike.
-            TLRPC.TL_messageEntityStrike strike = new TLRPC.TL_messageEntityStrike();
-            strike.offset = 0;
-            strike.length = text.length();
-            result.add(strike);
-            return result;
         }
 
         // "Hide only matched content": put spoilers only on the regex-matched ranges
@@ -918,7 +812,6 @@ public class AyuFilter {
             String str = new Gson().toJson(arr);
             NaConfig.INSTANCE.getRegexFiltersExcludedDialogs().setConfigString(str);
             AyuFilterCache.clearDialog(dialogId);
-            strikeTextCache.evictAll();
         }
     }
 

@@ -179,7 +179,7 @@
     <string name="NoChatsHelp">Start messaging by tapping the pencil button in the bottom right corner.</string>
     <string name="NoChatsContactsHelp">Start messaging by tapping the pencil button in the bottom right corner.</string>
     <string name="WaitingForNetwork">Waiting for network...</string>
-    <string name="FilterHiddenHint">This message was hidden by the filter. Tap to show.</string>
+    <string name="FilterHiddenHint">Matched rule strikethrough has been hidden by the filter. Tap to show.</string>
     <string name="Connecting">Connecting...</string>
     <string name="Connected">Connected</string>
     <string name="Ping">Ping: %1$d ms</string>

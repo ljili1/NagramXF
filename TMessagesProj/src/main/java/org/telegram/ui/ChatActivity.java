@@ -39101,49 +39101,6 @@ public class ChatActivity extends BaseFragment implements
                 m.filterMergeHidden = false;
                 m.filterGroupStruck = false;
             }
-            // Album (grouped media) hide: if ANY member of an album (sharing getGroupId() != 0)
-            // matches the regex filter, hide the WHOLE album. Members without a caption can never
-            // match a text rule on their own, so a hit on the captioned member must propagate to
-            // the rest of the group.
-            if (AyuFilter.shouldStrikeFilteredMessages()) {
-                HashMap<Long, ArrayList<MessageObject>> groups = new HashMap<>();
-                for (int i = 0; i < list.size(); i++) {
-                    MessageObject m = list.get(i);
-                    long gid = m.getGroupId();
-                    if (gid == 0) {
-                        continue;
-                    }
-                    ArrayList<MessageObject> g = groups.get(gid);
-                    if (g == null) {
-                        g = new ArrayList<>();
-                        groups.put(gid, g);
-                    }
-                    g.add(m);
-                }
-                for (ArrayList<MessageObject> g : groups.values()) {
-                    // Pick the first regex-matched member as the single visible bubble: it shows the
-                    // struck (replaced) hit-rule text via filterGroupStruck. Every other member of the
-                    // album collapses to zero height (filterMergeHidden) so the album grid disappears
-                    // and only one struck bubble remains.
-                    MessageObject representative = null;
-                    for (int i = 0; i < g.size(); i++) {
-                        if (AyuFilter.isFiltered(g.get(i), null)) {
-                            if (representative == null) {
-                                representative = g.get(i);
-                            }
-                        }
-                    }
-                    if (representative != null) {
-                        for (int i = 0; i < g.size(); i++) {
-                            MessageObject m = g.get(i);
-                            m.filterGroupStruck = true;
-                            if (m != representative) {
-                                m.filterMergeHidden = true;
-                            }
-                        }
-                    }
-                }
-            }
         }
 
         private void updateRowsInternal() {
@@ -40317,12 +40274,15 @@ public class ChatActivity extends BaseFragment implements
                         }
                         if (AyuFilter.shouldHideFilteredMessage(filterMsg, filterGroup)) {
                             revealShowFilteredMenuItem();
-                            if (!revealedFilteredMessages.contains(msg.getId())) {
+                            if (revealedFilteredMessages.contains(msg.getId())) {
+                                msg.skipAyuFiltering = true;
+                                if (msg.replyMessageObject != null) {
+                                    msg.replyMessageObject.skipAyuFiltering = true;
+                                }
+                            } else if (NaConfig.INSTANCE.getRegexFiltersShowPlaceholder().Bool()) {
                                 return -1001;
-                            }
-                            msg.skipAyuFiltering = true;
-                            if (msg.replyMessageObject != null) {
-                                msg.replyMessageObject.skipAyuFiltering = true;
+                            } else {
+                                return -1000;
                             }
                         }
                     }
