@@ -1,8 +1,13 @@
 package tw.nekomimi.nekogram.filters;
 
 import android.text.Spannable;
+import android.text.SpannableStringBuilder;
 import android.text.Spanned;
 import android.text.TextUtils;
+import android.text.style.StrikethroughSpan;
+import android.util.Pair;
+
+import androidx.collection.LruCache;
 
 import com.google.gson.Gson;
 import com.google.gson.annotations.Expose;
@@ -12,7 +17,6 @@ import com.radolyn.ayugram.database.entities.RegexFilter;
 import com.radolyn.ayugram.database.entities.RegexFilterGlobalExclusion;
 
 import org.telegram.messenger.AndroidUtilities;
-import org.telegram.messenger.DialogObject;
 import org.telegram.messenger.FileLog;
 import org.telegram.messenger.MessageObject;
 import org.telegram.messenger.MessagesController;
@@ -35,8 +39,31 @@ import tw.nekomimi.nekogram.NekoConfig;
 import tw.nekomimi.nekogram.helpers.MessageHelper;
 import xyz.nextalone.nagram.NaConfig;
 
+/**
+ * Regex message-filtering facade, now backed by Room ({@link RegexFilterDao}).
+ * <p>
+ * Public API and the {@link FilterModel}/{@link ChatFilterEntry}/{@link ExcludedFilterEntry}/
+ * {@link CustomFilteredUser} data classes are preserved verbatim so the dozens of
+ * activities/popups that reference them continue to compile. Under the hood, the
+ * shared/chat filter rows and per-dialog exclusions live in the {@code RegexFilter} and
+ * {@code RegexFilterGlobalExclusion} tables; reads go through an in-memory cache that is
+ * rebuilt on demand and invalidated on every write.
+ * <p>
+ * {@code blockedChannels}, {@code customFilteredUsers}, {@code customFilteredUsersData},
+ * and the legacy {@code excludedDialogs} list remain in SharedPreferences (they are
+ * NagramXF-specific and do not map to ayuGram's filter tables).
+ */
 public class AyuFilter {
     private static final Object cacheLock = new Object();
+
+    // Cache for the struck (replacement) text of a message so the regex evaluation in
+    // getStrikeReplacementText (collectAllMatchedRangesWithRule) is not re-run on every layout pass,
+    // cell (re)bind, or album computeHeight/computeWidth during scrolling. Keyed by
+    // dialogId + messageId + text, so an edited message (different text) simply misses and
+    // re-evaluates. Cleared together with the isFiltered cache on filter-rule/config changes.
+    private static final int STRIKE_TEXT_CACHE_LIMIT = 2000;
+    private static final LruCache<String, Pair<CharSequence, ArrayList<TLRPC.MessageEntity>>> strikeTextCache =
+            new LruCache<>(STRIKE_TEXT_CACHE_LIMIT);
     private static volatile ArrayList<FilterModel> filterModels;
     private static volatile ArrayList<ChatFilterEntry> chatFilterEntries;
     private static volatile HashMap<Long, HashSet<String>> excludedSharedFilterIdsByDialog;
@@ -44,6 +71,7 @@ public class AyuFilter {
     private static volatile HashSet<Long> customFilteredUsers;
     private static volatile HashMap<Long, CustomFilteredUser> customFilteredUsersData;
 
+    // --- Shared / chat filters (Room-backed) ---
 
     public static ArrayList<FilterModel> getRegexFilters() {
         if (filterModels == null) {
@@ -178,6 +206,8 @@ public class AyuFilter {
         if (selectedObject == null) {
             return null;
         }
+        // Follow ayuGram behavior: do not skip stickers/emoji; getMessageFilterMatchText always
+        // appends a <type>N</type> tag so reversed expressions can still invert the "no-match" result.
         CharSequence messageText = MessageHelper.getMessageFilterMatchText(selectedObject, selectedObjectGroup);
         if (TextUtils.isEmpty(messageText)) {
             messageText = null;
@@ -193,24 +223,38 @@ public class AyuFilter {
             filterModels = null;
             chatFilterEntries = null;
             excludedSharedFilterIdsByDialog = null;
-            AyuFilterCache.clearAll();
         }
-        AndroidUtilities.runOnUIThread(() -> {
-            NotificationCenter.getInstance(UserConfig.selectedAccount).postNotificationName(NotificationCenter.regexFiltersUpdated);
-        });
+        // Delegate the cache-clear (AyuFilterCache + strikeTextCache) and the UI refresh
+        // notification to invalidateFilteredCache() so the two refresh paths stay in lockstep.
+        invalidateFilteredCache();
     }
 
     public static void invalidateFilteredCache() {
         synchronized (cacheLock) {
             AyuFilterCache.clearAll();
+            strikeTextCache.evictAll();
         }
+        // Also notify open chats so the (possibly already-bound) visible cells re-evaluate the
+        // filter verdict immediately. Without this, toggling a filter switch (strike / mask /
+        // hide-only-matched / ignore-blocked) only clears the cache but never triggers the
+        // ChatActivity regexFiltersUpdated handler, so on-screen messages keep their old
+        // rendering until they happen to be re-measured on scroll ("the replacement feels
+        // delayed"). rebuildCache() already does both steps for rule add/edit/remove; this
+        // keeps the toggle path consistent with it.
+        AndroidUtilities.runOnUIThread(() -> {
+            NotificationCenter.getInstance(UserConfig.selectedAccount).postNotificationName(NotificationCenter.regexFiltersUpdated);
+        });
     }
 
     private static boolean isFilterMatch(FilterModel filter, CharSequence text) {
         if (filter == null || !filter.enabled || filter.pattern == null || TextUtils.isEmpty(text)) {
             return false;
         }
-        if (filter.reversed && NaConfig.INSTANCE.getRegexFiltersMaskMessages().Bool()) {
+        // Reversed expressions match "text does NOT contain pattern". Under mask mode that
+        // would mask/hide messages lacking the keyword, which is nonsensical, so disable
+        // reversed filters entirely while masking or striking.
+        if (filter.reversed && (NaConfig.INSTANCE.getRegexFiltersMaskMessages().Bool()
+                || NaConfig.INSTANCE.getRegexFiltersStrikeThrough().Bool())) {
             return false;
         }
         boolean matched = filter.pattern.matcher(text).find();
@@ -253,18 +297,30 @@ public class AyuFilter {
         return false;
     }
 
-    private static void collectMatchedRanges(ArrayList<int[]> ranges, FilterModel filter, CharSequence text) {
+    private static final class RuleRange {
+        final int start;
+        final int end;
+        final String ruleKey;
+        RuleRange(int start, int end, String ruleKey) {
+            this.start = start;
+            this.end = end;
+            this.ruleKey = ruleKey;
+        }
+    }
+
+    private static void collectMatchedRanges(FilterModel filter, CharSequence text, ArrayList<RuleRange> ranges) {
         if (filter == null || !filter.enabled || filter.pattern == null || filter.reversed) {
             return;
         }
         try {
             var matcher = filter.pattern.matcher(text);
             int length = text.length();
+            String key = filterKey(filter);
             while (matcher.find()) {
                 int start = matcher.start();
                 int end = matcher.end();
                 if (start >= 0 && end > start && end <= length) {
-                    ranges.add(new int[]{start, end});
+                    ranges.add(new RuleRange(start, end, key));
                 }
             }
         } catch (Exception e) {
@@ -272,8 +328,8 @@ public class AyuFilter {
         }
     }
 
-    private static ArrayList<int[]> findFilteredRanges(CharSequence text, long dialogId) {
-        ArrayList<int[]> ranges = new ArrayList<>();
+    private static ArrayList<RuleRange> collectAllMatchedRangesWithRule(CharSequence text, long dialogId) {
+        ArrayList<RuleRange> ranges = new ArrayList<>();
         if (TextUtils.isEmpty(text)) {
             return ranges;
         }
@@ -282,7 +338,7 @@ public class AyuFilter {
                 if (entry.dialogId == dialogId) {
                     if (entry.filters != null) {
                         for (var filter : entry.filters) {
-                            collectMatchedRanges(ranges, filter, text);
+                            collectMatchedRanges(filter, text, ranges);
                         }
                     }
                     break;
@@ -292,7 +348,7 @@ public class AyuFilter {
 
         boolean isPrivateDialog = dialogId > 0;
         if (isPrivateDialog && !NaConfig.INSTANCE.getRegexFiltersEnableInChats().Bool()) {
-            return mergeRanges(ranges);
+            return mergeRangesWithRule(ranges);
         }
 
         if (filterModels != null) {
@@ -301,28 +357,28 @@ public class AyuFilter {
                 if (!TextUtils.isEmpty(filter.id) && excludedFilterIds.contains(filter.id)) {
                     continue;
                 }
-                collectMatchedRanges(ranges, filter, text);
+                collectMatchedRanges(filter, text, ranges);
             }
         }
-        return mergeRanges(ranges);
+        return mergeRangesWithRule(ranges);
     }
 
-    private static ArrayList<int[]> mergeRanges(ArrayList<int[]> ranges) {
+    private static ArrayList<RuleRange> mergeRangesWithRule(ArrayList<RuleRange> ranges) {
         if (ranges.isEmpty()) {
             return ranges;
         }
-        Collections.sort(ranges, (a, b) -> Integer.compare(a[0], b[0]));
-        ArrayList<int[]> merged = new ArrayList<>();
-        for (int[] range : ranges) {
+        Collections.sort(ranges, (a, b) -> Integer.compare(a.start, b.start));
+        ArrayList<RuleRange> merged = new ArrayList<>();
+        for (RuleRange range : ranges) {
             if (merged.isEmpty()) {
-                merged.add(new int[]{range[0], range[1]});
+                merged.add(range);
                 continue;
             }
-            int[] last = merged.get(merged.size() - 1);
-            if (range[0] <= last[1]) {
-                last[1] = Math.max(last[1], range[1]);
+            RuleRange last = merged.get(merged.size() - 1);
+            if (range.start <= last.end) {
+                merged.set(merged.size() - 1, new RuleRange(last.start, Math.max(last.end, range.end), last.ruleKey));
             } else {
-                merged.add(new int[]{range[0], range[1]});
+                merged.add(range);
             }
         }
         return merged;
@@ -334,9 +390,13 @@ public class AyuFilter {
         }
 
         if (msg == null || msg.isOutOwner() || msg.isOut()) {
+            // Align with ayuGram: also skip channel posts the user authored (out=true, post=true)
+            // which pass isOutOwner()==false but shouldn't be filtered as incoming content.
             return false;
         }
 
+        // Per-session bypass toggled via ChatActivity's "show filtered" action. Checked BEFORE
+        // the cache so the cache keeps the real filter verdict and survives toggling back.
         if (msg.skipAyuFiltering) {
             return false;
         }
@@ -364,6 +424,9 @@ public class AyuFilter {
         }
 
         boolean result = isFilteredInternal(text, dialogId);
+        // Only cache when we have full context. For grouped messages checked without
+        // group context (e.g. from DialogCell), skip caching to prevent stale per-message
+        // entries from overriding the correct group-aware result in ChatActivity.
         if (group != null || msg.getGroupId() == 0) {
             AyuFilterCache.put(dialogId, msg, group, result);
         }
@@ -371,8 +434,20 @@ public class AyuFilter {
         return result;
     }
 
+    private static String filterKey(FilterModel filter) {
+        if (filter == null) {
+            return "";
+        }
+        if (!TextUtils.isEmpty(filter.id)) {
+            return filter.id;
+        }
+        return filter.pattern != null ? filter.pattern.pattern() : "";
+    }
+
     public static boolean shouldMaskFilteredMessages() {
-        return NaConfig.INSTANCE.getRegexFiltersEnabled().Bool() && NaConfig.INSTANCE.getRegexFiltersMaskMessages().Bool();
+        return NaConfig.INSTANCE.getRegexFiltersEnabled().Bool()
+                && NaConfig.INSTANCE.getRegexFiltersMaskMessages().Bool()
+                && !NaConfig.INSTANCE.getRegexFiltersStrikeThrough().Bool();
     }
 
     public static boolean shouldHideOnlyMatched() {
@@ -381,8 +456,14 @@ public class AyuFilter {
                 && NaConfig.INSTANCE.getRegexFiltersHideOnlyMatched().Bool();
     }
 
+    public static boolean shouldStrikeFilteredMessages() {
+        return NaConfig.INSTANCE.getRegexFiltersEnabled().Bool() && NaConfig.INSTANCE.getRegexFiltersStrikeThrough().Bool();
+    }
+
     public static boolean shouldHideFilteredMessages() {
-        return NaConfig.INSTANCE.getRegexFiltersEnabled().Bool() && !NaConfig.INSTANCE.getRegexFiltersMaskMessages().Bool();
+        return NaConfig.INSTANCE.getRegexFiltersEnabled().Bool()
+                && !NaConfig.INSTANCE.getRegexFiltersMaskMessages().Bool()
+                && !NaConfig.INSTANCE.getRegexFiltersStrikeThrough().Bool();
     }
 
     public static boolean shouldMaskIgnoredBlockedMessages() {
@@ -408,8 +489,75 @@ public class AyuFilter {
         return shouldMaskFilteredMessages() && isFiltered(msg, group);
     }
 
+    public static boolean shouldStrikeFilteredMessage(MessageObject msg, MessageObject.GroupedMessages group) {
+        if (msg != null && msg.filterGroupStruck) {
+            return true;
+        }
+        return shouldStrikeFilteredMessages() && isFiltered(msg, group);
+    }
+
+
     public static boolean shouldMaskMessage(MessageObject msg, MessageObject.GroupedMessages group) {
         return shouldMaskFilteredMessage(msg, group) || (shouldMaskIgnoredBlockedMessages() && isIgnoredBlockedMessage(msg));
+    }
+
+    /**
+     * For strike mode, returns the display text made up only of the regex-matched portions
+     * (the hit rules) joined by a forward slash ("/") separator, plus the matching strike entities for
+     * the matched parts (the separator is intentionally left unstruck). The original message
+     * is thus replaced by its matched content. Returns {@code null} when there is no concrete
+     * matched range, so the caller can fall back to striking the whole original message instead.
+     */
+    public static Pair<CharSequence, ArrayList<TLRPC.MessageEntity>> getStrikeReplacementText(MessageObject msg, CharSequence text) {
+        if (!shouldStrikeFilteredMessage(msg, null)) {
+            return null;
+        }
+        if (TextUtils.isEmpty(text)) {
+            return null;
+        }
+        // Serve a cached replacement when available: this method is hit from addEntitiesToText
+        // (every generateLayout), so without caching the regex would run
+        // on every layout pass and on every album computeHeight during a scroll.
+        String cacheKey = msg.getDialogId() + "_" + msg.getId() + "_" + text;
+        synchronized (cacheLock) {
+            Pair<CharSequence, ArrayList<TLRPC.MessageEntity>> cached = strikeTextCache.get(cacheKey);
+            if (cached != null) {
+                return cached;
+            }
+        }
+        ArrayList<RuleRange> ranges = collectAllMatchedRangesWithRule(text, msg.getDialogId());
+        if (ranges.isEmpty()) {
+            return null;
+        }
+        // De-duplicate by rule: a single message hitting the SAME rule multiple times shows only
+        // the first matched fragment of that rule (keep first occurrence of each rule key).
+        HashSet<String> seen = new HashSet<>();
+        ArrayList<RuleRange> deduped = new ArrayList<>();
+        for (RuleRange r : ranges) {
+            if (seen.add(r.ruleKey)) {
+                deduped.add(r);
+            }
+        }
+        StringBuilder sb = new StringBuilder();
+        ArrayList<TLRPC.MessageEntity> entities = new ArrayList<>();
+        String separator = "\\";
+        for (int i = 0; i < deduped.size(); i++) {
+            if (i > 0) {
+                sb.append(separator);
+            }
+            int start = sb.length();
+            sb.append(text.subSequence(deduped.get(i).start, deduped.get(i).end));
+            int end = sb.length();
+            TLRPC.TL_messageEntityStrike strike = new TLRPC.TL_messageEntityStrike();
+            strike.offset = start;
+            strike.length = end - start;
+            entities.add(strike);
+        }
+        Pair<CharSequence, ArrayList<TLRPC.MessageEntity>> result = new Pair<>(sb.toString(), entities);
+        synchronized (cacheLock) {
+            strikeTextCache.put(cacheKey, result);
+        }
+        return result;
     }
 
     public static ArrayList<TLRPC.MessageEntity> addSpoilerEntities(MessageObject msg, ArrayList<TLRPC.MessageEntity> original, CharSequence text) {
@@ -417,18 +565,46 @@ public class AyuFilter {
             return original;
         }
 
+        // "Strikethrough hit rules": keep the message visible and strike through only the
+        // regex-matched portions (the hit rule content) using the native
+        // TL_messageEntityStrike entity, instead of hiding/masking the whole message.
+        // Takes precedence over the spoiler (mask) rendering below.
+        if (shouldStrikeFilteredMessage(msg, null)) {
+            ArrayList<RuleRange> ranges = collectAllMatchedRangesWithRule(text, msg.getDialogId());
+            ArrayList<TLRPC.MessageEntity> result = original != null ? new ArrayList<>(original) : new ArrayList<>();
+            if (!ranges.isEmpty()) {
+                for (RuleRange range : ranges) {
+                    TLRPC.TL_messageEntityStrike strike = new TLRPC.TL_messageEntityStrike();
+                    strike.offset = range.start;
+                    strike.length = range.end - range.start;
+                    result.add(strike);
+                }
+                return result;
+            }
+            // No concrete ranges (reversed/type-tag-only match): fall back to whole-message strike.
+            TLRPC.TL_messageEntityStrike strike = new TLRPC.TL_messageEntityStrike();
+            strike.offset = 0;
+            strike.length = text.length();
+            result.add(strike);
+            return result;
+        }
+
+        // "Hide only matched content": put spoilers only on the regex-matched ranges
+        // instead of masking the whole message. These spoilers stay revealable, so we
+        // intentionally bypass the whole-message mask path (shouldMaskMessage).
         if (shouldHideOnlyMatched() && isFiltered(msg, null)) {
-            ArrayList<int[]> ranges = findFilteredRanges(text, msg.getDialogId());
+            ArrayList<RuleRange> ranges = collectAllMatchedRangesWithRule(text, msg.getDialogId());
             if (!ranges.isEmpty()) {
                 ArrayList<TLRPC.MessageEntity> result = original != null ? new ArrayList<>(original) : new ArrayList<>();
-                for (int[] range : ranges) {
+                for (RuleRange range : ranges) {
                     TLRPC.TL_messageEntitySpoiler spoiler = new TLRPC.TL_messageEntitySpoiler();
-                    spoiler.offset = range[0];
-                    spoiler.length = range[1] - range[0];
+                    spoiler.offset = range.start;
+                    spoiler.length = range.end - range.start;
                     result.add(spoiler);
                 }
                 return result;
             }
+            // No concrete ranges (reversed/type-tag-only match): fall back to whole-message mask.
         }
 
         if (!shouldMaskMessage(msg, null)) {
@@ -475,6 +651,10 @@ public class AyuFilter {
         return spanned.getSpans(0, spanned.length(), FilterMaskSpan.class).length > 0;
     }
 
+    // Rebuild the FilterMaskSpan on a message's cached text buffers. Called when toggling
+    // "Show Filtered" in ChatActivity so that already-rendered messages (and their cached
+    // reply previews on adjacent non-filtered messages) drop the spoiler placeholder and
+    // repaint with the real underlying text, instead of staying "ghosted".
     public static void refreshMaskStateForMessage(MessageObject msg) {
         if (msg == null) {
             return;
@@ -498,37 +678,7 @@ public class AyuFilter {
         if (isBlockedPeer(msg.currentAccount, msg.getFromChatId())) {
             return true;
         }
-        if (isShadowBannedPeerChain(msg)) {
-            return true;
-        }
         return msg.replyMessageObject != null && isBlockedPeer(msg.currentAccount, msg.replyMessageObject.getFromChatId());
-    }
-
-    private static boolean isShadowBannedPeerChain(MessageObject msg) {
-        if (msg == null || msg.messageOwner == null) {
-            return false;
-        }
-        long viaBotUserId = msg.messageOwner.via_bot_id;
-        if (viaBotUserId != 0L && isBlockedPeer(msg.currentAccount, viaBotUserId)) {
-            return true;
-        }
-        TLRPC.MessageFwdHeader fwd = msg.messageOwner.fwd_from;
-        if (fwd == null) {
-            return false;
-        }
-        if (fwd.from_id != null) {
-            long did = DialogObject.getPeerDialogId(fwd.from_id);
-            if (isBlockedPeer(msg.currentAccount, did)) {
-                return true;
-            }
-        }
-        if (fwd.saved_from_peer != null) {
-            long did = DialogObject.getPeerDialogId(fwd.saved_from_peer);
-            if (isBlockedPeer(msg.currentAccount, did)) {
-                return true;
-            }
-        }
-        return false;
     }
 
     private static boolean isBlockedPeer(int currentAccount, long peerId) {
@@ -559,6 +709,7 @@ public class AyuFilter {
         RegexFilterDao dao = AyuData.getRegexFilterDao();
         if (dao != null) {
             try {
+                // Group chat-level rows by dialogId. Each non-null dialogId row is a chat-specific filter.
                 HashMap<Long, ChatFilterEntry> byDialog = new HashMap<>();
                 List<RegexFilter> all = dao.getAll();
                 for (RegexFilter row : all) {
@@ -631,6 +782,8 @@ public class AyuFilter {
             return;
         }
         try {
+            // Delete all chat-level rows (dialogId NOT NULL) then re-insert from the list.
+            // Shared rows (dialogId IS NULL) are untouched.
             List<RegexFilter> shared = dao.getShared();
             dao.deleteAllFilters();
             for (RegexFilter s : shared) {
@@ -731,8 +884,10 @@ public class AyuFilter {
         saveChatFilterEntries(entries);
     }
 
+    // --- Dialog-level exclusion list (SharedPreferences, NagramXF-specific) ---
 
     private static HashSet<Long> getExcludedDialogs() {
+        // Load fresh each call: small set, rarely accessed, avoids stale state.
         HashSet<Long> set = new HashSet<>();
         try {
             String str = NaConfig.INSTANCE.getRegexFiltersExcludedDialogs().String();
@@ -763,9 +918,11 @@ public class AyuFilter {
             String str = new Gson().toJson(arr);
             NaConfig.INSTANCE.getRegexFiltersExcludedDialogs().setConfigString(str);
             AyuFilterCache.clearDialog(dialogId);
+            strikeTextCache.evictAll();
         }
     }
 
+    // --- Per-dialog shared-filter exclusions (Room-backed) ---
 
     public static ArrayList<ExcludedFilterEntry> getExcludedFilterEntries() {
         ArrayList<ExcludedFilterEntry> out = new ArrayList<>();
@@ -932,6 +1089,7 @@ public class AyuFilter {
         rebuildCache();
     }
 
+    // --- Blocked channels (SharedPreferences, NagramXF-specific) ---
 
     private static HashSet<Long> getBlockedChannels() {
         if (blockedChannels == null) {
@@ -1029,6 +1187,26 @@ public class AyuFilter {
         AyuFilterCache.invalidate(dialogId, msgId);
     }
 
+    /**
+     * Invalidates the per-message (and per-group, when applicable) isFiltered cache for a single
+     * message. Used by MessageObject.checkLayout() when it detects the message text changed
+     * (an edit) so the strike verdict is re-derived from the new content on the same pass. The
+     * global cache is keyed by message id, not content, so an edited message would otherwise
+     * keep its stale verdict until the chat is reopened.
+     */
+    public static void invalidateMessageCache(MessageObject msg) {
+        if (msg == null) {
+            return;
+        }
+        long dialogId = msg.getDialogId();
+        AyuFilterCache.invalidate(dialogId, msg.getId());
+        long groupId = msg.getGroupId();
+        if (groupId != 0) {
+            AyuFilterCache.invalidateGroup(dialogId, groupId);
+        }
+    }
+
+    // --- Custom filtered users / shadow ban (SharedPreferences, NagramXF-specific) ---
 
     private static void ensureCustomFilteredUsersLoaded() {
         if (customFilteredUsers != null && customFilteredUsersData != null) {
@@ -1190,6 +1368,7 @@ public class AyuFilter {
         }
     }
 
+    // --- Room row conversion ---
 
     private static RegexFilter toRow(FilterModel m, Long dialogId) {
         RegexFilter row = new RegexFilter();
@@ -1213,6 +1392,7 @@ public class AyuFilter {
         }
     }
 
+    // --- Data classes (preserved for call-site compatibility) ---
 
     public static class FilterModel {
         @Expose
@@ -1227,6 +1407,7 @@ public class AyuFilter {
         public boolean reversed;
         public Pattern pattern;
 
+        // Legacy fields for JSON-export migration only; never written to Room.
         public ArrayList<Long> enabledGroups;
         public ArrayList<Long> disabledGroups;
 
@@ -1251,6 +1432,11 @@ public class AyuFilter {
             }
         }
 
+        /**
+         * Migrate the legacy {@code enabledGroups}/{@code disabledGroups} per-dialog
+         * enable map into the flat {@code enabled} boolean for the given dialogId.
+         * Returns true if the field state changed.
+         */
         public boolean migrateFromLegacy(long dialogId) {
             if (enabledGroups == null && disabledGroups == null) {
                 return false;

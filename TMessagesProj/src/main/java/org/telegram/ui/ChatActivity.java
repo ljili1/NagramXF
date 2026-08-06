@@ -26052,6 +26052,31 @@ public class ChatActivity extends BaseFragment implements
             }
         }
         else if (id == NotificationCenter.regexFiltersUpdated) {
+            // Recompute per-message filter flags (album hide, etc.) before resetting cells, so the
+            // layout is correct when each visible cell re-binds.
+            if (chatAdapter != null) {
+                chatAdapter.applyFilterMerge(chatAdapter.getDisplayedMessages());
+            }
+            if (chatListView != null) {
+                for (int i = 0, n = chatListView.getChildCount(); i < n; i++) {
+                    View child = chatListView.getChildAt(i);
+                    if (child instanceof ChatMessageCell) {
+                        ChatMessageCell cell = (ChatMessageCell) child;
+                        MessageObject cellMessageObject = cell.getMessageObject();
+                        if (cellMessageObject != null) {
+                            cellMessageObject.resetLayout();
+                            cellMessageObject.updateMessageText();
+                            cellMessageObject.setType();
+                            // Rebuild the caption too: turning the filter OFF restores a media
+                            // message, whose caption was dropped while it was rendered as strike
+                            // text (and the media render path in checkLayout does not regenerate
+                            // it). generateCaption() re-drops it when the filter is ON.
+                            cellMessageObject.generateCaption();
+                        }
+                        cell.forceResetMessageObject();
+                    }
+                }
+            }
             if (chatAdapter != null) {
                 chatAdapter.notifyDataSetChanged();
             }
@@ -39052,6 +39077,73 @@ public class ChatActivity extends BaseFragment implements
             return UserObject.isBotForumWithEditableTopics(currentUser) && getTopicId() == 0 && !hasSendingMessagesInBotForum && chatMode == 0;
         }
 
+        private ArrayList<MessageObject> getDisplayedMessages() {
+            if (isFrozen) {
+                return frozenMessages;
+            } else if (isFiltered) {
+                return filteredMessages;
+            }
+            return ChatActivity.this.messages;
+        }
+
+        // Per-pass filter flags for grouped-media (album) hide. Consecutive-message strike
+        // merging was removed; each strike-filtered message now renders on its own.
+        private void applyFilterMerge(ArrayList<MessageObject> list) {
+            if (list == null || list.isEmpty()) {
+                return;
+            }
+            // Reset all per-pass flags. MessageObjects are reused across the list, so stale
+            // flags would create ghost merges / ghost group-hides.
+            for (int i = 0; i < list.size(); i++) {
+                MessageObject m = list.get(i);
+                m.filterMergeHidden = false;
+                m.filterGroupStruck = false;
+            }
+            // Album (grouped media) hide: if ANY member of an album (sharing getGroupId() != 0)
+            // matches the regex filter, hide the WHOLE album. Members without a caption can never
+            // match a text rule on their own, so a hit on the captioned member must propagate to
+            // the rest of the group.
+            if (AyuFilter.shouldStrikeFilteredMessages()) {
+                HashMap<Long, ArrayList<MessageObject>> groups = new HashMap<>();
+                for (int i = 0; i < list.size(); i++) {
+                    MessageObject m = list.get(i);
+                    long gid = m.getGroupId();
+                    if (gid == 0) {
+                        continue;
+                    }
+                    ArrayList<MessageObject> g = groups.get(gid);
+                    if (g == null) {
+                        g = new ArrayList<>();
+                        groups.put(gid, g);
+                    }
+                    g.add(m);
+                }
+                for (ArrayList<MessageObject> g : groups.values()) {
+                    // Pick the first regex-matched member as the single visible bubble: it shows the
+                    // struck (replaced) hit-rule text via filterGroupStruck. Every other member of the
+                    // album collapses to zero height (filterMergeHidden) so the album grid disappears
+                    // and only one struck bubble remains.
+                    MessageObject representative = null;
+                    for (int i = 0; i < g.size(); i++) {
+                        if (AyuFilter.isFiltered(g.get(i), null)) {
+                            if (representative == null) {
+                                representative = g.get(i);
+                            }
+                        }
+                    }
+                    if (representative != null) {
+                        for (int i = 0; i < g.size(); i++) {
+                            MessageObject m = g.get(i);
+                            m.filterGroupStruck = true;
+                            if (m != representative) {
+                                m.filterMergeHidden = true;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
         private void updateRowsInternal() {
             rowCount = 0;
             final ArrayList<MessageObject> messages;
@@ -39062,6 +39154,7 @@ public class ChatActivity extends BaseFragment implements
             } else {
                 messages = ChatActivity.this.messages;
             }
+            applyFilterMerge(messages);
             if (chatMode == MODE_SAVED && isInsideContainer) {
                 hintRow = rowCount++;
             } else {

@@ -51,10 +51,13 @@ public class TimeStringHelper {
     public static Drawable arrowDrawable;
     public static SpannableStringBuilder forwardsSpan;
     public static Drawable forwardsDrawable;
+    public static SpannableStringBuilder filterMarkSpan;
+    public static Drawable filterMarkDrawable;
     public ChatActivity.ThemeDelegate themeDelegate;
     private static int cachedDeletedStyle = Integer.MIN_VALUE;
     private static int cachedDeletedColor = Integer.MIN_VALUE;
     private static int cachedIconPack = -1;
+    private static int cachedFilterMarkColor = Integer.MIN_VALUE;
 
     public static int getDeletedIconStyle() {
         int style = NaConfig.INSTANCE.getDeletedIconStyle().Int();
@@ -78,6 +81,52 @@ public class TimeStringHelper {
         deletedSpan = null;
         cachedDeletedStyle = Integer.MIN_VALUE;
         cachedDeletedColor = Integer.MIN_VALUE;
+        // The filter mark reuses the DeletedMark color, so clear its cache too.
+        invalidateFilterMarkStyle();
+    }
+
+    /**
+     * Builds (and caches, keyed by color) a small "filtered" marker shown in the message
+     * footer for regex-filter hits displayed as struck-through matched content (strike mode).
+     * The marker is a prohibition/ban icon, tinted with the custom filter-mark color when set
+     * (mirroring the DeletedMark), otherwise with the time-text color.
+     */
+    public static SpannableStringBuilder getFilterMarkSpan() {
+        // Share the DeletedMark color so the filter mark follows the same, already
+        // real-time-updating color setting (changing DeletedMark color repaints via
+        // reloadInterface and clears both caches through invalidateDeletedStyle).
+        int colorId = NaConfig.INSTANCE.getDeletedIconColor().Int();
+        if (filterMarkSpan != null && cachedFilterMarkColor == colorId) {
+            return filterMarkSpan;
+        }
+        cachedFilterMarkColor = colorId;
+        Drawable drawable = Objects.requireNonNull(
+                ContextCompat.getDrawable(ApplicationLoader.applicationContext, R.drawable.baseline_block_24)).mutate();
+        int tintColor = getDeletedColorValue(colorId);
+        if (tintColor != 0) {
+            drawable.setTint(tintColor);
+        } else {
+            drawable.setTint(Theme.getColor(Theme.key_chat_inTimeText));
+        }
+        filterMarkDrawable = drawable;
+        SpannableStringBuilder spannableStringBuilder = new SpannableStringBuilder("\u200B");
+        ColoredImageSpan span = new ColoredImageSpan(drawable, true);
+        if (colorId > 0) {
+            // Keep the custom tint instead of recoloring to the paint (time-text) color at draw time.
+            span.recolorDrawable = false;
+        }
+        // Optimize size/position: scale the 24dp ban icon down to the time-text size and let
+        // ALIGN_DEFAULT center it vertically within the footer line.
+        span.setSize(AndroidUtilities.dp(13));
+        spannableStringBuilder.setSpan(span, 0, 1, 0);
+        filterMarkSpan = spannableStringBuilder;
+        return filterMarkSpan;
+    }
+
+    public static void invalidateFilterMarkStyle() {
+        filterMarkSpan = null;
+        filterMarkDrawable = null;
+        cachedFilterMarkColor = Integer.MIN_VALUE;
     }
 
     public static Drawable getDeletedPreviewDrawable() {
