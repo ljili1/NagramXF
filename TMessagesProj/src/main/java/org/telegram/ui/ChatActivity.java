@@ -2024,6 +2024,7 @@ public class ChatActivity extends BaseFragment implements
                     // swaps the row between collapsed (-1001 placeholder) and expanded content, and
                     // notifyItemChanged reuses the attached holder by position.
                     chatListView.post(() -> chatAdapter.notifyDataSetChanged());
+                    updateRevealCollapsePill();
                 }
                 return;
             }
@@ -8988,6 +8989,21 @@ public class ChatActivity extends BaseFragment implements
         bottomOverlay.setClickable(true);
         chatInputBubbleContainer.addView(bottomOverlay, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, 44, Gravity.BOTTOM, 7, 0, 7, 0));
 
+        // Floating "收起" pill for collapsing revealed media (video/photo/...) messages, which
+        // render via their native view and therefore have no in-placeholder collapse button.
+        revealCollapsePill = new TextView(context);
+        revealCollapsePill.setBackground(Theme.createRoundRectDrawable(dp(18), Theme.getColor(Theme.key_featuredStickers_addButton)));
+        revealCollapsePill.setTextColor(Theme.getColor(Theme.key_featuredStickers_buttonText));
+        revealCollapsePill.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 14);
+        revealCollapsePill.setGravity(Gravity.CENTER);
+        revealCollapsePill.setTypeface(AndroidUtilities.bold());
+        revealCollapsePill.setPadding(dp(18), dp(9), dp(18), dp(9));
+        revealCollapsePill.setText(LocaleController.getString(R.string.FilterHiddenCollapse));
+        revealCollapsePill.setVisibility(View.GONE);
+        revealCollapsePill.setClickable(true);
+        revealCollapsePill.setOnClickListener(v -> collapseAllRevealed());
+        contentView.addView(revealCollapsePill, LayoutHelper.createFrame(LayoutHelper.WRAP_CONTENT, LayoutHelper.WRAP_CONTENT, Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL, 0, 0, 0, 64));
+
         bottomOverlayText = new TextView(context);
         bottomOverlayText.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 14);
         bottomOverlayText.setGravity(Gravity.CENTER);
@@ -9682,6 +9698,10 @@ public class ChatActivity extends BaseFragment implements
     private boolean hideFilteredMessages = true;
     private final HashSet<Integer> revealedFilteredMessages = new HashSet<>();
 
+    /** Floating "收起" pill shown when a revealed filtered message is media (video/photo/...),
+     *  which has no in-placeholder collapse button. Tapping it collapses all revealed messages. */
+    private TextView revealCollapsePill;
+
     /** True if the message at {@code position} is a collapsed filter placeholder (view type -1001,
      *  not yet revealed). Mirrors the decision in getItemViewType but without mutating state, so it
      *  is safe to call repeatedly while computing merged runs. */
@@ -9727,6 +9747,36 @@ public class ChatActivity extends BaseFragment implements
             p++;
         }
         return count;
+    }
+
+    /** Collapse every revealed filtered message back into a placeholder. */
+    private void collapseAllRevealed() {
+        if (revealedFilteredMessages.isEmpty()) {
+            return;
+        }
+        revealedFilteredMessages.clear();
+        chatListView.post(() -> chatAdapter.notifyDataSetChanged());
+        updateRevealCollapsePill();
+    }
+
+    /** Show the floating "收起" pill only when at least one revealed message is media
+     *  (which has no in-placeholder collapse button of its own). */
+    private void updateRevealCollapsePill() {
+        if (revealCollapsePill == null) {
+            return;
+        }
+        boolean anyMedia = false;
+        if (!revealedFilteredMessages.isEmpty()) {
+            ArrayList<MessageObject> list = chatAdapter.isFiltered ? chatAdapter.filteredMessages
+                    : (chatAdapter.isFrozen ? chatAdapter.frozenMessages : messages);
+            for (MessageObject m : list) {
+                if (m != null && revealedFilteredMessages.contains(m.getId()) && TextUtils.isEmpty(m.messageText)) {
+                    anyMedia = true;
+                    break;
+                }
+            }
+        }
+        revealCollapsePill.setVisibility(anyMedia ? View.VISIBLE : View.GONE);
     }
 
     private ActionBarMenuSubItem showFilteredMenuItem;
@@ -40411,8 +40461,14 @@ public class ChatActivity extends BaseFragment implements
                                 if (msg.replyMessageObject != null) {
                                     msg.replyMessageObject.skipAyuFiltering = true;
                                 }
-                                // Keep the placeholder view type: it is rendered expanded
-                                // (original text + highlight + collapse button) by onBindViewHolder.
+                                // Media messages have no real text to show inside the text
+                                // placeholder, so render them with their native view type so the
+                                // original content (video / photo / ...) is actually visible.
+                                // Text messages keep the placeholder (original text + highlight +
+                                // per-row collapse button) handled by onBindViewHolder.
+                                if (TextUtils.isEmpty(msg.messageText)) {
+                                    return msg.contentType;
+                                }
                                 return -1001;
                             } else if (NaConfig.INSTANCE.getRegexFiltersShowPlaceholder().Bool()) {
                                 return -1001;
