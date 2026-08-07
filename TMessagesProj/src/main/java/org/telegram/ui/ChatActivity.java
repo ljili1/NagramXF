@@ -1836,12 +1836,11 @@ public class ChatActivity extends BaseFragment implements
                 return false;
             }
             // Long-press on a filter placeholder shows why it was hidden (rule + regex + matched text).
-            View lpTarget = view;
-            while (lpTarget != null && !(lpTarget instanceof FilterHiddenView)) {
-                lpTarget = (View) lpTarget.getParent();
-            }
-            if (lpTarget instanceof FilterHiddenView) {
-                MessageObject lpMsg = ((FilterHiddenView) lpTarget).getMessageObject();
+            // onItemLongClick already receives the list-item root view (the FilterHiddenView itself),
+            // so a direct instanceof check suffices. Do NOT walk getParent(): that loop would climb past
+            // the view tree into ViewRootImpl and crash on a ClassCastException for normal messages.
+            if (view instanceof FilterHiddenView) {
+                MessageObject lpMsg = ((FilterHiddenView) view).getMessageObject();
                 if (lpMsg != null) {
                     showFilterReasonDialog(lpMsg);
                 }
