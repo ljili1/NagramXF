@@ -71,6 +71,7 @@ import android.text.Layout;
 import android.text.Spannable;
 import android.text.SpannableString;
 import android.text.SpannableStringBuilder;
+import android.text.style.BackgroundColorSpan;
 import android.text.Spanned;
 import android.text.StaticLayout;
 import android.text.TextPaint;
@@ -1982,14 +1983,38 @@ public class ChatActivity extends BaseFragment implements
             if (view instanceof FilterHiddenView) {
                 MessageObject fmsg = ((FilterHiddenView) view).getMessageObject();
                 if (fmsg != null) {
-                    revealedFilteredMessages.add(fmsg.getId());
-                    fmsg.skipAyuFiltering = true;
-                    if (fmsg.replyMessageObject != null) {
-                        fmsg.replyMessageObject.skipAyuFiltering = true;
+                    if (revealedFilteredMessages.contains(fmsg.getId())) {
+                        // Collapse this expanded placeholder back into a hidden bar.
+                        revealedFilteredMessages.remove(fmsg.getId());
+                        fmsg.skipAyuFiltering = !hideFilteredMessages;
+                        if (fmsg.replyMessageObject != null) {
+                            fmsg.replyMessageObject.skipAyuFiltering = !hideFilteredMessages;
+                        }
+                    } else {
+                        // Expand: reveal the whole run of consecutive hidden placeholders so the
+                        // merged bar unfolds into individual expandable cards.
+                        ArrayList<MessageObject> msgs;
+                        if (isFrozen) {
+                            msgs = frozenMessages;
+                        } else if (isFiltered) {
+                            msgs = filteredMessages;
+                        } else {
+                            msgs = ChatActivity.this.messages;
+                        }
+                        int p = position;
+                        while (p < messagesEndRow && isCollapsedPlaceholderAt(p, msgs)) {
+                            MessageObject m = msgs.get(p - messagesStartRow);
+                            revealedFilteredMessages.add(m.getId());
+                            m.skipAyuFiltering = true;
+                            if (m.replyMessageObject != null) {
+                                m.replyMessageObject.skipAyuFiltering = true;
+                            }
+                            p++;
+                        }
                     }
-                    // notifyDataSetChanged (not notifyItemChanged) is required: revealing swaps
-                    // the row's view type from the placeholder (-1001) to the normal message type,
-                    // and notifyItemChanged reuses the attached placeholder holder by position.
+                    // notifyDataSetChanged (not notifyItemChanged) is required: revealing/collapsing
+                    // swaps the row between collapsed (-1001 placeholder) and expanded content, and
+                    // notifyItemChanged reuses the attached holder by position.
                     chatListView.post(() -> chatAdapter.notifyDataSetChanged());
                 }
                 return;
@@ -9648,6 +9673,53 @@ public class ChatActivity extends BaseFragment implements
 
     private boolean hideFilteredMessages = true;
     private final HashSet<Integer> revealedFilteredMessages = new HashSet<>();
+
+    /** True if the message at {@code position} is a collapsed filter placeholder (view type -1001,
+     *  not yet revealed). Mirrors the decision in getItemViewType but without mutating state, so it
+     *  is safe to call repeatedly while computing merged runs. */
+    private boolean isCollapsedPlaceholderAt(int position, ArrayList<MessageObject> messages) {
+        if (!hideFilteredMessages || !NaConfig.INSTANCE.getRegexFiltersShowPlaceholder().Bool()) {
+            return false;
+        }
+        if (position < messagesStartRow || position >= messagesEndRow) {
+            return false;
+        }
+        MessageObject m = messages.get(position - messagesStartRow);
+        if (m == null || m.messageOwner != null && m.messageOwner.hide) {
+            return false;
+        }
+        if (revealedFilteredMessages.contains(m.getId())) {
+            return false;
+        }
+        MessageObject.GroupedMessages group = getGroup(m.getGroupId());
+        if (group == null) {
+            group = getValidGroupedMessage(m);
+        }
+        MessageObject primary = group != null ? group.findPrimaryMessageObject() : null;
+        if (primary == null) {
+            primary = m;
+        }
+        return AyuFilter.shouldHideFilteredMessage(primary, group);
+    }
+
+    /** True if {@code position} is the first (top) placeholder of a consecutive run. */
+    private boolean isPlaceholderHead(int position, ArrayList<MessageObject> messages) {
+        if (!isCollapsedPlaceholderAt(position, messages)) {
+            return false;
+        }
+        return !isCollapsedPlaceholderAt(position - 1, messages);
+    }
+
+    /** Number of consecutive collapsed placeholders starting at {@code position}. */
+    private int countCollapsedPlaceholderRun(int position, ArrayList<MessageObject> messages) {
+        int count = 0;
+        int p = position;
+        while (isCollapsedPlaceholderAt(p, messages)) {
+            count++;
+            p++;
+        }
+        return count;
+    }
 
     private ActionBarMenuSubItem showFilteredMenuItem;
     private boolean showFilteredMenuItemRevealed = false;
@@ -40236,14 +40308,47 @@ public class ChatActivity extends BaseFragment implements
                     DummyView dummyView = (DummyView) view;
                     dummyView.setMessageObject(message);
                 } else if (view instanceof FilterHiddenView) { // hidden by filter, placeholder
-                    // The tap-to-reveal is handled at the RecyclerListView level
+                    // The tap-to-reveal / collapse is handled at the RecyclerListView level
                     // (onItemClick, where view instanceof FilterHiddenView) because a child
                     // view's own OnClickListener is not reliably invoked by Telegram's gesture
-                    // handling. Here we only bind the message + hint text.
+                    // handling. Here we bind the message and choose the collapsed/expanded state.
                     FilterHiddenView filterHiddenView = (FilterHiddenView) view;
                     filterHiddenView.setMessageObject(message);
-                    filterHiddenView.setPlaceholderText(
-                            LocaleController.getString(R.string.FilterHiddenHint));
+                    if (revealedFilteredMessages.contains(message.getId())) {
+                        // Expanded: show the original text with matched fragments highlighted,
+                        // plus a "收起" button (handled by onItemClick) to collapse back.
+                        CharSequence display = message.messageText;
+                        if (display == null || display.length() == 0) {
+                            display = getString(R.string.FilterHiddenNonText);
+                        }
+                        SpannableStringBuilder ssb = new SpannableStringBuilder(display);
+                        ArrayList<int[]> ranges = AyuFilter.getMatchedRanges(display, message.getDialogId());
+                        int len = ssb.length();
+                        for (int[] r : ranges) {
+                            int s = Math.max(0, r[0]);
+                            int e = Math.min(len, r[1]);
+                            if (e > s) {
+                                ssb.setSpan(new BackgroundColorSpan(Theme.getColor(Theme.key_chat_inTextSelectionHighlight)),
+                                        s, e, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE);
+                            }
+                        }
+                        filterHiddenView.setExpandedContent(ssb);
+                    } else if (isPlaceholderHead(position, messages)) {
+                        // Head of a run of consecutive hidden placeholders: show a (possibly
+                        // merged) hint. Consecutive followers are collapsed to zero height below.
+                        int run = countCollapsedPlaceholderRun(position, messages);
+                        if (run > 1) {
+                            filterHiddenView.setCollapsedHint(
+                                    formatString(R.string.FilterHiddenMergedHint, run));
+                        } else {
+                            filterHiddenView.setCollapsedHint(getString(R.string.FilterHiddenHint));
+                        }
+                        filterHiddenView.setVisibility(View.VISIBLE);
+                    } else {
+                        // Follower of a merged run: hide so the run renders as a single bar.
+                        filterHiddenView.setCollapsedHint("");
+                        filterHiddenView.setVisibility(View.GONE);
+                    }
                 }
             }
         }
@@ -40298,6 +40403,9 @@ public class ChatActivity extends BaseFragment implements
                                 if (msg.replyMessageObject != null) {
                                     msg.replyMessageObject.skipAyuFiltering = true;
                                 }
+                                // Keep the placeholder view type: it is rendered expanded
+                                // (original text + highlight + collapse button) by onBindViewHolder.
+                                return -1001;
                             } else if (NaConfig.INSTANCE.getRegexFiltersShowPlaceholder().Bool()) {
                                 return -1001;
                             } else {

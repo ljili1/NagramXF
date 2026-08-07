@@ -52,6 +52,9 @@
     <string name="RegexFiltersFilterEnabled">启用过滤器</string>
     <string name="RegexFiltersShadowBannedBot">机器人</string>
     <string name="FilterHiddenHint">已被过滤器隐藏，点击显示</string>
+    <string name="FilterHiddenMergedHint">%1$d 条消息被过滤器隐藏，点击显示</string>
+    <string name="FilterHiddenCollapse">收起</string>
+    <string name="FilterHiddenNonText">[非文本消息]</string>
     <string name="RegexFiltersShadowBannedUser">用户</string>
     <string name="RegexFiltersShadowBannedChannel">频道</string>
     <string name="RegexFiltersShadowBannedGroup">群组</string>

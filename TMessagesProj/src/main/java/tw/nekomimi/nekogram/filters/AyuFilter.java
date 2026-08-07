@@ -508,6 +508,27 @@ public class AyuFilter {
         return sb;
     }
 
+    /**
+     * Returns the character ranges (start, end) matched by the active regex filters within
+     * {@code text}. Used by the filter placeholder UI to highlight which fragment of a hidden
+     * message triggered the filter. Reversed filters never contribute a range (they match
+     * absence of a pattern, not a concrete fragment).
+     */
+    public static ArrayList<int[]> getMatchedRanges(CharSequence text, long dialogId) {
+        ArrayList<int[]> out = new ArrayList<>();
+        if (TextUtils.isEmpty(text)) {
+            return out;
+        }
+        ArrayList<RuleRange> ranges = collectAllMatchedRangesWithRule(text, dialogId);
+        int len = text.length();
+        for (RuleRange r : ranges) {
+            if (r.start >= 0 && r.end > r.start && r.end <= len) {
+                out.add(new int[]{r.start, r.end});
+            }
+        }
+        return out;
+    }
+
     public static boolean shouldMaskFilteredMessage(MessageObject msg, MessageObject.GroupedMessages group) {
         if (shouldHideOnlyMatched()) {
             return false;
