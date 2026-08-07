@@ -40218,26 +40218,31 @@ public class ChatActivity extends BaseFragment implements
                 } else if (view instanceof FilterHiddenView) { // hidden by filter, placeholder
                     FilterHiddenView filterHiddenView = (FilterHiddenView) view;
                     filterHiddenView.setMessageObject(message);
-                    CharSequence matched = AyuFilter.getMatchedStruckText(message);
-                    String hint = LocaleController.getString(R.string.FilterHiddenHint);
-                    CharSequence placeholder;
-                    if (matched != null) {
-                        SpannableStringBuilder sb = new SpannableStringBuilder(matched);
-                        sb.append("  ");
-                        sb.append(hint);
-                        placeholder = sb;
-                    } else {
-                        placeholder = hint;
-                    }
-                    filterHiddenView.setPlaceholderText(placeholder);
+                    filterHiddenView.setPlaceholderText(
+                            LocaleController.getString(R.string.FilterHiddenHint));
                     filterHiddenView.setOnClickListener(v -> {
+                        // Mark as revealed so getItemViewType returns the normal message type.
                         revealedFilteredMessages.add(message.getId());
-                        // notifyDataSetChanged (not notifyItemChanged) is required: revealing a
-                        // message swaps the row's view type from the placeholder (-1001) to the
-                        // normal message type, and RecyclerView reuses the already-attached
-                        // placeholder holder by position on notifyItemChanged, so the click would
-                        // otherwise appear to do nothing.
+                        // Also set skipAyuFiltering directly on the message object as a safety
+                        // net — if the adapter notification is delayed/coalesced by Telegram's
+                        // RecyclerListView, this at least prevents re-filtering on rebind.
+                        message.skipAyuFiltering = true;
+                        if (message.replyMessageObject != null) {
+                            message.replyMessageObject.skipAyuFiltering = true;
+                        }
+                        // notifyDataSetChanged (not notifyItemChanged): revealing swaps the
+                        // row's view type from -1001 to the normal message type; notifyItemChanged
+                        // reuses the attached placeholder holder by position, so the tap would
+                        // appear to do nothing.
                         notifyDataSetChanged();
+                        // Post a second notifyDataSetChanged as a fallback — Telegram's
+                        // RecyclerListView sometimes coalesces/defers adapter notifications
+                        // when the chat is scrolling or in a complex layout pass.
+                        recyclerView.post(() -> {
+                            if (recyclerView.getAdapter() != null) {
+                                recyclerView.getAdapter().notifyDataSetChanged();
+                            }
+                        });
                     });
                 }
             }

@@ -12,6 +12,7 @@ package com.radolyn.ayugram.ui;
 import android.annotation.SuppressLint;
 import android.content.Context;
 import android.view.Gravity;
+import android.view.MotionEvent;
 import android.widget.FrameLayout;
 import android.widget.TextView;
 
@@ -30,6 +31,11 @@ public class FilterHiddenView extends FrameLayout {
         int pad = AndroidUtilities.dp(8);
         setPadding(pad, pad, pad, pad);
         setBackgroundColor(Theme.getColor(Theme.key_windowBackgroundWhite));
+        // Ensure this view can receive click/touch events even when nested inside
+        // Telegram's RecyclerListView which has aggressive touch interception
+        // (long-press menus, swipe-to-reply, cell selection, etc.).
+        setClickable(true);
+        setFocusable(true);
 
         textView = new TextView(context);
         textView.setGravity(Gravity.CENTER);
@@ -43,6 +49,27 @@ public class FilterHiddenView extends FrameLayout {
         addView(textView, lp);
     }
 
+    /**
+     * Consume ACTION_DOWN so that the parent RecyclerListView does not intercept the
+     * touch gesture (for scrolling / long-press / swipe). This ensures our onClickListener
+     * fires reliably.
+     */
+    @Override
+    public boolean onInterceptTouchEvent(MotionEvent ev) {
+        if (ev.getAction() == MotionEvent.ACTION_DOWN) {
+            // Tell parent not to intercept — we want the click.
+            getParent().requestDisallowInterceptTouchEvent(true);
+        }
+        return super.onInterceptTouchEvent(ev);
+    }
+
+    @Override
+    public boolean onTouchEvent(MotionEvent event) {
+        // Mark as handled so the event reaches our onClickListener.
+        super.onTouchEvent(event);
+        return true;
+    }
+
     public MessageObject getMessageObject() {
         return messageObject;
     }
@@ -51,8 +78,7 @@ public class FilterHiddenView extends FrameLayout {
         this.messageObject = messageObject;
     }
 
-    /** Sets the placeholder text shown inside the view (built by ChatActivity from the
-     *  message's matched filter content, with a trailing hint). */
+    /** Sets the placeholder hint text shown inside this view. */
     public void setPlaceholderText(CharSequence text) {
         textView.setText(text);
     }
