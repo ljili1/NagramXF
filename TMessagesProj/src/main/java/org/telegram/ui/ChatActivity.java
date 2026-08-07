@@ -1980,8 +1980,16 @@ public class ChatActivity extends BaseFragment implements
             // own gesture detector which dispatches here; a child view's own OnClickListener
             // (and any touch interception on the child) is bypassed / swallowed by that gesture
             // handling, so revealing must be done at this level.
-            if (view instanceof FilterHiddenView) {
-                MessageObject fmsg = ((FilterHiddenView) view).getMessageObject();
+            //
+            // IMPORTANT: onItemClick receives the *actual* child view under the finger (e.g. the
+            // TextView inside the placeholder), NOT necessarily the outer FilterHiddenView. We must
+            // walk up the parent chain to find it.
+            View target = view;
+            while (target != null && !(target instanceof FilterHiddenView)) {
+                target = (View) target.getParent();
+            }
+            if (target instanceof FilterHiddenView) {
+                MessageObject fmsg = ((FilterHiddenView) target).getMessageObject();
                 if (fmsg != null) {
                     if (revealedFilteredMessages.contains(fmsg.getId())) {
                         // Collapse this expanded placeholder back into a hidden bar.
