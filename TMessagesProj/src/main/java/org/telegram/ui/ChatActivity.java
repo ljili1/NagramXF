@@ -26,7 +26,6 @@ import android.annotation.SuppressLint;
 import android.app.Activity;
 import android.app.DatePickerDialog;
 import android.app.Dialog;
-import android.app.AlertDialog;
 import android.content.ClipData;
 import android.content.ClipboardManager;
 import android.content.ContentValues;
@@ -9762,7 +9761,7 @@ public class ChatActivity extends BaseFragment implements
         Context ctx = getParentActivity();
         if (ctx == null) return;
 
-        CharSequence rawText = AyuFilter.getMessageText(msg);
+        CharSequence rawText = AyuFilter.getMessageText(msg, null);
         ArrayList<int[]> ranges = AyuFilter.getMatchedRanges(rawText, msg.getDialogId());
 
         StringBuilder detail = new StringBuilder();
