@@ -40235,14 +40235,6 @@ public class ChatActivity extends BaseFragment implements
                         // reuses the attached placeholder holder by position, so the tap would
                         // appear to do nothing.
                         notifyDataSetChanged();
-                        // Post a second notifyDataSetChanged as a fallback — Telegram's
-                        // RecyclerListView sometimes coalesces/defers adapter notifications
-                        // when the chat is scrolling or in a complex layout pass.
-                        recyclerView.post(() -> {
-                            if (recyclerView.getAdapter() != null) {
-                                recyclerView.getAdapter().notifyDataSetChanged();
-                            }
-                        });
                     });
                 }
             }
