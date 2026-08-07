@@ -183,6 +183,8 @@
     <string name="FilterHiddenMergedHint">%1$d messages hidden by the filter. Tap to show.</string>
     <string name="FilterHiddenCollapse">Collapse</string>
     <string name="FilterHiddenNonText">[Non-text message]</string>
+    <string name="FilterHiddenReasonTitle">Filter Reason</string>
+    <string name="FilterHiddenReasonText">Matched text:</string>
     <string name="Connecting">Connecting...</string>
     <string name="Connected">Connected</string>
     <string name="Ping">Ping: %1$d ms</string>

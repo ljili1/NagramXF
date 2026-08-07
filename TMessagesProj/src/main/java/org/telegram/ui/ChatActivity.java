@@ -26,6 +26,7 @@ import android.annotation.SuppressLint;
 import android.app.Activity;
 import android.app.DatePickerDialog;
 import android.app.Dialog;
+import android.app.AlertDialog;
 import android.content.ClipData;
 import android.content.ClipboardManager;
 import android.content.ContentValues;
@@ -1835,6 +1836,18 @@ public class ChatActivity extends BaseFragment implements
             if (isTryingTextSelection() || hasTextSelection() || inPreviewMode || isInsideContainer) {
                 return false;
             }
+            // Long-press on a filter placeholder shows why it was hidden (rule + regex + matched text).
+            View lpTarget = view;
+            while (lpTarget != null && !(lpTarget instanceof FilterHiddenView)) {
+                lpTarget = (View) lpTarget.getParent();
+            }
+            if (lpTarget instanceof FilterHiddenView) {
+                MessageObject lpMsg = ((FilterHiddenView) lpTarget).getMessageObject();
+                if (lpMsg != null) {
+                    showFilterReasonDialog(lpMsg);
+                }
+                return true; // consumed — don't show the normal context menu
+            }
             if((scrimPopupWindow != null && NaConfig.INSTANCE.getDoubleTapAction().Int() == DoubleTap.DOUBLE_TAP_ACTION_SHOW_REACTIONS))
                 return false;
             wasManualScroll = true;
@@ -1975,54 +1988,34 @@ public class ChatActivity extends BaseFragment implements
             if (inPreviewMode) {
                 return;
             }
-            // Tap on a filter placeholder restores the hidden message. This is the only
-            // reliable tap path: Telegram's RecyclerListView handles item taps through its
-            // own gesture detector which dispatches here; a child view's own OnClickListener
-            // (and any touch interception on the child) is bypassed / swallowed by that gesture
-            // handling, so revealing must be done at this level.
-            //
-            // IMPORTANT: onItemClick receives the *actual* child view under the finger (e.g. the
-            // TextView inside the placeholder), NOT necessarily the outer FilterHiddenView. We must
-            // walk up the parent chain to find it.
+            // Tap on a filter placeholder reveals the hidden message(s) as native content.
+            // Walk up the parent chain because onItemClick receives the innermost child view.
             View target = view;
             while (target != null && !(target instanceof FilterHiddenView)) {
                 target = (View) target.getParent();
             }
             if (target instanceof FilterHiddenView) {
                 MessageObject fmsg = ((FilterHiddenView) target).getMessageObject();
-                if (fmsg != null) {
-                    if (revealedFilteredMessages.contains(fmsg.getId())) {
-                        // Collapse this expanded placeholder back into a hidden bar.
-                        revealedFilteredMessages.remove(fmsg.getId());
-                        fmsg.skipAyuFiltering = !hideFilteredMessages;
-                        if (fmsg.replyMessageObject != null) {
-                            fmsg.replyMessageObject.skipAyuFiltering = !hideFilteredMessages;
-                        }
+                if (fmsg != null && !revealedFilteredMessages.contains(fmsg.getId())) {
+                    // Reveal the whole run of consecutive hidden placeholders.
+                    ArrayList<MessageObject> msgs;
+                    if (chatAdapter.isFrozen) {
+                        msgs = chatAdapter.frozenMessages;
+                    } else if (chatAdapter.isFiltered) {
+                        msgs = chatAdapter.filteredMessages;
                     } else {
-                        // Expand: reveal the whole run of consecutive hidden placeholders so the
-                        // merged bar unfolds into individual expandable cards.
-                        ArrayList<MessageObject> msgs;
-                        if (chatAdapter.isFrozen) {
-                            msgs = chatAdapter.frozenMessages;
-                        } else if (chatAdapter.isFiltered) {
-                            msgs = chatAdapter.filteredMessages;
-                        } else {
-                            msgs = ChatActivity.this.messages;
-                        }
-                        int p = position;
-                        while (p < chatAdapter.messagesEndRow && isCollapsedPlaceholderAt(p, msgs)) {
-                            MessageObject m = msgs.get(p - chatAdapter.messagesStartRow);
-                            revealedFilteredMessages.add(m.getId());
-                            m.skipAyuFiltering = true;
-                            if (m.replyMessageObject != null) {
-                                m.replyMessageObject.skipAyuFiltering = true;
-                            }
-                            p++;
-                        }
+                        msgs = ChatActivity.this.messages;
                     }
-                    // notifyDataSetChanged (not notifyItemChanged) is required: revealing/collapsing
-                    // swaps the row between collapsed (-1001 placeholder) and expanded content, and
-                    // notifyItemChanged reuses the attached holder by position.
+                    int p = position;
+                    while (p < chatAdapter.messagesEndRow && isCollapsedPlaceholderAt(p, msgs)) {
+                        MessageObject m = msgs.get(p - chatAdapter.messagesStartRow);
+                        revealedFilteredMessages.add(m.getId());
+                        m.skipAyuFiltering = true;
+                        if (m.replyMessageObject != null) {
+                            m.replyMessageObject.skipAyuFiltering = true;
+                        }
+                        p++;
+                    }
                     chatListView.post(() -> chatAdapter.notifyDataSetChanged());
                     updateRevealCollapsePill();
                 }
@@ -9759,24 +9752,44 @@ public class ChatActivity extends BaseFragment implements
         updateRevealCollapsePill();
     }
 
-    /** Show the floating "收起" pill only when at least one revealed message is media
-     *  (which has no in-placeholder collapse button of its own). */
+    /** Show the floating "收起" pill when any revealed filtered messages exist. */
     private void updateRevealCollapsePill() {
         if (revealCollapsePill == null) {
             return;
         }
-        boolean anyMedia = false;
-        if (!revealedFilteredMessages.isEmpty()) {
-            ArrayList<MessageObject> list = chatAdapter.isFiltered ? chatAdapter.filteredMessages
-                    : (chatAdapter.isFrozen ? chatAdapter.frozenMessages : messages);
-            for (MessageObject m : list) {
-                if (m != null && revealedFilteredMessages.contains(m.getId()) && TextUtils.isEmpty(m.messageText)) {
-                    anyMedia = true;
-                    break;
+        revealCollapsePill.setVisibility(revealedFilteredMessages.isEmpty() ? View.GONE : View.VISIBLE);
+    }
+
+    /** Show a dialog explaining why a message was hidden by the filter (rule name, regex, matched text). */
+    private void showFilterReasonDialog(MessageObject msg) {
+        Context ctx = getParentActivity();
+        if (ctx == null) return;
+
+        CharSequence rawText = AyuFilter.getMessageText(msg);
+        ArrayList<int[]> ranges = AyuFilter.getMatchedRanges(rawText, msg.getDialogId());
+
+        StringBuilder detail = new StringBuilder();
+        if (rawText != null && rawText.length() > 0) {
+            detail.append(LocaleController.getString(R.string.FilterHiddenReasonText)).append("\n");
+            for (int[] r : ranges) {
+                int s = Math.max(0, r[0]);
+                int e = Math.min(rawText.length(), r[1]);
+                if (e > s) {
+                    detail.append("「").append(rawText.subSequence(s, e)).append("」\n");
                 }
             }
+            if (ranges.isEmpty()) {
+                detail.append(rawText).append("\n");
+            }
+        } else {
+            detail.append(LocaleController.getString(R.string.FilterHiddenNonText)).append("\n");
         }
-        revealCollapsePill.setVisibility(anyMedia ? View.VISIBLE : View.GONE);
+
+        new AlertDialog.Builder(ctx)
+                .setTitle(LocaleController.getString(R.string.FilterHiddenReasonTitle))
+                .setMessage(detail.toString().trim())
+                .setPositiveButton(LocaleController.getString(R.string.OK), null)
+                .show();
     }
 
     private ActionBarMenuSubItem showFilteredMenuItem;
@@ -40366,34 +40379,12 @@ public class ChatActivity extends BaseFragment implements
                     DummyView dummyView = (DummyView) view;
                     dummyView.setMessageObject(message);
                 } else if (view instanceof FilterHiddenView) { // hidden by filter, placeholder
-                    // The tap-to-reveal / collapse is handled at the RecyclerListView level
-                    // (onItemClick, where view instanceof FilterHiddenView) because a child
-                    // view's own OnClickListener is not reliably invoked by Telegram's gesture
-                    // handling. Here we bind the message and choose the collapsed/expanded state.
+                    // Collapsed-only binding. Tap-to-reveal is handled in onItemClick;
+                    // long-press shows filter reason. Revealed messages render as their native
+                    // content type via getItemViewType, so this branch only binds collapsed state.
                     FilterHiddenView filterHiddenView = (FilterHiddenView) view;
                     filterHiddenView.setMessageObject(message);
-                    if (revealedFilteredMessages.contains(message.getId())) {
-                        // Expanded: show the original text with matched fragments highlighted,
-                        // plus a "收起" button (handled by onItemClick) to collapse back.
-                        CharSequence display = message.messageText;
-                        if (display == null || display.length() == 0) {
-                            display = getString(R.string.FilterHiddenNonText);
-                        }
-                        SpannableStringBuilder ssb = new SpannableStringBuilder(display);
-                        ArrayList<int[]> ranges = AyuFilter.getMatchedRanges(display, message.getDialogId());
-                        int len = ssb.length();
-                        for (int[] r : ranges) {
-                            int s = Math.max(0, r[0]);
-                            int e = Math.min(len, r[1]);
-                            if (e > s) {
-                                ssb.setSpan(new BackgroundColorSpan(Theme.getColor(Theme.key_chat_inTextSelectionHighlight)),
-                                        s, e, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE);
-                            }
-                        }
-                        filterHiddenView.setExpandedContent(ssb);
-                    } else if (isPlaceholderHead(position, messages)) {
-                        // Head of a run of consecutive hidden placeholders: show a (possibly
-                        // merged) hint. Consecutive followers are collapsed to zero height below.
+                    if (isPlaceholderHead(position, messages)) {
                         int run = countCollapsedPlaceholderRun(position, messages);
                         if (run > 1) {
                             filterHiddenView.setCollapsedHint(
@@ -40461,15 +40452,9 @@ public class ChatActivity extends BaseFragment implements
                                 if (msg.replyMessageObject != null) {
                                     msg.replyMessageObject.skipAyuFiltering = true;
                                 }
-                                // Media messages have no real text to show inside the text
-                                // placeholder, so render them with their native view type so the
-                                // original content (video / photo / ...) is actually visible.
-                                // Text messages keep the placeholder (original text + highlight +
-                                // per-row collapse button) handled by onBindViewHolder.
-                                if (TextUtils.isEmpty(msg.messageText)) {
-                                    return msg.contentType;
-                                }
-                                return -1001;
+                                // Revealed messages render as their native type so the original
+                                // content (video / photo / text / ...) is shown faithfully.
+                                return msg.contentType;
                             } else if (NaConfig.INSTANCE.getRegexFiltersShowPlaceholder().Bool()) {
                                 return -1001;
                             } else {

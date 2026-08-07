@@ -55,6 +55,8 @@
     <string name="FilterHiddenMergedHint">%1$d 条消息被过滤器隐藏，点击显示</string>
     <string name="FilterHiddenCollapse">收起</string>
     <string name="FilterHiddenNonText">[非文本消息]</string>
+    <string name="FilterHiddenReasonTitle">过滤原因</string>
+    <string name="FilterHiddenReasonText">命中文本：</string>
     <string name="RegexFiltersShadowBannedUser">用户</string>
     <string name="RegexFiltersShadowBannedChannel">频道</string>
     <string name="RegexFiltersShadowBannedGroup">群组</string>
