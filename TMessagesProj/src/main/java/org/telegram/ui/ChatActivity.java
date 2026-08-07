@@ -1994,16 +1994,16 @@ public class ChatActivity extends BaseFragment implements
                         // Expand: reveal the whole run of consecutive hidden placeholders so the
                         // merged bar unfolds into individual expandable cards.
                         ArrayList<MessageObject> msgs;
-                        if (isFrozen) {
-                            msgs = frozenMessages;
-                        } else if (isFiltered) {
-                            msgs = filteredMessages;
+                        if (chatAdapter.isFrozen) {
+                            msgs = chatAdapter.frozenMessages;
+                        } else if (chatAdapter.isFiltered) {
+                            msgs = chatAdapter.filteredMessages;
                         } else {
                             msgs = ChatActivity.this.messages;
                         }
                         int p = position;
-                        while (p < messagesEndRow && isCollapsedPlaceholderAt(p, msgs)) {
-                            MessageObject m = msgs.get(p - messagesStartRow);
+                        while (p < chatAdapter.messagesEndRow && isCollapsedPlaceholderAt(p, msgs)) {
+                            MessageObject m = msgs.get(p - chatAdapter.messagesStartRow);
                             revealedFilteredMessages.add(m.getId());
                             m.skipAyuFiltering = true;
                             if (m.replyMessageObject != null) {
@@ -9681,10 +9681,10 @@ public class ChatActivity extends BaseFragment implements
         if (!hideFilteredMessages || !NaConfig.INSTANCE.getRegexFiltersShowPlaceholder().Bool()) {
             return false;
         }
-        if (position < messagesStartRow || position >= messagesEndRow) {
+        if (position < chatAdapter.messagesStartRow || position >= chatAdapter.messagesEndRow) {
             return false;
         }
-        MessageObject m = messages.get(position - messagesStartRow);
+        MessageObject m = messages.get(position - chatAdapter.messagesStartRow);
         if (m == null || m.messageOwner != null && m.messageOwner.hide) {
             return false;
         }
