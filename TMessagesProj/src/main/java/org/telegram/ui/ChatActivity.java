@@ -1989,13 +1989,10 @@ public class ChatActivity extends BaseFragment implements
                 return;
             }
             // Tap on a filter placeholder reveals the hidden message(s) as native content.
-            // Walk up the parent chain because onItemClick receives the innermost child view.
-            View target = view;
-            while (target != null && !(target instanceof FilterHiddenView)) {
-                target = (View) target.getParent();
-            }
-            if (target instanceof FilterHiddenView) {
-                MessageObject fmsg = ((FilterHiddenView) target).getMessageObject();
+            // onItemClick already receives the list-item root view (the FilterHiddenView itself),
+            // so a direct instanceof check is sufficient — no parent-chain walk needed.
+            if (view instanceof FilterHiddenView) {
+                MessageObject fmsg = ((FilterHiddenView) view).getMessageObject();
                 if (fmsg != null && !revealedFilteredMessages.contains(fmsg.getId())) {
                     // Reveal the whole run of consecutive hidden placeholders.
                     ArrayList<MessageObject> msgs;
