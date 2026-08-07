@@ -10,6 +10,7 @@
 package com.radolyn.ayugram.ui;
 
 import android.annotation.SuppressLint;
+import android.content.Context;
 import android.view.Gravity;
 import android.widget.FrameLayout;
 import android.widget.LinearLayout;
@@ -18,7 +19,7 @@ import android.widget.TextView;
 import org.telegram.messenger.AndroidUtilities;
 import org.telegram.messenger.MessageObject;
 import org.telegram.messenger.R;
-import org.telegram.ui.ActionBar.LocaleController;
+import org.telegram.messenger.LocaleController;
 import org.telegram.ui.ActionBar.Theme;
 
 @SuppressLint("ViewConstructor")
