@@ -16,8 +16,6 @@ import android.widget.FrameLayout;
 import android.widget.TextView;
 
 import org.telegram.messenger.AndroidUtilities;
-import org.telegram.messenger.LocaleController;
-import org.telegram.messenger.R;
 import org.telegram.messenger.MessageObject;
 import org.telegram.ui.ActionBar.Theme;
 
@@ -37,7 +35,6 @@ public class FilterHiddenView extends FrameLayout {
         textView.setGravity(Gravity.CENTER);
         textView.setTextSize(14);
         textView.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteGrayText));
-        textView.setText(LocaleController.getString(R.string.FilterHiddenHint));
 
         FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.MATCH_PARENT,
@@ -52,5 +49,11 @@ public class FilterHiddenView extends FrameLayout {
 
     public void setMessageObject(MessageObject messageObject) {
         this.messageObject = messageObject;
+    }
+
+    /** Sets the placeholder text shown inside the view (built by ChatActivity from the
+     *  message's matched filter content, with a trailing hint). */
+    public void setPlaceholderText(CharSequence text) {
+        textView.setText(text);
     }
 }

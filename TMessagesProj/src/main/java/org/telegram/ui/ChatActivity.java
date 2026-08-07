@@ -40218,12 +40218,26 @@ public class ChatActivity extends BaseFragment implements
                 } else if (view instanceof FilterHiddenView) { // hidden by filter, placeholder
                     FilterHiddenView filterHiddenView = (FilterHiddenView) view;
                     filterHiddenView.setMessageObject(message);
+                    CharSequence matched = AyuFilter.getMatchedStruckText(message);
+                    String hint = LocaleController.getString(R.string.FilterHiddenHint);
+                    CharSequence placeholder;
+                    if (matched != null) {
+                        SpannableStringBuilder sb = new SpannableStringBuilder(matched);
+                        sb.append("  ");
+                        sb.append(hint);
+                        placeholder = sb;
+                    } else {
+                        placeholder = hint;
+                    }
+                    filterHiddenView.setPlaceholderText(placeholder);
                     filterHiddenView.setOnClickListener(v -> {
                         revealedFilteredMessages.add(message.getId());
-                        int adapterPosition = holder.getAdapterPosition();
-                        if (adapterPosition >= 0) {
-                            notifyItemChanged(adapterPosition);
-                        }
+                        // notifyDataSetChanged (not notifyItemChanged) is required: revealing a
+                        // message swaps the row's view type from the placeholder (-1001) to the
+                        // normal message type, and RecyclerView reuses the already-attached
+                        // placeholder holder by position on notifyItemChanged, so the click would
+                        // otherwise appear to do nothing.
+                        notifyDataSetChanged();
                     });
                 }
             }

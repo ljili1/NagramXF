@@ -466,6 +466,48 @@ public class AyuFilter {
         return shouldHideFilteredMessages() && isFiltered(msg, group);
     }
 
+    /**
+     * Builds the placeholder text shown inside the "hidden by filter" row: the message's
+     * regex-matched content with a {@link StrikethroughSpan} applied, so the user sees exactly
+     * what the filter hit (instead of the literal words "命中规则加删除线"). Returns null when
+     * there is no concrete matched text to display (e.g. reversed-only match, a media message
+     * whose caption is empty, or a message that matched only via the type tag).
+     */
+    public static CharSequence getMatchedStruckText(MessageObject msg) {
+        if (msg == null || !NaConfig.INSTANCE.getRegexFiltersEnabled().Bool()) {
+            return null;
+        }
+        CharSequence raw = getMessageText(msg, null);
+        if (TextUtils.isEmpty(raw)) {
+            return null;
+        }
+        String s = raw.toString();
+        // Strip ayuGram's trailing <type>N</type> matching artifact so it is not shown.
+        int tagIdx = s.indexOf('<');
+        if (tagIdx >= 0) {
+            s = s.substring(0, tagIdx);
+        }
+        if (TextUtils.isEmpty(s)) {
+            return null;
+        }
+        final int MAX = 140;
+        if (s.length() > MAX) {
+            s = s.substring(0, MAX);
+        }
+        long dialogId = msg.getDialogId();
+        ArrayList<RuleRange> ranges = collectAllMatchedRangesWithRule(s, dialogId);
+        if (ranges == null || ranges.isEmpty()) {
+            return null;
+        }
+        SpannableStringBuilder sb = new SpannableStringBuilder(s);
+        for (RuleRange r : ranges) {
+            if (r.start >= 0 && r.end > r.start && r.end <= sb.length()) {
+                sb.setSpan(new StrikethroughSpan(), r.start, r.end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+            }
+        }
+        return sb;
+    }
+
     public static boolean shouldMaskFilteredMessage(MessageObject msg, MessageObject.GroupedMessages group) {
         if (shouldHideOnlyMatched()) {
             return false;
