@@ -1974,6 +1974,26 @@ public class ChatActivity extends BaseFragment implements
             if (inPreviewMode) {
                 return;
             }
+            // Tap on a filter placeholder restores the hidden message. This is the only
+            // reliable tap path: Telegram's RecyclerListView handles item taps through its
+            // own gesture detector which dispatches here; a child view's own OnClickListener
+            // (and any touch interception on the child) is bypassed / swallowed by that gesture
+            // handling, so revealing must be done at this level.
+            if (view instanceof FilterHiddenView) {
+                MessageObject fmsg = ((FilterHiddenView) view).getMessageObject();
+                if (fmsg != null) {
+                    revealedFilteredMessages.add(fmsg.getId());
+                    fmsg.skipAyuFiltering = true;
+                    if (fmsg.replyMessageObject != null) {
+                        fmsg.replyMessageObject.skipAyuFiltering = true;
+                    }
+                    // notifyDataSetChanged (not notifyItemChanged) is required: revealing swaps
+                    // the row's view type from the placeholder (-1001) to the normal message type,
+                    // and notifyItemChanged reuses the attached placeholder holder by position.
+                    chatListView.post(() -> chatAdapter.notifyDataSetChanged());
+                }
+                return;
+            }
             wasManualScroll = true;
             if (view instanceof ChatActionCell && ((ChatActionCell) view).getMessageObject().isDateObject) {
                 if (isInsideContainer) {
@@ -40216,26 +40236,14 @@ public class ChatActivity extends BaseFragment implements
                     DummyView dummyView = (DummyView) view;
                     dummyView.setMessageObject(message);
                 } else if (view instanceof FilterHiddenView) { // hidden by filter, placeholder
+                    // The tap-to-reveal is handled at the RecyclerListView level
+                    // (onItemClick, where view instanceof FilterHiddenView) because a child
+                    // view's own OnClickListener is not reliably invoked by Telegram's gesture
+                    // handling. Here we only bind the message + hint text.
                     FilterHiddenView filterHiddenView = (FilterHiddenView) view;
                     filterHiddenView.setMessageObject(message);
                     filterHiddenView.setPlaceholderText(
                             LocaleController.getString(R.string.FilterHiddenHint));
-                    filterHiddenView.setOnClickListener(v -> {
-                        // Mark as revealed so getItemViewType returns the normal message type.
-                        revealedFilteredMessages.add(message.getId());
-                        // Also set skipAyuFiltering directly on the message object as a safety
-                        // net — if the adapter notification is delayed/coalesced by Telegram's
-                        // RecyclerListView, this at least prevents re-filtering on rebind.
-                        message.skipAyuFiltering = true;
-                        if (message.replyMessageObject != null) {
-                            message.replyMessageObject.skipAyuFiltering = true;
-                        }
-                        // notifyDataSetChanged (not notifyItemChanged): revealing swaps the
-                        // row's view type from -1001 to the normal message type; notifyItemChanged
-                        // reuses the attached placeholder holder by position, so the tap would
-                        // appear to do nothing.
-                        notifyDataSetChanged();
-                    });
                 }
             }
         }
