@@ -13816,6 +13816,15 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
 
     @Override
     protected void onMeasure(int widthMeasureSpec, int heightMeasureSpec) {
+        if (currentMessageObject != null && currentMessageObject.filterMergeHidden) {
+            // Member of a merged run: collapse to zero height so consecutive filtered
+            // messages appear as a single bubble (the head). No content is drawn.
+            setMeasuredDimension(
+                isWidthAdaptive() ? getBoundsRight() - getBoundsLeft() : MeasureSpec.getSize(widthMeasureSpec),
+                0
+            );
+            return;
+        }
         if (currentMessageObject != null && (currentMessageObject.checkLayout() || lastHeight != AndroidUtilities.displaySize.y)) {
             inLayout = true;
             MessageObject messageObject = currentMessageObject;
@@ -20455,6 +20464,9 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
     @SuppressLint("WrongCall")
     @Override
     protected void onDraw(Canvas canvas) {
+        if (currentMessageObject != null && currentMessageObject.filterMergeHidden) {
+            return;
+        }
         drawInternal(canvas);
     }
     @SuppressLint("WrongCall")
@@ -27304,6 +27316,9 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
             int h = 0;
             for (int i = 0; i < groupedMessages.messages.size(); i++) {
                 MessageObject o = groupedMessages.messages.get(i);
+                if (o.filterMergeHidden) {
+                    continue;
+                }
                 MessageObject.GroupedMessagePosition position = groupedMessages.getPosition(o);
                 if (position != null && (position.flags & MessageObject.POSITION_FLAG_LEFT) != 0) {
                     setMessageContent(o, groupedMessages, false, false, false, false);
@@ -27341,6 +27356,9 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
             int h = 0;
             for (int i = 0; i < groupedMessages.messages.size(); i++) {
                 MessageObject o = groupedMessages.messages.get(i);
+                if (o.filterMergeHidden) {
+                    continue;
+                }
                 MessageObject.GroupedMessagePosition position = groupedMessages.getPosition(o);
                 if (position != null && (position.flags & MessageObject.POSITION_FLAG_TOP) != 0) {
                     setMessageContent(o, groupedMessages, false, false, false, false);

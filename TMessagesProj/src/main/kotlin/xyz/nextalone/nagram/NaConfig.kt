@@ -504,6 +504,14 @@ object NaConfig {
             ConfigItem.configTypeBool,
             false
         )
+    // When on, a message hidden by the regex filter stays in the chat as a tappable
+    // placeholder instead of disappearing. Off restores the original hide behaviour.
+    val regexFiltersShowPlaceholder =
+        addConfig(
+            "RegexFiltersShowPlaceholder",
+            ConfigItem.configTypeBool,
+            true
+        )
     val regexChatFiltersData =
         addConfig(
             "RegexChatFiltersData",

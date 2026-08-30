@@ -213,6 +213,19 @@ public class MessageObject {
     public CharSequence youtubeDescription;
     public MessageObject replyMessageObject;
     public int type = 1000;
+    // Album (grouped media) hide: when ANY member of an album (sharing getGroupId() != 0)
+    // matches the regex filter, EVERY member is hidden along with it, even members without
+    // a caption (which individually could never match a text rule). Set per-pass by
+    // ChatActivity.applyFilterMerge(); consumed by ChatMessageCell, which collapses such
+    // members to zero height so the run renders as a single placeholder.
+    public boolean filterMergeHidden;
+    // Tracks the message text last used to evaluate the regex-filter verdict (isFiltered).
+    // The global isFiltered cache is keyed by message id, NOT content, so when a message is
+    // EDITED (id unchanged, text changed) the cached verdict goes stale and the placeholder
+    // would not appear/disappear until the chat is reopened. checkLayout() compares this
+    // against the current text and invalidates the per-message cache on change, forcing a
+    // fresh verdict from the new content on the same pass.
+    public String filterEvalSource;
     public long reactionsLastCheckTime;
     public long extendedMediaLastCheckTime;
     public String customName;
@@ -6851,6 +6864,16 @@ public class MessageObject {
     }
 
     public boolean checkLayout() {
+        // Edit detection: the message text changed since we last evaluated the regex-filter
+        // verdict. Because the isFiltered cache is keyed by message id (not content), an
+        // edited message would otherwise keep its OLD verdict until the chat is reopened
+        // ("editing a message does not take effect immediately"). Invalidate the per-message
+        // cache here so the verdict is re-derived from the NEW content on this same pass.
+        String filterSrc = messageOwner != null ? messageOwner.message : null;
+        if (!TextUtils.equals(filterEvalSource, filterSrc)) {
+            AyuFilter.invalidateMessageCache(this);
+            filterEvalSource = filterSrc;
+        }
         if (type != TYPE_TEXT && type != TYPE_EMOJIS && type != TYPE_ARTICLE || messageOwner.peer_id == null || messageText == null || messageText.length() == 0 && !isBotPendingDraft) {
             return false;
         }

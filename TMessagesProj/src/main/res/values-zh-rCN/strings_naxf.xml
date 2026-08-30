@@ -259,4 +259,13 @@
     <string name="MainMenuAddDivider">添加分隔线</string>
     <string name="MainMenuDivider">分隔线</string>
     <string name="MainMenuItemsInfo">长按拖拽可排序，点按项目可将其隐藏，点按已隐藏项目可将其恢复，点按分隔线可将其移除。</string>
+    <!-- 正则过滤占位条 -->
+    <string name="RegexFiltersShowPlaceholderShort">显示被过滤消息占位条</string>
+    <string name="RegexFiltersShowPlaceholderAbout">被过滤器隐藏的消息不再直接消失，而是以可点击的占位条保留在聊天中。点击占位条可显示原消息，长按可查看被隐藏的原因。关闭后恢复为直接隐藏。</string>
+    <string name="FilterHiddenHint">已被过滤器隐藏 · 点击显示</string>
+    <string name="FilterHiddenMergedHint">%1$d 条消息已被过滤 · 点击显示</string>
+    <string name="FilterHiddenCollapse">收起</string>
+    <string name="FilterHiddenNonText">[非文本消息]</string>
+    <string name="FilterHiddenReasonTitle">为什么被隐藏</string>
+    <string name="FilterHiddenReasonText">命中文本</string>
 </resources>

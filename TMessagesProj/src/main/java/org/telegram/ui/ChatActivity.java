@@ -150,6 +150,7 @@ import com.radolyn.ayugram.utils.AyuMessageUtils;
 import com.radolyn.ayugram.ui.AyuMessageHistory;
 import com.radolyn.ayugram.ui.AyuViewDeleted;
 import com.radolyn.ayugram.ui.DummyView;
+import com.radolyn.ayugram.ui.FilterHiddenView;
 import com.radolyn.ayugram.utils.AyuGhostPreferences;
 import com.radolyn.ayugram.utils.AyuGhostUtils;
 import com.radolyn.ayugram.utils.AyuState;
@@ -1870,6 +1871,18 @@ public class ChatActivity extends BaseFragment implements
             if (isTryingTextSelection() || hasTextSelection() || inPreviewMode || isInsideContainer) {
                 return false;
             }
+            // Long-press on a filter placeholder shows why it was hidden (matched text).
+            // onItemClick already receives the list-item root view (the FilterHiddenView
+            // itself), so a direct instanceof check suffices. Do NOT walk getParent(): that
+            // loop climbs past the view tree into ViewRootImpl and crashes with a
+            // ClassCastException on ordinary messages.
+            if (view instanceof FilterHiddenView) {
+                MessageObject lpMsg = ((FilterHiddenView) view).getMessageObject();
+                if (lpMsg != null) {
+                    showFilterReasonDialog(lpMsg);
+                }
+                return true; // consumed - do not show the normal context menu
+            }
             if((scrimPopupWindow != null && NaConfig.INSTANCE.getDoubleTapAction().Int() == DoubleTap.DOUBLE_TAP_ACTION_SHOW_REACTIONS))
                 return false;
             wasManualScroll = true;
@@ -2008,6 +2021,29 @@ public class ChatActivity extends BaseFragment implements
         @Override
         public void onItemClick(View view, int position, float x, float y) {
             if (inPreviewMode) {
+                return;
+            }
+            // Tap on a filter placeholder reveals the hidden message(s) as native content.
+            // onItemClick already receives the list-item root view (the FilterHiddenView
+            // itself), so a direct instanceof check is sufficient - no parent-chain walk.
+            if (view instanceof FilterHiddenView) {
+                MessageObject fmsg = ((FilterHiddenView) view).getMessageObject();
+                if (fmsg != null && !revealedFilteredMessages.contains(fmsg.getId())) {
+                    // Reveal the whole run of consecutive hidden placeholders.
+                    ArrayList<MessageObject> msgs = chatAdapter.getDisplayedMessages();
+                    int p = position;
+                    while (p < chatAdapter.messagesEndRow && isCollapsedPlaceholderAt(p, msgs)) {
+                        MessageObject m = msgs.get(p - chatAdapter.messagesStartRow);
+                        revealedFilteredMessages.add(m.getId());
+                        m.skipAyuFiltering = true;
+                        if (m.replyMessageObject != null) {
+                            m.replyMessageObject.skipAyuFiltering = true;
+                        }
+                        p++;
+                    }
+                    chatListView.post(() -> chatAdapter.notifyDataSetChanged());
+                    updateRevealCollapsePill();
+                }
                 return;
             }
             wasManualScroll = true;
@@ -8998,6 +9034,22 @@ public class ChatActivity extends BaseFragment implements
         bottomOverlay.setClickable(true);
         chatInputBubbleContainer.addView(bottomOverlay, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, 44, Gravity.BOTTOM, 7, 0, 7, 0));
 
+        // Floating "Collapse" pill for collapsing revealed filtered messages. Media
+        // (video/photo/...) renders through its native view and therefore has no
+        // in-placeholder collapse button, so this is the way back to the placeholder.
+        revealCollapsePill = new TextView(context);
+        revealCollapsePill.setBackground(Theme.createRoundRectDrawable(AndroidUtilities.dp(18), Theme.getColor(Theme.key_featuredStickers_addButton)));
+        revealCollapsePill.setTextColor(Theme.getColor(Theme.key_featuredStickers_buttonText));
+        revealCollapsePill.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 14);
+        revealCollapsePill.setGravity(Gravity.CENTER);
+        revealCollapsePill.setTypeface(AndroidUtilities.bold());
+        revealCollapsePill.setPadding(AndroidUtilities.dp(18), AndroidUtilities.dp(9), AndroidUtilities.dp(18), AndroidUtilities.dp(9));
+        revealCollapsePill.setText(LocaleController.getString(R.string.FilterHiddenCollapse));
+        revealCollapsePill.setVisibility(View.GONE);
+        revealCollapsePill.setClickable(true);
+        revealCollapsePill.setOnClickListener(v -> collapseAllRevealed());
+        contentView.addView(revealCollapsePill, LayoutHelper.createFrame(LayoutHelper.WRAP_CONTENT, LayoutHelper.WRAP_CONTENT, Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL, 0, 0, 0, 64));
+
         bottomOverlayText = new TextView(context);
         bottomOverlayText.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 14);
         bottomOverlayText.setGravity(Gravity.CENTER);
@@ -9721,6 +9773,109 @@ public class ChatActivity extends BaseFragment implements
     private boolean lastInAppInputVisible;
 
     private boolean hideFilteredMessages = true;
+    // Ids of messages whose placeholder the user tapped open. They render as their native
+    // content until collapsed again through the floating pill.
+    private final HashSet<Integer> revealedFilteredMessages = new HashSet<>();
+
+    /** Floating "Collapse" pill shown while any filtered message is revealed. */
+    private TextView revealCollapsePill;
+
+    /** True if the message at {@code position} is a collapsed filter placeholder
+     *  (view type -1001, not yet revealed). Mirrors the decision in getItemViewType but
+     *  without mutating state, so it is safe to call repeatedly while computing runs. */
+    private boolean isCollapsedPlaceholderAt(int position, ArrayList<MessageObject> messages) {
+        if (!hideFilteredMessages || !NaConfig.INSTANCE.getRegexFiltersShowPlaceholder().Bool()) {
+            return false;
+        }
+        if (position < chatAdapter.messagesStartRow || position >= chatAdapter.messagesEndRow) {
+            return false;
+        }
+        MessageObject m = messages.get(position - chatAdapter.messagesStartRow);
+        if (m == null || m.messageOwner != null && m.messageOwner.hide) {
+            return false;
+        }
+        if (revealedFilteredMessages.contains(m.getId())) {
+            return false;
+        }
+        MessageObject.GroupedMessages group = getGroup(m.getGroupId());
+        if (group == null) {
+            group = getValidGroupedMessage(m);
+        }
+        MessageObject primary = group != null ? group.findPrimaryMessageObject() : null;
+        if (primary == null) {
+            primary = m;
+        }
+        return AyuFilter.shouldHideFilteredMessage(primary, group);
+    }
+
+    /** True if {@code position} is the first (top) placeholder of a consecutive run. */
+    private boolean isPlaceholderHead(int position, ArrayList<MessageObject> messages) {
+        if (!isCollapsedPlaceholderAt(position, messages)) {
+            return false;
+        }
+        return !isCollapsedPlaceholderAt(position - 1, messages);
+    }
+
+    /** Number of consecutive collapsed placeholders starting at {@code position}. */
+    private int countCollapsedPlaceholderRun(int position, ArrayList<MessageObject> messages) {
+        int count = 0;
+        int p = position;
+        while (isCollapsedPlaceholderAt(p, messages)) {
+            count++;
+            p++;
+        }
+        return count;
+    }
+
+    /** Collapse every revealed filtered message back into a placeholder. */
+    private void collapseAllRevealed() {
+        if (revealedFilteredMessages.isEmpty()) {
+            return;
+        }
+        revealedFilteredMessages.clear();
+        chatListView.post(() -> chatAdapter.notifyDataSetChanged());
+        updateRevealCollapsePill();
+    }
+
+    /** Show the floating "Collapse" pill while any filtered messages are revealed. */
+    private void updateRevealCollapsePill() {
+        if (revealCollapsePill == null) {
+            return;
+        }
+        revealCollapsePill.setVisibility(revealedFilteredMessages.isEmpty() ? View.GONE : View.VISIBLE);
+    }
+
+    /** Explain why a message was hidden by the filter (shows the matched text). */
+    private void showFilterReasonDialog(MessageObject msg) {
+        Context ctx = getParentActivity();
+        if (ctx == null) return;
+
+        CharSequence rawText = AyuFilter.getMessageText(msg, null);
+        ArrayList<int[]> ranges = AyuFilter.getMatchedRanges(rawText, msg.getDialogId());
+
+        StringBuilder detail = new StringBuilder();
+        if (rawText != null && rawText.length() > 0) {
+            detail.append(LocaleController.getString(R.string.FilterHiddenReasonText)).append("\n");
+            for (int[] r : ranges) {
+                int s = Math.max(0, r[0]);
+                int e = Math.min(rawText.length(), r[1]);
+                if (e > s) {
+                    detail.append("\u300c").append(rawText.subSequence(s, e)).append("\u300d\n");
+                }
+            }
+            if (ranges.isEmpty()) {
+                detail.append(rawText).append("\n");
+            }
+        } else {
+            detail.append(LocaleController.getString(R.string.FilterHiddenNonText)).append("\n");
+        }
+
+        new AlertDialog.Builder(ctx)
+                .setTitle(LocaleController.getString(R.string.FilterHiddenReasonTitle))
+                .setMessage(detail.toString().trim())
+                .setPositiveButton(LocaleController.getString(R.string.OK), null)
+                .show();
+    }
 
     private ActionBarMenuSubItem showFilteredMenuItem;
     private boolean showFilteredMenuItemRevealed = false;
@@ -26196,6 +26351,29 @@ public class ChatActivity extends BaseFragment implements
             }
         }
         else if (id == NotificationCenter.regexFiltersUpdated) {
+            // Recompute per-message filter flags (album hide) before resetting cells, so
+            // the layout is already correct when each visible cell re-binds.
+            if (chatAdapter != null) {
+                chatAdapter.applyFilterMerge(chatAdapter.getDisplayedMessages());
+            }
+            if (chatListView != null) {
+                for (int i = 0, n = chatListView.getChildCount(); i < n; i++) {
+                    View child = chatListView.getChildAt(i);
+                    if (child instanceof ChatMessageCell) {
+                        ChatMessageCell cell = (ChatMessageCell) child;
+                        MessageObject cellMessageObject = cell.getMessageObject();
+                        if (cellMessageObject != null) {
+                            cellMessageObject.resetLayout();
+                            cellMessageObject.updateMessageText();
+                            cellMessageObject.setType();
+                            // Rebuild the caption too: turning the filter OFF restores a
+                            // media message whose caption was dropped while it was hidden.
+                            cellMessageObject.generateCaption();
+                        }
+                        cell.forceResetMessageObject();
+                    }
+                }
+            }
             if (chatAdapter != null) {
                 chatAdapter.notifyDataSetChanged();
             }
@@ -39384,6 +39562,63 @@ public class ChatActivity extends BaseFragment implements
             return UserObject.isBotForumWithEditableTopics(currentUser) && getTopicId() == 0 && !hasSendingMessagesInBotForum && chatMode == 0;
         }
 
+        /** The message list currently feeding the adapter (frozen / filtered / normal). */
+        private ArrayList<MessageObject> getDisplayedMessages() {
+            if (isFrozen) {
+                return frozenMessages;
+            } else if (isFiltered) {
+                return filteredMessages;
+            }
+            return ChatActivity.this.messages;
+        }
+
+        /**
+         * Per-pass filter flags for grouped-media (album) hide. When any member of an album
+         * matches the regex filter the whole album is hidden together, so every member after
+         * the first is collapsed (ChatMessageCell renders those at zero height) and the run
+         * shows up as a single placeholder.
+         */
+        private void applyFilterMerge(ArrayList<MessageObject> list) {
+            if (list == null || list.isEmpty()) {
+                return;
+            }
+            // MessageObjects are reused across passes, so clear first; otherwise stale
+            // flags linger and collapse rows that should be visible.
+            for (int i = 0; i < list.size(); i++) {
+                MessageObject m = list.get(i);
+                if (m != null) {
+                    m.filterMergeHidden = false;
+                }
+            }
+            if (!hideFilteredMessages || !NaConfig.INSTANCE.getRegexFiltersShowPlaceholder().Bool()) {
+                return;
+            }
+            // First member of an album decides for the whole album; later members collapse.
+            HashSet<Long> collapsedGroups = new HashSet<>();
+            for (int i = 0; i < list.size(); i++) {
+                MessageObject m = list.get(i);
+                if (m == null || m.getGroupId() == 0) {
+                    continue;
+                }
+                long gid = m.getGroupId();
+                if (collapsedGroups.contains(gid)) {
+                    m.filterMergeHidden = true;
+                    continue;
+                }
+                MessageObject.GroupedMessages group = getGroup(gid);
+                if (group == null) {
+                    group = getValidGroupedMessage(m);
+                }
+                MessageObject primary = group != null ? group.findPrimaryMessageObject() : null;
+                if (primary == null) {
+                    primary = m;
+                }
+                if (AyuFilter.shouldHideFilteredMessage(primary, group)) {
+                    collapsedGroups.add(gid);
+                }
+            }
+        }
+
         private void updateRowsInternal() {
             rowCount = 0;
             final ArrayList<MessageObject> messages;
@@ -39394,6 +39629,7 @@ public class ChatActivity extends BaseFragment implements
             } else {
                 messages = ChatActivity.this.messages;
             }
+            applyFilterMerge(messages);
             if (chatMode == MODE_SAVED && isInsideContainer) {
                 hintRow = rowCount++;
             } else {
@@ -39910,6 +40146,8 @@ public class ChatActivity extends BaseFragment implements
                 };
             } else if (viewType == -1000) { // hide message
                 view = new DummyView(mContext);
+            } else if (viewType == -1001) { // hidden by filter, placeholder
+                view = new FilterHiddenView(mContext);
             } else if (viewType == 10) {
                 ChatMessageUnsupportedCell cell = new ChatMessageUnsupportedCell(mContext, themeDelegate);
                 cell.setDelegate(getChatMessageCellDelegate());
@@ -40525,6 +40763,26 @@ public class ChatActivity extends BaseFragment implements
                 } else if (view instanceof DummyView) { // hide message
                     DummyView dummyView = (DummyView) view;
                     dummyView.setMessageObject(message);
+                } else if (view instanceof FilterHiddenView) { // hidden by filter
+                    // Collapsed-only binding. Tap-to-reveal lives in onItemClick and the
+                    // long-press reason in onItemLongClick; revealed messages render as
+                    // their native content type via getItemViewType.
+                    FilterHiddenView filterHiddenView = (FilterHiddenView) view;
+                    filterHiddenView.setMessageObject(message);
+                    if (isPlaceholderHead(position, messages)) {
+                        int run = countCollapsedPlaceholderRun(position, messages);
+                        if (run > 1) {
+                            filterHiddenView.setCollapsedHint(
+                                    formatString(R.string.FilterHiddenMergedHint, run));
+                        } else {
+                            filterHiddenView.setCollapsedHint(getString(R.string.FilterHiddenHint));
+                        }
+                        filterHiddenView.setVisibility(View.VISIBLE);
+                    } else {
+                        // Follower of a merged run: hide so the run renders as one bar.
+                        filterHiddenView.setCollapsedHint("");
+                        filterHiddenView.setVisibility(View.GONE);
+                    }
                 }
             }
         }
@@ -40574,7 +40832,19 @@ public class ChatActivity extends BaseFragment implements
                         }
                         if (AyuFilter.shouldHideFilteredMessage(filterMsg, filterGroup)) {
                             revealShowFilteredMenuItem();
-                            return -1000;
+                            if (revealedFilteredMessages.contains(msg.getId())) {
+                                msg.skipAyuFiltering = true;
+                                if (msg.replyMessageObject != null) {
+                                    msg.replyMessageObject.skipAyuFiltering = true;
+                                }
+                                // Revealed messages render as their native type so the
+                                // original content (video / photo / text / ...) is shown.
+                                return msg.contentType;
+                            } else if (NaConfig.INSTANCE.getRegexFiltersShowPlaceholder().Bool()) {
+                                return -1001;
+                            } else {
+                                return -1000;
+                            }
                         }
                     }
                 }

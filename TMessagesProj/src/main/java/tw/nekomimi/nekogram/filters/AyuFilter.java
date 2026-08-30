@@ -204,6 +204,16 @@ public class AyuFilter {
         synchronized (cacheLock) {
             AyuFilterCache.clearAll();
         }
+        // Also notify open chats so the (possibly already-bound) visible cells re-evaluate
+        // the filter verdict immediately. Without this, toggling a filter switch (e.g.
+        // "show placeholder") only clears the cache but never triggers ChatActivity's
+        // regexFiltersUpdated handler, so on-screen messages keep their old rendering until
+        // they happen to be re-measured on scroll ("the change feels delayed").
+        // rebuildCache() already does both steps for rule add/edit/remove; this keeps the
+        // toggle path consistent with it.
+        AndroidUtilities.runOnUIThread(() -> {
+            NotificationCenter.getInstance(UserConfig.selectedAccount).postNotificationName(NotificationCenter.regexFiltersUpdated);
+        });
     }
 
     private static boolean isFilterMatch(FilterModel filter, CharSequence text) {
@@ -270,6 +280,19 @@ public class AyuFilter {
         } catch (Exception e) {
             FileLog.e(e);
         }
+    }
+
+    /**
+     * Returns the character ranges (start, end) matched by the active regex filters within
+     * {@code text}. Used by the filter placeholder UI to show which fragment of a hidden
+     * message triggered the filter. Reversed filters never contribute a range: they match
+     * the ABSENCE of a pattern, not a concrete fragment.
+     */
+    public static ArrayList<int[]> getMatchedRanges(CharSequence text, long dialogId) {
+        if (TextUtils.isEmpty(text)) {
+            return new ArrayList<>();
+        }
+        return findFilteredRanges(text, dialogId);
     }
 
     private static ArrayList<int[]> findFilteredRanges(CharSequence text, long dialogId) {
@@ -1027,6 +1050,25 @@ public class AyuFilter {
 
     public static void onMessageEdited(int msgId, long dialogId) {
         AyuFilterCache.invalidate(dialogId, msgId);
+    }
+
+    /**
+     * Invalidates the per-message (and per-group, when applicable) isFiltered cache for a
+     * single message. Called from MessageObject.checkLayout() when it detects that the
+     * message text changed (an edit): the global cache is keyed by message id, NOT content,
+     * so an edited message would otherwise keep its stale verdict until the chat is
+     * reopened. Re-deriving on the same pass keeps the placeholder in sync with the text.
+     */
+    public static void invalidateMessageCache(MessageObject msg) {
+        if (msg == null) {
+            return;
+        }
+        long dialogId = msg.getDialogId();
+        AyuFilterCache.invalidate(dialogId, msg.getId());
+        long groupId = msg.getGroupId();
+        if (groupId != 0) {
+            AyuFilterCache.invalidateGroup(dialogId, groupId);
+        }
     }
 
 

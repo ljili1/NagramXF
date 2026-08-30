@@ -274,4 +274,13 @@
     <string name="StickerShape">Sticker Shape</string>
     <string name="StickerShapeRounded">Rounded</string>
     <string name="StickerShapeRoundedMsg">Message</string>
+    <!-- Regex filter placeholder -->
+    <string name="RegexFiltersShowPlaceholderShort">Show placeholder for hidden messages</string>
+    <string name="RegexFiltersShowPlaceholderAbout">Messages hidden by a filter stay in the chat as a tappable placeholder instead of disappearing. Tap it to reveal the message, or long-press to see why it was hidden. Turn off to hide them outright as before.</string>
+    <string name="FilterHiddenHint">Hidden by filter · Tap to show</string>
+    <string name="FilterHiddenMergedHint">%1$d messages hidden by filter · Tap to show</string>
+    <string name="FilterHiddenCollapse">Collapse</string>
+    <string name="FilterHiddenNonText">[Non-text message]</string>
+    <string name="FilterHiddenReasonTitle">Why this was hidden</string>
+    <string name="FilterHiddenReasonText">Matched text</string>
 </resources>
