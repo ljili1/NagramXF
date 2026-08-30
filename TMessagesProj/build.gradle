@@ -141,12 +141,13 @@ android {
     productFlavors {
         normal {
             dimension 'runtime'
-            ndk.abiFilters.addAll(normalAbis)
+            // NOTE: ndk.abiFilters intentionally left unset. AGP 9 rejects ndk abiFilters
+            // when splits.abi is enabled; splits.abi below drives which ABIs are built.
             externalNativeBuild.cmake.arguments '-DENABLE_PLUGINS=OFF'
         }
         plugin {
             dimension 'runtime'
-            ndk.abiFilters.addAll(pluginAbis)
+            // See the note above: splits.abi owns the ABI selection for this flavor too.
             externalNativeBuild.cmake.arguments '-DENABLE_PLUGINS=ON'
             proguardFiles 'proguard-plugin-rules.pro'
         }
@@ -161,9 +162,12 @@ android {
         def appHash = 'eb06d4abfb49dc3eeb1aeb98ae0f581e'
 
         if (properties != null) {
-            appId = properties.getProperty('TELEGRAM_APP_ID') ?: System.getenv('TELEGRAM_APP_ID') ?: appId
-            appHash = properties.getProperty('TELEGRAM_APP_HASH') ?: System.getenv('TELEGRAM_APP_HASH') ?: appHash
+            appId = properties.getProperty('TELEGRAM_APP_ID') ?: appId
+            appHash = properties.getProperty('TELEGRAM_APP_HASH') ?: appHash
         }
+
+        appId = System.getenv('TELEGRAM_APP_ID') ?: appId
+        appHash = System.getenv('TELEGRAM_APP_HASH') ?: appHash
 
         buildConfigField 'String', 'BUILD_VERSION_STRING', '"' + verName + '"'
         buildConfigField 'String', 'OFFICIAL_VERSION', '"' + officialVer + '"'
@@ -173,6 +177,9 @@ android {
         buildConfigField 'long', 'BUILD_TIMESTAMP', buildTimestamp + 'L'
         buildConfigField 'boolean', 'DEBUG_VERSION', 'false'
         buildConfigField 'boolean', 'DEBUG_PRIVATE_VERSION', 'false'
+        buildConfigField 'String', 'APP_NAME', '"' + APP_NAME + '"'
+
+        resValue "string", "AppName", APP_NAME
 
         externalNativeBuild {
             cmake {
@@ -252,6 +259,10 @@ android {
     sourceSets.main.jniLibs.srcDirs = ['./jni/']
     sourceSets.plugin.jniLibs.srcDirs += "$buildDir/generated/chaquopyJniLibs"
     sourceSets.plugin.assets.srcDirs += "$buildDir/generated/chaquopyBootstrapNative"
+
+    buildFeatures {
+        resValues = true
+    }
 
     namespace = 'org.telegram.messenger'
 }
@@ -347,7 +358,7 @@ androidComponents {
                 def abi = output.filters.find { it.filterType.name() == 'ABI' }?.identifier
                 output.enabled.set(pluginAbis.contains(abi))
             }
-            String gramName = 'NagramXF'
+            String gramName = APP_NAME.replace(' ', '')
             String first = String.format('%s-v%s(%s)', gramName, verName, verCode)
             output.outputFileName.set(
                 output.outputFileName.get()
@@ -452,6 +463,9 @@ dependencies {
 
     // wear auth
     implementation 'com.google.android.gms:play-services-wearable:18.0.0'
+
+    // WebSocket proxy (Cloudflare)
+    implementation project(':libs:tcp2ws')
 
     // Plugin runtime only. Chaquopy Java classes are built from src/plugin/java/com/chaquo
     // (the upstream artifact lacks fork members such as Reflector.dirAll()).

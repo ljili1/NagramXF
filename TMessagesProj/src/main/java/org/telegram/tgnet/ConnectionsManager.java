@@ -85,6 +85,7 @@ import tw.nekomimi.nekogram.NekoConfig;
 import tw.nekomimi.nekogram.ErrorDatabase;
 
 import tw.nekomimi.nekogram.NekoXConfig;
+import tw.nekomimi.nekogram.helpers.WebSocketHelper;
 import tw.nekomimi.nekogram.utils.DnsFactory;
 import tw.nekomimi.nekogram.utils.ProxyUtil;
 import xyz.nextalone.nagram.NaConfig;
@@ -691,7 +692,11 @@ FileLog.e(finalRequestObject + " got error " + error.code + " " + error.text);
         int proxyPort = preferences.getInt("proxy_port", 1080);
 
         if (preferences.getBoolean("proxy_enabled", false) && !TextUtils.isEmpty(proxyAddress)) {
-            native_setProxySettings(currentAccount, proxyAddress, proxyPort, proxyUsername, proxyPassword, proxySecret);
+            if (WebSocketHelper.proxyServer.equals(proxyAddress)) {
+                native_setProxySettings(currentAccount, "127.0.0.1", WebSocketHelper.getSocksPort(), "", "", "");
+            } else {
+                native_setProxySettings(currentAccount, proxyAddress, proxyPort, proxyUsername, proxyPassword, proxySecret);
+            }
         }
         String installer = "";
         try {
@@ -798,6 +803,11 @@ FileLog.e(finalRequestObject + " got error " + error.code + " " + error.text);
             password = "";
         }
         if (secret == null) {
+            secret = "";
+        }
+        if (address.equals(WebSocketHelper.proxyServer)) {
+            address = "127.0.0.1";
+            port = WebSocketHelper.getSocksPort();
             secret = "";
         }
         return native_checkProxy(currentAccount, address, port, username, password, secret, requestTimeDelegate);
@@ -1017,6 +1027,11 @@ FileLog.e(finalRequestObject + " got error " + error.code + " " + error.text);
             password = "";
         }
         if (secret == null) {
+            secret = "";
+        }
+        if (address.equals(WebSocketHelper.proxyServer)) {
+            address = "127.0.0.1";
+            port = WebSocketHelper.getSocksPort();
             secret = "";
         }
 

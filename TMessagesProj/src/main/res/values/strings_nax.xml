@@ -522,4 +522,12 @@
     <string name="PluginsSafeModeShortcut">Start with safe mode</string>
     <string name="RestartPluginSystemToApplyUpdate">Update loaded, restart Plugin Engine to apply</string>
     <string name="RestoreSdkFromApk">Restore SDK from APK</string>
-    <string name="PluginsRestartEngine">Restart Plugin Engine</string></resources>
+    <string name="PluginsRestartEngine">Restart Plugin Engine</string>
+    <string name="PublicProxy">Public Proxy</string>
+    <string name="ProxyInvalid">Invalid proxy</string>
+    <string name="WsProvider">Provider</string>
+    <string name="WsEnableTls">Enable TLS</string>
+    <string name="WsGetHelp">You can also deploy it easily by yourself!</string>
+    <string name="WsCustomDescription">Use custom domain to connect to TELEOFFICIAL through WebSocket via Cloudflare.</string>
+    <string name="NullgramWsDescription">Connect to TELEOFFICIAL through WebSocket via Cloudflare.\nProvided by Nullgram</string>
+</resources>
