@@ -842,7 +842,6 @@ public class MessageHelper extends BaseController {
                         }
                     }
                 }
-            }
             } else if (messageObject.messageOwner.reply_markup instanceof TLRPC.TL_replyInlineMarkup inlineMarkup) {
                 if (!inlineMarkup.rows.isEmpty()) {
                     text.append("\n");
