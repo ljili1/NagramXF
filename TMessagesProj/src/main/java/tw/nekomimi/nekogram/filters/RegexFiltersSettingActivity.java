@@ -33,6 +33,7 @@ import org.telegram.messenger.DialogObject;
 import org.telegram.messenger.FileLog;
 import org.telegram.messenger.MessagesController;
 import org.telegram.messenger.MessagesStorage;
+import org.telegram.messenger.NotificationCenter;
 import org.telegram.messenger.R;
 import org.telegram.messenger.UserConfig;
 import org.telegram.tgnet.TLObject;
@@ -95,6 +96,8 @@ public class RegexFiltersSettingActivity extends BaseNekoXSettingsActivity {
     private final AbstractConfigCell regexFiltersMaskMessagesInfoRow = new ConfigCellCustom("RegexFiltersMaskMessagesAbout", CellGroup.ITEM_TYPE_TEXT, false);
     private final AbstractConfigCell regexFiltersHideOnlyMatchedRow = new ConfigCellCustom("RegexFiltersHideOnlyMatchedShort", CellGroup.ITEM_TYPE_TEXT_CHECK, true);
     private final AbstractConfigCell regexFiltersHideOnlyMatchedInfoRow = new ConfigCellCustom("RegexFiltersHideOnlyMatchedAbout", CellGroup.ITEM_TYPE_TEXT, false);
+    private final AbstractConfigCell regexFiltersShowPlaceholderRow = new ConfigCellCustom("RegexFiltersShowPlaceholderShort", CellGroup.ITEM_TYPE_TEXT_CHECK, true);
+    private final AbstractConfigCell regexFiltersShowPlaceholderInfoRow = new ConfigCellCustom("RegexFiltersShowPlaceholderAbout", CellGroup.ITEM_TYPE_TEXT, false);
     private final AbstractConfigCell filtersHeaderRow = new ConfigCellHeader(getString(R.string.RegexFiltersGlobalHeader));
     private final AbstractConfigCell sharedFiltersPageRow = new ConfigCellCustom("RegexFiltersSharedHeader", CellGroup.ITEM_TYPE_TEXT_SETTINGS_CELL, true);
     private final AbstractConfigCell userFiltersPageRow = new ConfigCellCustom("ShadowBan", CellGroup.ITEM_TYPE_TEXT_SETTINGS_CELL, true);
@@ -123,6 +126,8 @@ public class RegexFiltersSettingActivity extends BaseNekoXSettingsActivity {
             addCell(regexFiltersHideOnlyMatchedRow);
             addCell(regexFiltersHideOnlyMatchedInfoRow);
         }
+        addCell(regexFiltersShowPlaceholderRow);
+        addCell(regexFiltersShowPlaceholderInfoRow);
         addCell(filtersHeaderRow);
         addCell(sharedFiltersPageRow);
         addCell(userFiltersPageRow);
@@ -233,6 +238,12 @@ public class RegexFiltersSettingActivity extends BaseNekoXSettingsActivity {
             boolean enabled = !cell.isChecked();
             cell.setChecked(enabled);
             NaConfig.INSTANCE.getRegexFiltersHideOnlyMatched().setConfigBool(enabled);
+            AyuFilter.invalidateFilteredCache();
+        } else if (row == regexFiltersShowPlaceholderRow) {
+            TextCheckCell cell = (TextCheckCell) view;
+            boolean enabled = !cell.isChecked();
+            cell.setChecked(enabled);
+            NaConfig.INSTANCE.getRegexFiltersShowPlaceholder().setConfigBool(enabled);
             AyuFilter.invalidateFilteredCache();
         } else if (row == sharedFiltersPageRow) {
             presentFragment(new RegexSharedFiltersListActivity());
@@ -429,7 +440,12 @@ public class RegexFiltersSettingActivity extends BaseNekoXSettingsActivity {
         }
     }
 
+    // region Import pipeline
 
+    /**
+     * Parsed-but-not-yet-applied import payload. Holds only raw incoming data; merging
+     * with current state happens later in {@link #applyImport(ParsedImport)}.
+     */
     private static class ParsedImport {
         ArrayList<AyuFilter.FilterModel> sharedIncoming;
         ArrayList<AyuFilter.ChatFilterEntry> chatsIncoming;
@@ -445,6 +461,7 @@ public class RegexFiltersSettingActivity extends BaseNekoXSettingsActivity {
         }
     }
 
+    /** Parse a filter backup JSON (either legacy `[filters]` array or full {@link TransferData}). */
     private ParsedImport parseImportJson(String rawJson) {
         if (TextUtils.isEmpty(rawJson)) return null;
         String json = rawJson.trim();
@@ -544,6 +561,8 @@ public class RegexFiltersSettingActivity extends BaseNekoXSettingsActivity {
         return out.hasAnyData() ? out : null;
     }
 
+    /** Categorize parsed data into counts for the preview sheet.
+     *  Truly identical filters (same regex, flags, and enabled state) are ignored. */
     private FiltersImportBottomSheet.Summary buildImportSummary(ParsedImport parsed) {
         FiltersImportBottomSheet.Summary s = new FiltersImportBottomSheet.Summary();
         if (parsed == null) return s;
@@ -566,6 +585,7 @@ public class RegexFiltersSettingActivity extends BaseNekoXSettingsActivity {
                     }
                 }
                 if (exactDuplicate) {
+                    // skip — nothing to do
                 } else if (needsUpdate) {
                     s.updatedFilters++;
                 } else {
@@ -603,6 +623,7 @@ public class RegexFiltersSettingActivity extends BaseNekoXSettingsActivity {
                         }
                     }
                     if (exactDuplicate) {
+                        // skip
                     } else if (needsUpdate) {
                         s.updatedFilters++;
                     } else {
@@ -639,7 +660,7 @@ public class RegexFiltersSettingActivity extends BaseNekoXSettingsActivity {
                 } else if (!TextUtils.equals(ex.username, in.username)
                         || !TextUtils.equals(ex.displayName, in.displayName)
                         || ex.accessHash != in.accessHash) {
-                    s.updatedFilters++;
+                    s.updatedFilters++; // treat as an update for display
                 }
             }
         }
@@ -653,6 +674,7 @@ public class RegexFiltersSettingActivity extends BaseNekoXSettingsActivity {
         return s;
     }
 
+    /** Merge parsed data into local filter state and persist. Mirrors the legacy inline flow. */
     private void applyImport(ParsedImport parsed) {
         if (parsed == null) return;
         long selfUserId = getUserConfig().getClientUserId();
@@ -759,6 +781,7 @@ public class RegexFiltersSettingActivity extends BaseNekoXSettingsActivity {
         }
     }
 
+    /** Show preview sheet with counts; on confirm, apply the import and surface a success bulletin. */
     private void showImportPreview(ParsedImport parsed) {
         if (parsed == null || !parsed.hasAnyData()) {
             BulletinFactory.of(this).createSimpleBulletin(R.raw.error, getString(R.string.RegexFiltersImportNoChanges)).show();
@@ -781,6 +804,7 @@ public class RegexFiltersSettingActivity extends BaseNekoXSettingsActivity {
         }).show();
     }
 
+    /** Entry point for the Import menu action: lets the user pick clipboard or URL as the source. */
     private void showImportSourceChooser(Context context) {
         new AlertDialog.Builder(context, getResourceProvider())
                 .setTitle(getString(R.string.RegexFiltersImportSourceTitle))
@@ -919,6 +943,7 @@ public class RegexFiltersSettingActivity extends BaseNekoXSettingsActivity {
         });
     }
 
+    // endregion Import pipeline
 
     private ArrayList<DialogFilterItem> getDialogFilterItems() {
         HashMap<Long, DialogFilterItem> map = new HashMap<>();
@@ -1066,6 +1091,7 @@ public class RegexFiltersSettingActivity extends BaseNekoXSettingsActivity {
         public ArrayList<BackupExclusion> exclusions;
         public HashMap<Long, String> peers;
         public ArrayList<AyuFilter.CustomFilteredUser> customFilteredUsersData;
+        // Kept for backward compatibility when importing older NagramXF exports
         public ArrayList<Long> customFilteredUsers;
     }
 
@@ -1117,7 +1143,14 @@ public class RegexFiltersSettingActivity extends BaseNekoXSettingsActivity {
                 TextInfoPrivacyCell infoCell = (TextInfoPrivacyCell) holder.itemView;
                 infoCell.setBackground(Theme.getThemedDrawable(mContext, R.drawable.greydivider, Theme.key_windowBackgroundGrayShadow));
                 infoCell.setText(getString(R.string.RegexFiltersHideOnlyMatchedAbout));
-            } else if (row == sharedFiltersPageRow) {
+            } else if (row == regexFiltersShowPlaceholderRow) {
+                TextCheckCell textCheckCell = (TextCheckCell) holder.itemView;
+                textCheckCell.setTextAndCheck(getString(R.string.RegexFiltersShowPlaceholderShort), NaConfig.INSTANCE.getRegexFiltersShowPlaceholder().Bool(), false);
+            } else if (row == regexFiltersShowPlaceholderInfoRow) {
+                TextInfoPrivacyCell infoCell = (TextInfoPrivacyCell) holder.itemView;
+                infoCell.setBackground(Theme.getThemedDrawable(mContext, R.drawable.greydivider, Theme.key_windowBackgroundGrayShadow));
+                infoCell.setText(getString(R.string.RegexFiltersShowPlaceholderAbout));
+        } else if (row == sharedFiltersPageRow) {
                 TextSettingsCell settingsCell = (TextSettingsCell) holder.itemView;
                 settingsCell.setTextAndValue(getString(R.string.RegexFiltersSharedHeader), String.valueOf(AyuFilter.getRegexFilters().size()), true);
             } else if (row == userFiltersPageRow) {

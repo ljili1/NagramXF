@@ -38,6 +38,8 @@
     <string name="RegexFiltersMaskMessages">将过滤或被屏蔽的消息遮罩而不是隐藏</string>
     <string name="RegexFiltersMaskMessagesShort">遮罩而不隐藏</string>
     <string name="RegexFiltersMaskMessagesAbout">过滤或被屏蔽的消息会以遮罩占位形式保留在聊天中，而不是直接隐藏。开启后反向表达式会失效。</string>
+    <string name="RegexFiltersShowPlaceholderShort">显示被过滤消息占位条</string>
+    <string name="RegexFiltersShowPlaceholderAbout">被过滤器隐藏的消息不再直接消失，而是在原位置显示一条占位条，点击占位条可恢复显示该消息。关闭则恢复为原来的直接隐藏。</string>
     <string name="RegexFiltersHideOnlyMatchedShort">只隐藏正则内容</string>
     <string name="RegexFiltersHideOnlyMatchedAbout">仅将正则匹配到的内容以剧透遮罩隐藏，而不是遮罩整条消息。</string>
     <string name="UseSystemAiService">使用系统 AI 服务</string>
@@ -49,6 +51,12 @@
     <string name="RegexFiltersShadowBanEmpty">还没有静默屏蔽对象，点击 + 添加一个。</string>
     <string name="RegexFiltersFilterEnabled">启用过滤器</string>
     <string name="RegexFiltersShadowBannedBot">机器人</string>
+    <string name="FilterHiddenHint">已被过滤器隐藏，点击显示</string>
+    <string name="FilterHiddenMergedHint">%1$d 条消息被过滤器隐藏，点击显示</string>
+    <string name="FilterHiddenCollapse">收起</string>
+    <string name="FilterHiddenNonText">[非文本消息]</string>
+    <string name="FilterHiddenReasonTitle">过滤原因</string>
+    <string name="FilterHiddenReasonText">命中文本：</string>
     <string name="RegexFiltersShadowBannedUser">用户</string>
     <string name="RegexFiltersShadowBannedChannel">频道</string>
     <string name="RegexFiltersShadowBannedGroup">群组</string>

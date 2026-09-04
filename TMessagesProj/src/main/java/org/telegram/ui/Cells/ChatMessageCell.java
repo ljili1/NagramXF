@@ -6852,6 +6852,16 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
     public MultiLayoutTypingAnimator botDraftTypingAnimator;
 
     private void setMessageContent(MessageObject messageObject, MessageObject.GroupedMessages groupedMessages, boolean bottomNear, boolean topNear, boolean firstInChat, boolean lastInChatList) {
+        // Filter strike mode on an album (grouped media): the struck representative must render as a
+        // normal standalone text bubble (struck hit-rule text), NOT as a member of the album grid.
+        // Keeping the group here would make the bubble adopt the album's grid width/position
+        // (currentPosition.leftSpanOffset, grouped background bounds) and look wrongly sized. Detach
+        // it from the group so the whole text-only layout pipeline applies. Other members are
+        // collapsed via filterMergeHidden and never drawn.
+        if (messageObject != null && messageObject.filterGroupStruck) {
+            groupedMessages = null;
+            groupMedia = null;
+        }
         AyuFilter.syncMaskedSpoilerRevealState(messageObject, groupedMessages);
         if (messageObject != null && messageObject.replyMessageObject != null) {
             AyuFilter.syncMaskedSpoilerRevealState(messageObject.replyMessageObject, null);
@@ -9409,9 +9419,9 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
                 if (!messageObject.isAnyKindOfSticker() && messageObject.type != MessageObject.TYPE_ROUND_VIDEO) {
                     drawName = (isSavedChat && !messageObject.isOutOwner() && (messageObject.getSavedDialogId() < 0 || messageObject.getSavedDialogId() == UserObject.ANONYMOUS) || messageObject.isFromGroup() && messageObject.isSupergroup() || messageObject.isRepostPreview || messageObject.isImportedForward() && messageObject.messageOwner.fwd_from.from_id == null || isSideMenuEnabled && !messageObject.isOutOwner() && (isMonoForum && isAllChats || isForum)) && (currentPosition == null || (currentPosition.flags & MessageObject.POSITION_FLAG_TOP) != 0);
                 }
-                mediaBackground = isMedia = messageObject.type != MessageObject.TYPE_FILE;
-                drawImageButton = true;
-                drawPhotoImage = true;
+                mediaBackground = isMedia = messageObject.type != MessageObject.TYPE_FILE && !messageObject.filterGroupStruck;
+                drawImageButton = !messageObject.filterGroupStruck;
+                drawPhotoImage = !messageObject.filterGroupStruck;
 
                 int photoWidth = 0;
                 int photoHeight = 0;
@@ -13816,6 +13826,15 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
 
     @Override
     protected void onMeasure(int widthMeasureSpec, int heightMeasureSpec) {
+        if (currentMessageObject != null && currentMessageObject.filterMergeHidden) {
+            // Member of a merged run: collapse to zero height so consecutive filtered messages
+            // appear as a single bubble (the head). No content is drawn.
+            setMeasuredDimension(
+                isWidthAdaptive() ? getBoundsRight() - getBoundsLeft() : MeasureSpec.getSize(widthMeasureSpec),
+                0
+            );
+            return;
+        }
         if (currentMessageObject != null && (currentMessageObject.checkLayout() || lastHeight != AndroidUtilities.displaySize.y)) {
             inLayout = true;
             MessageObject messageObject = currentMessageObject;
@@ -19811,6 +19830,7 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
                             stringFinalText = TextUtils.ellipsize(stringFinalText, textPaint, maxWidth, TextUtils.TruncateAt.END);
                         }
                     }
+                    // Follow ayuGram: if the replied-to message itself is filtered, ghost out its preview.
                     if (messageObject.replyMessageObject != null && AyuFilter.isFiltered(messageObject.replyMessageObject, null)) {
                         if (replyImageReceiver != null) {
                             replyImageReceiver.setImageBitmap((Drawable) null);
@@ -20455,6 +20475,9 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
     @SuppressLint("WrongCall")
     @Override
     protected void onDraw(Canvas canvas) {
+        if (currentMessageObject != null && currentMessageObject.filterMergeHidden) {
+            return;
+        }
         drawInternal(canvas);
     }
     @SuppressLint("WrongCall")
@@ -20833,6 +20856,18 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
 
 
 
+
+        // Safety fix for struck album/grouped-media messages: backgroundWidth may be stale or
+        // wrong if a prior branch (photo/media fallback) computed it before setType(TYPE_TEXT)
+        // and the TEXT branch value didn't propagate. Recompute from the actual text layout so
+        // the bubble always wraps the replacement text correctly.
+        if (currentMessageObject != null && currentMessageObject.filterGroupStruck
+                && currentMessageObject.textWidth > 0) {
+            int correctWidth = currentMessageObject.textWidth + getExtraTextX() * 2;
+            if (correctWidth > backgroundWidth) {
+                backgroundWidth = correctWidth;
+            }
+        }
         Drawable currentBackgroundShadowDrawable;
         int additionalTop = 0;
         int additionalBottom = 0;
@@ -27295,6 +27330,11 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
     public int computedGroupCaptionY;
     public MessageObject.TextLayoutBlocks computedCaptionLayout;
     public int computeHeight(MessageObject object, MessageObject.GroupedMessages groupedMessages, boolean withCaption) {
+        // A struck album member must be measured as a standalone text bubble, not as part of the
+        // album grid (which would yield the album's grouped width/height). See setMessageContent.
+        if (object != null && object.filterGroupStruck) {
+            groupedMessages = null;
+        }
         photoImage.setIgnoreImageSet(true);
         avatarImage.setIgnoreImageSet(true);
         replyImageReceiver.setIgnoreImageSet(true);
@@ -27308,6 +27348,9 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
             int h = 0;
             for (int i = 0; i < groupedMessages.messages.size(); i++) {
                 MessageObject o = groupedMessages.messages.get(i);
+                if (o.filterMergeHidden) {
+                    continue;
+                }
                 MessageObject.GroupedMessagePosition position = groupedMessages.getPosition(o);
                 if (position != null && (position.flags & MessageObject.POSITION_FLAG_LEFT) != 0) {
                     setMessageContent(o, groupedMessages, false, false, false, false);
@@ -27332,6 +27375,10 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
     }
 
     public int computeWidth(MessageObject object, MessageObject.GroupedMessages groupedMessages) {
+        // Mirror of computeHeight: a struck album member is measured as a standalone text bubble.
+        if (object != null && object.filterGroupStruck) {
+            groupedMessages = null;
+        }
         photoImage.setIgnoreImageSet(true);
         avatarImage.setIgnoreImageSet(true);
         replyImageReceiver.setIgnoreImageSet(true);
@@ -27345,6 +27392,9 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
             int h = 0;
             for (int i = 0; i < groupedMessages.messages.size(); i++) {
                 MessageObject o = groupedMessages.messages.get(i);
+                if (o.filterMergeHidden) {
+                    continue;
+                }
                 MessageObject.GroupedMessagePosition position = groupedMessages.getPosition(o);
                 if (position != null && (position.flags & MessageObject.POSITION_FLAG_TOP) != 0) {
                     setMessageContent(o, groupedMessages, false, false, false, false);

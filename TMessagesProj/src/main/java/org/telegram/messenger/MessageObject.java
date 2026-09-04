@@ -43,6 +43,7 @@ import android.text.style.RelativeSizeSpan;
 import android.text.style.URLSpan;
 import android.text.util.Linkify;
 import android.util.Base64;
+import android.util.Pair;
 import android.view.View;
 
 import androidx.annotation.NonNull;
@@ -213,6 +214,21 @@ public class MessageObject {
     public CharSequence youtubeDescription;
     public MessageObject replyMessageObject;
     public int type = 1000;
+    // Retained for compatibility; no longer assigned (strike-replacement feature removed).
+    public String strikeSource;
+    // Album (grouped media) hide: when ANY member of an album (sharing getGroupId() != 0) matches
+    // the regex filter, EVERY member is hidden together with it, even members without a caption
+    // (which individually could never match a text rule). Set per-pass by ChatActivity.applyFilterMerge().
+    public boolean filterMergeHidden;
+    public boolean filterGroupStruck;
+    // Tracks the message text last used to evaluate the regex-filter verdict (isFiltered).
+    // The global isFiltered cache is keyed by message id, NOT content, so when a message is
+    // EDITED (id unchanged, text changed) the cached verdict goes stale and the strike state
+    // would not update until the chat is reopened. checkLayout() compares this against the
+    // current text and invalidates the per-message filter cache on change, forcing a fresh
+    // verdict from the new content on the same pass. Kept independent of strikeSource so that
+    // even messages that were never struck get their verdict re-evaluated after an edit.
+    public String filterEvalSource;
     public long reactionsLastCheckTime;
     public long extendedMediaLastCheckTime;
     public String customName;
@@ -6851,6 +6867,16 @@ public class MessageObject {
     }
 
     public boolean checkLayout() {
+        String src = messageOwner != null ? messageOwner.message : null;
+        // Edit detection: the message text changed since we last evaluated the regex-filter
+        // verdict. Because the isFiltered cache is keyed by message id (not content), an edited
+        // message would otherwise keep its OLD verdict until the chat is reopened
+        // ("editing a message does not take effect immediately"). Invalidate the per-message
+        // cache here so the verdict is re-derived from the NEW content on this same pass.
+        if (!TextUtils.equals(filterEvalSource, src)) {
+            AyuFilter.invalidateMessageCache(this);
+            filterEvalSource = src;
+        }
         if (type != TYPE_TEXT && type != TYPE_EMOJIS && type != TYPE_ARTICLE || messageOwner.peer_id == null || messageText == null || messageText.length() == 0 && !isBotPendingDraft) {
             return false;
         }

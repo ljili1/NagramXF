@@ -790,6 +790,35 @@ public class MessageHelper extends BaseController {
                 text.append("\n");
             }
 
+            // Link-based filter rules (e.g. a t.me URL that only appears inside the
+            // auto-generated link PREVIEW of a channel/group spam message) never matched
+            // before, because getMessageFilterMatchText only scanned the body text and
+            // inline TextUrl/button URLs, never the webpage preview. A sent link produces a
+            // TL_messageMediaWebPage whose clickable "join/open/download" text lives in the
+            // preview (url/title/description/site_name), not in the message body - so the
+            // rule appeared to "match" the visible link yet the message stayed fully visible.
+            // Append the preview content so such rules actually hit.
+            if (messageObject.messageOwner.media instanceof TLRPC.TL_messageMediaWebPage) {
+                TLRPC.WebPage webPage = ((TLRPC.TL_messageMediaWebPage) messageObject.messageOwner.media).webpage;
+                if (webPage != null) {
+                    if (!TextUtils.isEmpty(webPage.url)) {
+                        text.append("\n").append(webPage.url);
+                    }
+                    if (!TextUtils.isEmpty(webPage.display_url)) {
+                        text.append("\n").append(webPage.display_url);
+                    }
+                    if (!TextUtils.isEmpty(webPage.site_name)) {
+                        text.append("\n").append(webPage.site_name);
+                    }
+                    if (!TextUtils.isEmpty(webPage.title)) {
+                        text.append("\n").append(webPage.title);
+                    }
+                    if (!TextUtils.isEmpty(webPage.description)) {
+                        text.append("\n").append(webPage.description);
+                    }
+                }
+            }
+
             if (messageObject.messageOwner.reply_markup instanceof TLRPC.TL_replyKeyboardMarkup keyboardMarkup) {
                 if (!keyboardMarkup.rows.isEmpty()) {
                     text.append("\n");
@@ -813,6 +842,7 @@ public class MessageHelper extends BaseController {
                         }
                     }
                 }
+            }
             } else if (messageObject.messageOwner.reply_markup instanceof TLRPC.TL_replyInlineMarkup inlineMarkup) {
                 if (!inlineMarkup.rows.isEmpty()) {
                     text.append("\n");
