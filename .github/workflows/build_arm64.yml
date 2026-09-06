@@ -30,6 +30,8 @@ jobs:
     runs-on: ubuntu-latest
     env:
       NATIVE_TARGET: "arm64-v8a"
+      # sing-box version bundled as a native binary for the built-in VLESS proxy
+      SINGBOX_VERSION: "1.14.0"
       # If you use the repo's test keystore, set these in GitHub Secrets instead of hardcoding.
       # The values below match the placeholder keystore that ships with this fork.
       KEYSTORE_PASS: ${{ secrets.KEYSTORE_PASS || 'android' }}
@@ -80,6 +82,31 @@ jobs:
       - name: Compute build timestamp
         id: timestamp
         run: echo "value=$(date +%s)" >> "$GITHUB_OUTPUT"
+
+      - name: Cache sing-box binary
+        id: cache_singbox
+        uses: actions/cache@v4
+        with:
+          path: TMessagesProj/src/main/jniLibs/arm64-v8a/libsingbox.so
+          key: singbox-arm64-${{ env.SINGBOX_VERSION }}
+
+      - name: Fetch sing-box binary
+        if: steps.cache_singbox.outputs.cache-hit != 'true'
+        run: |
+          set -euo pipefail
+          mkdir -p TMessagesProj/src/main/jniLibs/arm64-v8a
+          TARBALL="sing-box-${SINGBOX_VERSION}-android-arm64.tar.gz"
+          curl -fsSL --retry 3 -o /tmp/singbox.tar.gz \
+            "https://github.com/SagerNet/sing-box/releases/download/v${SINGBOX_VERSION}/${TARBALL}"
+          tar -xzf /tmp/singbox.tar.gz -C /tmp
+          BIN=$(find /tmp -type f -name 'sing-box' -path "*sing-box-${SINGBOX_VERSION}-android-arm64*" | head -n 1)
+          if [ -z "${BIN:-}" ]; then
+            echo "::error::sing-box binary not found inside ${TARBALL}"
+            exit 1
+          fi
+          cp "$BIN" TMessagesProj/src/main/jniLibs/arm64-v8a/libsingbox.so
+          chmod +x TMessagesProj/src/main/jniLibs/arm64-v8a/libsingbox.so
+          ls -lh TMessagesProj/src/main/jniLibs/arm64-v8a/libsingbox.so
 
       - name: Build APK
         env:

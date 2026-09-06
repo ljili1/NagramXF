@@ -15,7 +15,7 @@ import org.telegram.messenger.FileLog;
 import org.telegram.messenger.LocaleController;
 import org.telegram.messenger.R;
 
-import tw.nekomimi.nekogram.helpers.LibboxEngine;
+import tw.nekomimi.nekogram.helpers.SingBoxEngine;
 import tw.nekomimi.nekogram.helpers.VlessConfig;
 import tw.nekomimi.nekogram.helpers.VlessProxyManager;
 
@@ -31,8 +31,6 @@ public class VlessProxyService extends Service {
     private static final int NOTIFICATION_ID = 1999;
     private static final String CHANNEL_ID = "vless_proxy";
 
-    private Object boxService;
-
     @Override
     public void onCreate() {
         super.onCreate();
@@ -41,7 +39,7 @@ public class VlessProxyService extends Service {
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
         startForeground(NOTIFICATION_ID, buildNotification());
-        startLibbox();
+        startSingBox();
         return START_STICKY;
     }
 
@@ -60,7 +58,7 @@ public class VlessProxyService extends Service {
                 .build();
     }
 
-    private void startLibbox() {
+    private void startSingBox() {
         try {
             String link = VlessProxyManager.getVlessLink();
             String config = VlessConfig.buildConfig(link, VlessProxyManager.LOCAL_PORT);
@@ -68,7 +66,7 @@ public class VlessProxyService extends Service {
                 FileLog.e("VlessProxyService: invalid or empty vless config");
                 return;
             }
-            boxService = LibboxEngine.start(this, config);
+            SingBoxEngine.INSTANCE.start(this, config);
         } catch (Throwable e) {
             FileLog.e(e);
         }
@@ -77,11 +75,9 @@ public class VlessProxyService extends Service {
     @Override
     public void onDestroy() {
         try {
-            LibboxEngine.stop(boxService);
+            SingBoxEngine.INSTANCE.stop();
         } catch (Throwable e) {
             FileLog.e(e);
-        } finally {
-            boxService = null;
         }
         super.onDestroy();
     }

@@ -109,6 +109,7 @@
         android:restoreAnyVersion="true"
         android:backupAgent=".BackupAgent"
         android:hardwareAccelerated="true"
+        android:extractNativeLibs="true"
         android:icon="@mipmap/ic_launcher_nagram_dark_blue"
         android:label="@string/AppName"
         android:largeHeap="true"
