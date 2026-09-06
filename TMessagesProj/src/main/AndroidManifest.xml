@@ -647,6 +647,12 @@
             android:foregroundServiceType="dataSync"
         />
         <service
+            android:name="tw.nekomimi.nekogram.VlessProxyService"
+            android:enabled="true"
+            android:exported="false"
+            android:foregroundServiceType="dataSync"
+        />
+        <service
             android:name=".NotificationRepeat"
             android:exported="false"
             android:foregroundServiceType="dataSync"

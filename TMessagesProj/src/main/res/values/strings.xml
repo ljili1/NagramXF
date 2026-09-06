@@ -2677,6 +2677,12 @@
     <string name="ProxySettings">Proxy Settings</string>
     <string name="ProxyDetails">Proxy Details</string>
     <string name="Proxy">Proxy</string>
+    <string name="VlessProxy">VLESS Proxy</string>
+    <string name="VlessProxyRunning">VLESS proxy is running</string>
+    <string name="VlessLink">VLESS Link</string>
+    <string name="VlessLinkHint">vless://uuid@host:port?security=reality&amp;...</string>
+    <string name="VlessEnable">Enable VLESS</string>
+    <string name="VlessDescription">Uses the built-in sing-box engine. Enter a vless:// link, then enable.</string>
     <string name="ProxyConnections">Connections</string>
     <string name="ProxyAddedSuccess">Proxy added.</string>
     <string name="AddProxy">Add Proxy</string>

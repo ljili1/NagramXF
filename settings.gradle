@@ -27,4 +27,4 @@ dependencyResolutionManagement {
 
 rootProject.name = "NagramX"
 include ':TMessagesProj'
-include ':libs:tcp2ws'
+// include ':libs:tcp2ws'  // removed: replaced by built-in sing-box VLESS proxy

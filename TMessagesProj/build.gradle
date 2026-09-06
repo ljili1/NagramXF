@@ -475,8 +475,8 @@ dependencies {
         chaquopyTargetJni "com.chaquo.python:target:${chaquopyTargetVersion}:${abi}@zip"
     }
 
-    // WebSocket proxy (Cloudflare)
-    implementation project(':libs:tcp2ws')
+    // VLESS proxy (sing-box) — place libbox.aar in TMessagesProj/libs/
+    implementation files('libs/libbox.aar')
 
     compileOnly fileTree('libs')
 }

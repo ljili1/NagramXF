@@ -85,7 +85,7 @@ import tw.nekomimi.nekogram.NekoConfig;
 import tw.nekomimi.nekogram.ErrorDatabase;
 
 import tw.nekomimi.nekogram.NekoXConfig;
-import tw.nekomimi.nekogram.helpers.WebSocketHelper;
+import tw.nekomimi.nekogram.helpers.VlessProxyManager;
 import tw.nekomimi.nekogram.utils.DnsFactory;
 import tw.nekomimi.nekogram.utils.ProxyUtil;
 import xyz.nextalone.nagram.NaConfig;
@@ -693,8 +693,8 @@ FileLog.e(finalRequestObject + " got error " + error.code + " " + error.text);
         int proxyPort = preferences.getInt("proxy_port", 1080);
 
         if (preferences.getBoolean("proxy_enabled", false) && !TextUtils.isEmpty(proxyAddress)) {
-            if (WebSocketHelper.proxyServer.equals(proxyAddress)) {
-                native_setProxySettings(currentAccount, "127.0.0.1", WebSocketHelper.getSocksPort(), "", "", "");
+            if (VlessProxyManager.PROXY_SERVER.equals(proxyAddress)) {
+                native_setProxySettings(currentAccount, "127.0.0.1", VlessProxyManager.getLocalPort(), "", "", "");
             } else {
                 native_setProxySettings(currentAccount, proxyAddress, proxyPort, proxyUsername, proxyPassword, proxySecret);
             }
@@ -806,9 +806,9 @@ FileLog.e(finalRequestObject + " got error " + error.code + " " + error.text);
         if (secret == null) {
             secret = "";
         }
-        if (address.equals(WebSocketHelper.proxyServer)) {
+        if (address.equals(VlessProxyManager.PROXY_SERVER)) {
             address = "127.0.0.1";
-            port = WebSocketHelper.getSocksPort();
+            port = VlessProxyManager.getLocalPort();
             secret = "";
         }
         return native_checkProxy(currentAccount, address, port, username, password, secret, requestTimeDelegate);
@@ -1030,9 +1030,9 @@ FileLog.e(finalRequestObject + " got error " + error.code + " " + error.text);
         if (secret == null) {
             secret = "";
         }
-        if (address.equals(WebSocketHelper.proxyServer)) {
+        if (address.equals(VlessProxyManager.PROXY_SERVER)) {
             address = "127.0.0.1";
-            port = WebSocketHelper.getSocksPort();
+            port = VlessProxyManager.getLocalPort();
             secret = "";
         }
 
