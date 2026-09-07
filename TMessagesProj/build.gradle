@@ -475,9 +475,9 @@ dependencies {
         chaquopyTargetJni "com.chaquo.python:target:${chaquopyTargetVersion}:${abi}@zip"
     }
 
-    // VLESS proxy (sing-box): the sing-box binary is bundled as a native library
-    // (src/main/jniLibs/arm64-v8a/libsingbox.so) and launched by SingBoxEngine,
-    // so no extra Gradle dependency is needed here.
+    // VLESS proxy (sing-box libbox). libbox.aar must exist at TMessagesProj/libs/libbox.aar;
+    // CI fetches it (pinned to v1.13.21 — see .github/workflows/build_arm64.yml).
+    implementation files('libs/libbox.aar')
 
     compileOnly fileTree('libs')
 }

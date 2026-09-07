@@ -15,7 +15,7 @@ import org.telegram.messenger.FileLog;
 import org.telegram.messenger.LocaleController;
 import org.telegram.messenger.R;
 
-import tw.nekomimi.nekogram.helpers.SingBoxEngine;
+import tw.nekomimi.nekogram.helpers.LibboxEngine;
 import tw.nekomimi.nekogram.helpers.VlessConfig;
 import tw.nekomimi.nekogram.helpers.VlessProxyManager;
 
@@ -66,7 +66,7 @@ public class VlessProxyService extends Service {
                 FileLog.e("VlessProxyService: invalid or empty vless config");
                 return;
             }
-            SingBoxEngine.INSTANCE.start(this, config);
+            LibboxEngine.INSTANCE.start(this, config);
         } catch (Throwable e) {
             FileLog.e(e);
         }
@@ -75,7 +75,7 @@ public class VlessProxyService extends Service {
     @Override
     public void onDestroy() {
         try {
-            SingBoxEngine.INSTANCE.stop();
+            LibboxEngine.INSTANCE.stop();
         } catch (Throwable e) {
             FileLog.e(e);
         }
