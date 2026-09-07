@@ -3,7 +3,9 @@ name: Dump libbox API (temp)
 # Temporary helper: prints the exact Java API of the sing-box libbox AAR
 # so it can be bound against without a local Android build.
 on:
-  workflow_dispatch:
+  push:
+    paths:
+      - 'tools/dump-libbox-api.trigger'
 
 permissions:
   contents: read
