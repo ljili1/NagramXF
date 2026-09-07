@@ -1557,7 +1557,7 @@ public class SharedConfig {
             ProxyInfo info = currentProxy = new ProxyInfo(proxyAddress, proxyPort, proxyUsername, proxyPassword, proxySecret);
             proxyList.add(0, info);
         }
-        if (!VlessProxyManager.PROXY_SERVER.equals(proxyAddress)) {
+        if (VlessProxyManager.hasConfig() && !VlessProxyManager.PROXY_SERVER.equals(proxyAddress)) {
             ProxyInfo info = new ProxyInfo(VlessProxyManager.PROXY_SERVER, VlessProxyManager.LOCAL_PORT, "", "", "");
             proxyList.add(0, info);
         }

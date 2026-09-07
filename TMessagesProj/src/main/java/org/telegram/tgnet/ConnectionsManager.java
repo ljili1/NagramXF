@@ -694,7 +694,12 @@ FileLog.e(finalRequestObject + " got error " + error.code + " " + error.text);
 
         if (preferences.getBoolean("proxy_enabled", false) && !TextUtils.isEmpty(proxyAddress)) {
             if (VlessProxyManager.PROXY_SERVER.equals(proxyAddress)) {
-                native_setProxySettings(currentAccount, "127.0.0.1", VlessProxyManager.getLocalPort(), "", "", "");
+                int vlessPort = VlessProxyManager.getLocalPort();
+                if (vlessPort > 0) {
+                    native_setProxySettings(currentAccount, "127.0.0.1", vlessPort, "", "", "");
+                }
+                // No (valid) VLESS config -> leave the proxy unset so Telegram
+                // falls back to a direct connection instead of a dead local port.
             } else {
                 native_setProxySettings(currentAccount, proxyAddress, proxyPort, proxyUsername, proxyPassword, proxySecret);
             }
@@ -807,9 +812,12 @@ FileLog.e(finalRequestObject + " got error " + error.code + " " + error.text);
             secret = "";
         }
         if (address.equals(VlessProxyManager.PROXY_SERVER)) {
-            address = "127.0.0.1";
-            port = VlessProxyManager.getLocalPort();
-            secret = "";
+            int vlessPort = VlessProxyManager.getLocalPort();
+            if (vlessPort > 0) {
+                address = "127.0.0.1";
+                port = vlessPort;
+                secret = "";
+            }
         }
         return native_checkProxy(currentAccount, address, port, username, password, secret, requestTimeDelegate);
     }
@@ -1031,9 +1039,12 @@ FileLog.e(finalRequestObject + " got error " + error.code + " " + error.text);
             secret = "";
         }
         if (address.equals(VlessProxyManager.PROXY_SERVER)) {
-            address = "127.0.0.1";
-            port = VlessProxyManager.getLocalPort();
-            secret = "";
+            int vlessPort = VlessProxyManager.getLocalPort();
+            if (vlessPort > 0) {
+                address = "127.0.0.1";
+                port = vlessPort;
+                secret = "";
+            }
         }
 
         for (int a = 0; a < UserConfig.MAX_ACCOUNT_COUNT; a++) {

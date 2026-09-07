@@ -24,12 +24,20 @@ object VlessProxyManager {
     fun getProxyAddress(): String = PROXY_SERVER
 
     /**
+     * Whether a usable VLESS link has been configured. When false the built-in
+     * proxy must not be advertised or applied — otherwise Telegram would be
+     * pointed at a local port that has no listener and fail to connect.
+     */
+    @JvmStatic
+    fun hasConfig(): Boolean = NekoConfig.vlessLink.String().isNotBlank()
+
+    /**
      * Local mixed SOCKS/HTTP inbound port. Returns -1 when no VLESS link is
-     * configured (so Telegram falls back to direct connection).
+     * configured (callers must treat a value <= 0 as "direct connection").
      */
     @JvmStatic
     fun getLocalPort(): Int {
-        if (NekoConfig.vlessLink.String().isBlank()) return -1
+        if (!hasConfig()) return -1
         ensureServiceStarted()
         return LOCAL_PORT
     }
