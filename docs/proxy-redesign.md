@@ -113,8 +113,8 @@ LibboxEngine:
 sing-box 启动 → 监听 127.0.0.1:6357
         │
         ▼
-VlessProxyManager: PROXY_SERVER("vless.nagramxf") 作为哨兵地址
-   ConnectionsManager 把它翻译为 127.0.0.1:6357
+VlessProxyManager: 把 Telegram 当前代理设为 127.0.0.1:6357
+   (SharedConfig.setCurrentProxy 持久化；重启后 init 自动续用)
         │
         ▼
 Telegram ──SOCKS5──► 127.0.0.1:6357 ──► sing-box ──VLESS──► 远端节点 ──► Telegram DC
@@ -124,7 +124,7 @@ Telegram ──SOCKS5──► 127.0.0.1:6357 ──► sing-box ──VLESS─�
 
 | 设计点 | 说明 |
 |---|---|
-| **哨兵地址** | `VlessProxyManager.PROXY_SERVER`（`vless.nagramxf`）作为代理列表里的条目地址；实际连接时才翻译为 `127.0.0.1:port`。与旧 ws 的 `ws.nagramxf` 同构，接线改动最小 |
+| **独立入口** | “VLESS 代理”是应用自身设置（`NekoSettingsActivity`）里的一等管理页；启用时经 `SharedConfig.setCurrentProxy(127.0.0.1:6357)` 把 Telegram 当前代理指向本地端口并持久化。**不再向 Telegram 原生代理列表注入哨兵条目、不再做哨兵地址翻译**（参考 Nekogram 谱系应用内设置形态） |
 | **配置与内核解耦** | `VlessConfig` 只负责 `vless://` → sing-box JSON，不碰内核；换内核不影响解析层 |
 | **未配置即直连** | `hasConfig()==false` 时不显示内置条目、不下发代理；`getLocalPort()<=0` 时**不设置代理**，回落直连。避免"端口 -1 导致连不上" |
 | **PlatformInterface 桩** | 本地代理无 TUN/VPN，15 个回调返回中性值（v1.13.21 只有 15 个方法，非新版 29 个） |
@@ -151,15 +151,16 @@ Telegram ──SOCKS5──► 127.0.0.1:6357 ──► sing-box ──VLESS─�
 | `helpers/VlessProxyManager.kt` | 对外唯一入口：哨兵地址、本地端口、`hasConfig()`、启停 |
 | `helpers/LibboxEngine.kt` | libbox 生命周期 + `CommandServerHandler` + `PlatformInterface` 桩 |
 | `VlessProxyService.java` | 前台 Service，承载内核、常驻通知 |
-| `settings/VlessSettingsActivity.java` | 设置页：填链接 + 开关 |
+| `settings/VlessSettingsActivity.java` | 设置页：填链接 + 开关（无 ProxyInfo 依赖的独立页，由 NekoSettings 进入） |
+| `settings/NekoSettingsActivity.java` | 新增“VLESS 代理”行 → 打开 `VlessSettingsActivity` |
 
 ### 5.3 已改动（接线）
 
 | 文件 | 改动 |
 |---|---|
-| `ConnectionsManager.java` | 3 处代理分支：`WebSocketHelper.*` → `VlessProxyManager.*`，并加 `port>0` 守卫 |
-| `SharedConfig.java` | 代理列表条目改用 `PROXY_SERVER`；`hasConfig()==false` 时不注入内置条目 |
-| `ProxyListActivity.java` | 条目展示/跳转指向 `VlessSettingsActivity` |
+| `ConnectionsManager.java` | 移除哨兵地址翻译；`init()` 末尾调用 `VlessProxyManager.startIfNeeded()`（重启后自动续用本地代理） |
+| `SharedConfig.java` | 移除“向原生代理列表注入内置条目”与保存时的跳过逻辑 |
+| `ProxyListActivity.java` | 还原为纯原生逻辑（不再区分哨兵条目） |
 | `NekoConfig.java` | 新增 `vlessEnabled` / `vlessLink` |
 | `build.gradle` | `implementation fileTree("libs")`（对齐 Momogram：`TMessagesProj/libs/` 下任意 AAR 自动纳入；并取代原 `compileOnly fileTree('libs')`，避免同 AAR 双 classpath） |
 | `AndroidManifest.xml` | 登记 `VlessProxyService` |

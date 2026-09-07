@@ -16,7 +16,6 @@ import androidx.recyclerview.widget.RecyclerView;
 import org.telegram.messenger.AndroidUtilities;
 import org.telegram.messenger.LocaleController;
 import org.telegram.messenger.R;
-import org.telegram.messenger.SharedConfig;
 import org.telegram.ui.ActionBar.AlertDialog;
 import org.telegram.ui.ActionBar.Theme;
 import org.telegram.ui.Cells.TextCheckCell;
@@ -35,11 +34,9 @@ public class VlessSettingsActivity extends BaseNekoSettingsActivity {
     private int linkRow;
     private int enableRow;
     private int descriptionRow;
-    private final SharedConfig.ProxyInfo currentProxyInfo;
 
-    public VlessSettingsActivity(SharedConfig.ProxyInfo proxyInfo) {
+    public VlessSettingsActivity() {
         super();
-        currentProxyInfo = proxyInfo;
     }
 
     @Override
@@ -121,7 +118,7 @@ public class VlessSettingsActivity extends BaseNekoSettingsActivity {
 
     @Override
     protected String getActionBarTitle() {
-        return currentProxyInfo.address;
+        return LocaleController.getString(R.string.VlessSettings);
     }
 
     @Override

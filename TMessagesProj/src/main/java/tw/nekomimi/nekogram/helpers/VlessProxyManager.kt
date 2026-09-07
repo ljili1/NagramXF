@@ -3,44 +3,33 @@ package tw.nekomimi.nekogram.helpers
 import android.content.Intent
 import org.telegram.messenger.ApplicationLoader
 import org.telegram.messenger.FileLog
+import org.telegram.messenger.SharedConfig
 import tw.nekomimi.nekogram.NekoConfig
 import tw.nekomimi.nekogram.VlessProxyService
 
 /**
- * Replaces the old WebSocket (Cloudflare) proxy helper.
+ * Manages the built-in VLESS proxy.
  *
- * Telegram is pointed at [PROXY_SERVER] (a sentinel address); when it asks for
- * the proxy, [getLocalPort] returns the local port where the sing-box engine
- * (running inside [VlessProxyService]) listens, and lazily starts the service.
+ * The proxy is a first-class entry of the app's own settings (NekoSettings →
+ * "VLESS 代理"), NOT a fake entry inside Telegram's native proxy list. Enabling
+ * starts the sing-box foreground service and then points Telegram's proxy at
+ * the local mixed inbound `127.0.0.1:[LOCAL_PORT]` through the ordinary
+ * [SharedConfig.setCurrentProxy] path, so it is persisted and automatically
+ * re-applied by Telegram's own `ConnectionsManager.init()` after a restart.
  */
 object VlessProxyManager {
-    const val PROXY_SERVER = "vless.nagramxf"
+
+    /** Local mixed (SOCKS5/HTTP) inbound port of the sing-box engine. */
     const val LOCAL_PORT = 6357
+
+    private var serviceRequestedThisRun = false
 
     @JvmStatic
     fun isEnabled(): Boolean = NekoConfig.vlessEnabled.Bool()
 
-    @JvmStatic
-    fun getProxyAddress(): String = PROXY_SERVER
-
-    /**
-     * Whether a usable VLESS link has been configured. When false the built-in
-     * proxy must not be advertised or applied — otherwise Telegram would be
-     * pointed at a local port that has no listener and fail to connect.
-     */
+    /** Whether a usable `vless://` link has been configured. */
     @JvmStatic
     fun hasConfig(): Boolean = NekoConfig.vlessLink.String().isNotBlank()
-
-    /**
-     * Local mixed SOCKS/HTTP inbound port. Returns -1 when no VLESS link is
-     * configured (callers must treat a value <= 0 as "direct connection").
-     */
-    @JvmStatic
-    fun getLocalPort(): Int {
-        if (!hasConfig()) return -1
-        ensureServiceStarted()
-        return LOCAL_PORT
-    }
 
     @JvmStatic
     fun getVlessLink(): String = NekoConfig.vlessLink.String()
@@ -50,13 +39,63 @@ object VlessProxyManager {
         NekoConfig.vlessLink.setConfigString(link)
     }
 
+    /**
+     * Enables or disables the built-in VLESS proxy.
+     *
+     * Enable: persist the flag, start the engine, then select
+     * `127.0.0.1:LOCAL_PORT` as Telegram's current proxy.
+     * Disable: stop the engine and clear Telegram's proxy.
+     */
     @JvmStatic
     fun setEnabled(enabled: Boolean) {
+        if (enabled && !hasConfig()) {
+            NekoConfig.vlessEnabled.setConfigBool(false)
+            FileLog.d("VlessProxyManager: refusing to enable without a vless:// link")
+            return
+        }
         NekoConfig.vlessEnabled.setConfigBool(enabled)
         if (enabled) {
+            serviceRequestedThisRun = true
             ensureServiceStarted()
+            applyLocalProxy()
         } else {
             stopService()
+            if (SharedConfig.isProxyEnabled()) {
+                SharedConfig.setProxyEnable(false)
+            }
+        }
+    }
+
+    /**
+     * Re-applies the proxy selection after the process restarted while VLESS was
+     * enabled. Called once from [org.telegram.messenger.ConnectionsManager.init].
+     */
+    @JvmStatic
+    fun startIfNeeded() {
+        if (isEnabled() && hasConfig() && !serviceRequestedThisRun) {
+            serviceRequestedThisRun = true
+            ensureServiceStarted()
+            applyLocalProxy()
+        }
+    }
+
+    /** Selects `127.0.0.1:LOCAL_PORT` as Telegram's current proxy (persisted). */
+    private fun applyLocalProxy() {
+        try {
+            val info = SharedConfig.ProxyInfo("127.0.0.1", LOCAL_PORT, "", "", "")
+            var found = false
+            for (existing in SharedConfig.getProxyList()) {
+                if (existing.address.equals(info.address, ignoreCase = true) && existing.port == info.port) {
+                    found = true
+                    break
+                }
+            }
+            if (!found) {
+                SharedConfig.addProxy(info)
+            }
+            SharedConfig.setCurrentProxy(info)
+        } catch (e: Throwable) {
+            FileLog.e(e)
         }
     }
 

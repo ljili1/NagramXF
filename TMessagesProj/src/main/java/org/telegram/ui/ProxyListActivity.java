@@ -75,7 +75,6 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 
-import tw.nekomimi.nekogram.helpers.VlessProxyManager;
 import tw.nekomimi.nekogram.utils.AlertUtil;
 import tw.nekomimi.nekogram.utils.ProxyUtil;
 
@@ -188,11 +187,7 @@ public class ProxyListActivity extends BaseFragment implements NotificationCente
             checkImageView.setContentDescription(getString(R.string.Edit));
             addView(checkImageView, LayoutHelper.createFrame(48, 48, (LocaleController.isRTL ? Gravity.LEFT : Gravity.RIGHT) | Gravity.TOP, 8, 8, 8, 0));
             checkImageView.setOnClickListener(v -> {
-                if (VlessProxyManager.PROXY_SERVER.equals(currentInfo.address)) {
-                    presentFragment(new tw.nekomimi.nekogram.settings.VlessSettingsActivity(currentInfo));
-                } else {
-                    presentFragment(new ProxySettingsActivity(currentInfo));
-                }
+                presentFragment(new ProxySettingsActivity(currentInfo));
             });
 
             checkBox = new CheckBox2(context, 21);
@@ -210,9 +205,7 @@ public class ProxyListActivity extends BaseFragment implements NotificationCente
         }
 
         public void setProxy(SharedConfig.ProxyInfo proxyInfo) {
-            if (VlessProxyManager.PROXY_SERVER.equals(proxyInfo.address)) {
-                textView.setText(LocaleController.getString(R.string.PublicProxy));
-            } else if (TextUtils.isEmpty(proxyInfo.address) || proxyInfo.port <= 0) {
+            if (TextUtils.isEmpty(proxyInfo.address) || proxyInfo.port <= 0) {
                 textView.setText(LocaleController.getString(R.string.ProxyInvalid));
             } else {
                 textView.setText(proxyInfo.address + ":" + proxyInfo.port);

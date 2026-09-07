@@ -2678,6 +2678,7 @@
     <string name="ProxyDetails">Proxy Details</string>
     <string name="Proxy">Proxy</string>
     <string name="VlessProxy">VLESS Proxy</string>
+    <string name="VlessSettings">VLESS Proxy</string>
     <string name="VlessProxyRunning">VLESS proxy is running</string>
     <string name="VlessLink">VLESS Link</string>
     <string name="VlessLinkHint">vless://uuid@host:port?security=reality&amp;...</string>

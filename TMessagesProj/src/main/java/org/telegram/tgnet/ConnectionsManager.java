@@ -693,17 +693,10 @@ FileLog.e(finalRequestObject + " got error " + error.code + " " + error.text);
         int proxyPort = preferences.getInt("proxy_port", 1080);
 
         if (preferences.getBoolean("proxy_enabled", false) && !TextUtils.isEmpty(proxyAddress)) {
-            if (VlessProxyManager.PROXY_SERVER.equals(proxyAddress)) {
-                int vlessPort = VlessProxyManager.getLocalPort();
-                if (vlessPort > 0) {
-                    native_setProxySettings(currentAccount, "127.0.0.1", vlessPort, "", "", "");
-                }
-                // No (valid) VLESS config -> leave the proxy unset so Telegram
-                // falls back to a direct connection instead of a dead local port.
-            } else {
-                native_setProxySettings(currentAccount, proxyAddress, proxyPort, proxyUsername, proxyPassword, proxySecret);
-            }
+            native_setProxySettings(currentAccount, proxyAddress, proxyPort, proxyUsername, proxyPassword, proxySecret);
         }
+        // Re-apply the built-in VLESS proxy after a process restart if it is still enabled.
+        VlessProxyManager.startIfNeeded();
         String installer = "";
         try {
             Context context = ApplicationLoader.applicationContext;
@@ -810,14 +803,6 @@ FileLog.e(finalRequestObject + " got error " + error.code + " " + error.text);
         }
         if (secret == null) {
             secret = "";
-        }
-        if (address.equals(VlessProxyManager.PROXY_SERVER)) {
-            int vlessPort = VlessProxyManager.getLocalPort();
-            if (vlessPort > 0) {
-                address = "127.0.0.1";
-                port = vlessPort;
-                secret = "";
-            }
         }
         return native_checkProxy(currentAccount, address, port, username, password, secret, requestTimeDelegate);
     }
@@ -1037,14 +1022,6 @@ FileLog.e(finalRequestObject + " got error " + error.code + " " + error.text);
         }
         if (secret == null) {
             secret = "";
-        }
-        if (address.equals(VlessProxyManager.PROXY_SERVER)) {
-            int vlessPort = VlessProxyManager.getLocalPort();
-            if (vlessPort > 0) {
-                address = "127.0.0.1";
-                port = vlessPort;
-                secret = "";
-            }
         }
 
         for (int a = 0; a < UserConfig.MAX_ACCOUNT_COUNT; a++) {

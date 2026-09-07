@@ -81,6 +81,7 @@ public class NekoSettingsActivity extends BaseNekoSettingsActivity {
     private ActionBarMenuItem overflowItem;
 
     private int generalRow;
+    private int proxyRow;
     private int appearanceRow;
     private int ayuMomentsRow;
     private int translatorRow;
@@ -99,6 +100,7 @@ public class NekoSettingsActivity extends BaseNekoSettingsActivity {
         super.updateRows();
 
         generalRow = addRow();
+        proxyRow = addRow();
         appearanceRow = addRow();
         ayuMomentsRow = addRow();
         translatorRow = addRow();
@@ -397,6 +399,8 @@ public class NekoSettingsActivity extends BaseNekoSettingsActivity {
             presentFragment(new NekoChatSettingsActivity());
         } else if (position == generalRow) {
             presentFragment(new NekoGeneralSettingsActivity());
+        } else if (position == proxyRow) {
+            presentFragment(new VlessSettingsActivity());
         } else if (position == appearanceRow) {
             presentFragment(new NekoAppearanceSettingsActivity());
         } else if (position == ayuMomentsRow) {
@@ -441,6 +445,8 @@ public class NekoSettingsActivity extends BaseNekoSettingsActivity {
                         textCell.setTextAndIcon(getString(R.string.Chat), R.drawable.msg_discussion, true);
                     } else if (position == generalRow) {
                         textCell.setTextAndIcon(getString(R.string.General), R.drawable.msg_media, true);
+                    } else if (position == proxyRow) {
+                        textCell.setTextAndIcon(getString(R.string.VlessSettings), R.drawable.ic_ab_other, true);
                     } else if (position == appearanceRow) {
                         textCell.setTextAndIcon(getString(R.string.Appearance), R.drawable.msg_theme, true);
                     } else if (position == ayuMomentsRow) {
