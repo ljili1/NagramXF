@@ -92,14 +92,21 @@ jobs:
 
       - name: Fetch sing-box binary
         if: steps.cache_singbox.outputs.cache-hit != 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
           mkdir -p TMessagesProj/src/main/jniLibs/arm64-v8a
           TARBALL="sing-box-${SINGBOX_VERSION}-android-arm64.tar.gz"
-          curl -fsSL --retry 3 -o /tmp/singbox.tar.gz \
-            "https://github.com/SagerNet/sing-box/releases/download/v${SINGBOX_VERSION}/${TARBALL}"
-          tar -xzf /tmp/singbox.tar.gz -C /tmp
-          BIN=$(find /tmp -type f -name 'sing-box' -path "*sing-box-${SINGBOX_VERSION}-android-arm64*" | head -n 1)
+          rm -rf /tmp/singbox && mkdir -p /tmp/singbox
+          echo "Fetching ${TARBALL} from SagerNet/sing-box v${SINGBOX_VERSION}"
+          gh release download "v${SINGBOX_VERSION}" \
+            --repo SagerNet/sing-box \
+            --pattern "${TARBALL}" \
+            --dir /tmp/singbox
+          ls -lh /tmp/singbox
+          tar -xzf "/tmp/singbox/${TARBALL}" -C /tmp/singbox
+          BIN=$(find /tmp/singbox -type f -name 'sing-box' | head -n 1)
           if [ -z "${BIN:-}" ]; then
             echo "::error::sing-box binary not found inside ${TARBALL}"
             exit 1
