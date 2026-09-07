@@ -161,7 +161,7 @@ Telegram ──SOCKS5──► 127.0.0.1:6357 ──► sing-box ──VLESS─�
 | `SharedConfig.java` | 代理列表条目改用 `PROXY_SERVER`；`hasConfig()==false` 时不注入内置条目 |
 | `ProxyListActivity.java` | 条目展示/跳转指向 `VlessSettingsActivity` |
 | `NekoConfig.java` | 新增 `vlessEnabled` / `vlessLink` |
-| `build.gradle` | `implementation files('libs/libbox.aar')` |
+| `build.gradle` | `implementation fileTree("libs")`（对齐 Momogram：`TMessagesProj/libs/` 下任意 AAR 自动纳入；并取代原 `compileOnly fileTree('libs')`，避免同 AAR 双 classpath） |
 | `AndroidManifest.xml` | 登记 `VlessProxyService` |
 | `values/strings.xml` | 新增 vless 相关文案 |
 | `.github/workflows/build_arm64.yml` | CI 拉取并缓存 libbox.aar（v1.13.21） |
@@ -172,6 +172,21 @@ Telegram ──SOCKS5──► 127.0.0.1:6357 ──► sing-box ──VLESS─�
 2. **内核可替换**：`LibboxEngine` 与 `VlessConfig` 解耦，后续换内核或换协议不动 UI/接线。
 3. **未配置零副作用**：无链接时行为等同无内置代理，不影响直连与启动。
 4. **构建可复现**：内核以固定版本 AAR 由 CI 获取并缓存，不入库、不依赖手工放置。
+
+### 5.5 对齐参考实现（Momogram / `im030/Momogram`）
+
+Momogram 作为"在 Telegram 客户端里内置代理内核"的开源参照，本次已对齐其三要素：
+
+| Momogram 做法 | 本项目的落地 |
+|---|---|
+| 内核 AAR 放 `TMessagesProj/libs/`（`libv2ray.aar` 等） | ✅ `libbox.aar` 放 `TMessagesProj/libs/` |
+| `implementation fileTree("libs")` 引入 | ✅ 已替换原 `files(...)` + `compileOnly fileTree` |
+| CI 构建/下载 AAR + `actions/cache` 缓存 | ✅ `gh release download` + cache（钉 `v1.13.21`） |
+
+已知差异（均为有意为之）：
+
+- Momogram 按 **flavor 门控**（仅 `full` 变体引入内核，FOSS/F-Droid 排除）；NagramXF 只有 `normal`/`plugin` 两个 full 变体，**无需门控**。若未来加 FOSS 变体，可仿照其 `sourceSets.all { if (name.startsWith("full")) ... }` 结构。
+- Momogram **从源码构建** AAR（`./run libs v2ray`，gomobile）；本项目用第三方预编译 `libbox.aar`。若要消除该第三方信任依赖，可改为 CI 内 gomobile 自构建（成本约 10–20 分钟/次，且需随 sing-box 上游钉 commit）。
 
 ---
 
