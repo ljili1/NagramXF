@@ -229,6 +229,7 @@ public class NekoConfig {
     // --- VLESS Proxy (sing-box) ---
     public static ConfigItem vlessEnabled = addConfig("vlessEnabled", configTypeBool, false);
     public static ConfigItem vlessLink = addConfig("vlessLink", configTypeString, "");
+    public static ConfigItem vlessNodes = addConfig("vlessNodes", configTypeString, ""); // JSON array of vless:// links
     private static ConfigItem ghostDelegate(String key, boolean defaultValue,
                                             java.util.function.BooleanSupplier getter,
                                             java.util.function.Consumer<Boolean> setter) {

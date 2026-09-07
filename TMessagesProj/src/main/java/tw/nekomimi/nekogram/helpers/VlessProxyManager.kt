@@ -41,6 +41,86 @@ object VlessProxyManager {
         NekoConfig.vlessLink.setConfigString(link)
     }
 
+    // --- Node list (NekoX-style management) ---
+
+    /** Saved `vless://` nodes, oldest first. Empty when none have been added. */
+    @JvmStatic
+    fun getNodes(): ArrayList<String> {
+        val raw = NekoConfig.vlessNodes.String()
+        val list = ArrayList<String>()
+        if (raw.isBlank()) return list
+        try {
+            val arr = org.json.JSONArray(raw)
+            for (i in 0 until arr.length()) {
+                arr.optString(i).takeIf { it.isNotBlank() }?.let { list.add(it) }
+            }
+        } catch (e: Throwable) {
+            FileLog.e(e)
+        }
+        return list
+    }
+
+    private fun saveNodes(nodes: List<String>) {
+        try {
+            val arr = org.json.JSONArray()
+            nodes.forEach { arr.put(it) }
+            NekoConfig.vlessNodes.setConfigString(arr.toString())
+        } catch (e: Throwable) {
+            FileLog.e(e)
+        }
+    }
+
+    /** Adds a valid, not-yet-present node. Returns true when added. */
+    @JvmStatic
+    fun addNode(link: String): Boolean {
+        val trimmed = link.trim()
+        if (trimmed.isEmpty() || VlessConfig.parseVless(trimmed) == null) return false
+        val nodes = getNodes()
+        if (nodes.any { it == trimmed }) return false
+        nodes.add(trimmed)
+        saveNodes(nodes)
+        if (!hasConfig()) {
+            setVlessLink(trimmed)
+        }
+        return true
+    }
+
+    /** Removes a node. When the current selection is removed, selects the first remaining node. */
+    @JvmStatic
+    fun removeNode(link: String) {
+        val nodes = getNodes()
+        if (!nodes.remove(link)) return
+        saveNodes(nodes)
+        if (getVlessLink() == link) {
+            if (nodes.isNotEmpty()) {
+                setVlessLink(nodes[0])
+            } else {
+                setVlessLink("")
+                if (isEnabled()) {
+                    setEnabled(false)
+                }
+            }
+        }
+    }
+
+    /** Selects [link] as the active node and makes sure the proxy is running. */
+    @JvmStatic
+    fun selectNode(link: String) {
+        if (VlessConfig.parseVless(link) == null) return
+        val nodes = getNodes()
+        if (nodes.none { it == link }) {
+            nodes.add(0, link)
+            saveNodes(nodes)
+        }
+        setVlessLink(link)
+        if (!isEnabled()) {
+            setEnabled(true)
+        } else {
+            // Already enabled: (re)start the engine with the newly selected node.
+            ensureServiceStarted()
+        }
+    }
+
     /**
      * Enables or disables the built-in VLESS proxy.
      *
