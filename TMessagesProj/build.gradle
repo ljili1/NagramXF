@@ -475,6 +475,9 @@ dependencies {
         chaquopyTargetJni "com.chaquo.python:target:${chaquopyTargetVersion}:${abi}@zip"
     }
 
+    // WebSocket (Cloudflare) built-in proxy — restored
+    implementation project(':libs:tcp2ws')
+
     // VLESS proxy (sing-box libbox).
     // Any AAR dropped into TMessagesProj/libs/ is picked up — the same pattern other
     // Telegram forks (e.g. Momogram with libv2ray.aar / ss-rust-release.aar) use to
