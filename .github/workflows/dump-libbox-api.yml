@@ -5,7 +5,7 @@ name: Dump libbox API (temp)
 on:
   push:
     paths:
-      - 'tools/dump-libbox-api.trigger'
+      - 'Tools/dump-libbox-api.trigger'
 
 permissions:
   contents: read
