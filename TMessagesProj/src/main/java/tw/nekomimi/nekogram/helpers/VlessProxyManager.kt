@@ -3,6 +3,7 @@ package tw.nekomimi.nekogram.helpers
 import android.content.Intent
 import org.telegram.messenger.ApplicationLoader
 import org.telegram.messenger.FileLog
+import org.telegram.messenger.MessagesController
 import org.telegram.messenger.SharedConfig
 import tw.nekomimi.nekogram.NekoConfig
 import tw.nekomimi.nekogram.VlessProxyService
@@ -40,6 +41,32 @@ object VlessProxyManager {
     fun setVlessLink(link: String) {
         NekoConfig.vlessLink.setConfigString(link)
     }
+
+    // --- Display helpers (proxy list / node manager UI) ---
+
+    /** Human name carried in the link fragment (`vless://...#name`), or "". */
+    @JvmStatic
+    fun nodeName(link: String): String {
+        val hash = link.lastIndexOf('#')
+        return if (hash >= 0 && hash < link.length - 1) link.substring(hash + 1).trim() else ""
+    }
+
+    /** `host:port` from a valid link, or the raw link when unparsable. */
+    @JvmStatic
+    fun nodeServerPort(link: String): String {
+        val parsed = VlessConfig.parseVless(link) ?: return link
+        val server = parsed.optString("server")
+        val port = parsed.optInt("server_port")
+        return if (server.isBlank() || port <= 0) link else "$server:$port"
+    }
+
+    /** Row title for a node: fragment name, falling back to host:port. */
+    @JvmStatic
+    fun nodeTitle(link: String): String = nodeName(link).ifBlank { nodeServerPort(link) }
+
+    /** True when [link] is the node the engine is currently using. */
+    @JvmStatic
+    fun isActiveNode(link: String): Boolean = isEnabled() && getVlessLink() == link
 
     // --- Node list (NekoX-style management) ---
 
@@ -160,13 +187,27 @@ object VlessProxyManager {
             applyLocalProxy()
         } else {
             stopService()
-            if (SharedConfig.isProxyEnabled()) {
-                SharedConfig.setProxyEnable(false)
+            try {
+                // Clear the stored proxy so the "Use proxy" master switch cannot
+                // later point Telegram at the stopped local engine.
+                MessagesController.getGlobalMainSettings().edit()
+                    .remove("proxy_ip")
+                    .remove("proxy_port")
+                    .putBoolean("proxy_enabled", false)
+                    .apply()
+            } catch (e: Throwable) {
+                FileLog.e(e)
             }
+            SharedConfig.setCurrentProxy(null)
         }
     }
 
-    /** Selects `127.0.0.1:LOCAL_PORT` as Telegram's current proxy (persisted). */
+    /**
+     * Selects `127.0.0.1:LOCAL_PORT` as Telegram's current proxy and persists
+     * the full native selection (proxy_ip/proxy_port + proxy_enabled), so that
+     * [org.telegram.tgnet.ConnectionsManager.init] re-applies it after a restart
+     * the same way a user-tapped proxy row would.
+     */
     private fun applyLocalProxy() {
         try {
             val info = SharedConfig.ProxyInfo("127.0.0.1", LOCAL_PORT, "", "", "")
@@ -180,6 +221,17 @@ object VlessProxyManager {
             if (!found) {
                 SharedConfig.addProxy(info)
             }
+            // Persist proxy_ip/proxy_port exactly like ProxyListActivity does when
+            // the user enables a proxy row. Without these, ConnectionsManager.init()
+            // would not know the local port after a process restart.
+            MessagesController.getGlobalMainSettings().edit()
+                .putString("proxy_ip", info.address)
+                .putInt("proxy_port", info.port)
+                .putString("proxy_user", "")
+                .putString("proxy_pass", "")
+                .putString("proxy_secret", "")
+                .putBoolean("proxy_enabled", true)
+                .apply()
             SharedConfig.setCurrentProxy(info)
         } catch (e: Throwable) {
             FileLog.e(e)
