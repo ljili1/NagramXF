@@ -14,15 +14,17 @@ import tw.nekomimi.nekogram.VlessProxyService
  * "VLESS 代理"), NOT a fake entry inside Telegram's native proxy list. Enabling
  * starts the sing-box foreground service and then points Telegram's proxy at
  * the local mixed inbound `127.0.0.1:[LOCAL_PORT]` through the ordinary
- * [SharedConfig.setCurrentProxy] path, so it is persisted and automatically
- * re-applied by Telegram's own `ConnectionsManager.init()` after a restart.
+ * [SharedConfig.setCurrentProxy] path, so the selection is persisted.
+ *
+ * NOTE: the engine is started only when the user explicitly enables VLESS from
+ * the settings page — it is deliberately NOT auto-started from
+ * `ConnectionsManager.init()`, so a libbox runtime problem cannot crash the app
+ * on launch.
  */
 object VlessProxyManager {
 
     /** Local mixed (SOCKS5/HTTP) inbound port of the sing-box engine. */
     const val LOCAL_PORT = 6357
-
-    private var serviceRequestedThisRun = false
 
     @JvmStatic
     fun isEnabled(): Boolean = NekoConfig.vlessEnabled.Bool()
@@ -55,7 +57,6 @@ object VlessProxyManager {
         }
         NekoConfig.vlessEnabled.setConfigBool(enabled)
         if (enabled) {
-            serviceRequestedThisRun = true
             ensureServiceStarted()
             applyLocalProxy()
         } else {
@@ -63,19 +64,6 @@ object VlessProxyManager {
             if (SharedConfig.isProxyEnabled()) {
                 SharedConfig.setProxyEnable(false)
             }
-        }
-    }
-
-    /**
-     * Re-applies the proxy selection after the process restarted while VLESS was
-     * enabled. Called once from [org.telegram.messenger.ConnectionsManager.init].
-     */
-    @JvmStatic
-    fun startIfNeeded() {
-        if (isEnabled() && hasConfig() && !serviceRequestedThisRun) {
-            serviceRequestedThisRun = true
-            ensureServiceStarted()
-            applyLocalProxy()
         }
     }
 

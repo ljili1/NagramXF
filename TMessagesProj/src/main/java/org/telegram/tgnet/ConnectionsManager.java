@@ -85,7 +85,6 @@ import tw.nekomimi.nekogram.NekoConfig;
 import tw.nekomimi.nekogram.ErrorDatabase;
 
 import tw.nekomimi.nekogram.NekoXConfig;
-import tw.nekomimi.nekogram.helpers.VlessProxyManager;
 import tw.nekomimi.nekogram.utils.DnsFactory;
 import tw.nekomimi.nekogram.utils.ProxyUtil;
 import xyz.nextalone.nagram.NaConfig;
@@ -695,8 +694,6 @@ FileLog.e(finalRequestObject + " got error " + error.code + " " + error.text);
         if (preferences.getBoolean("proxy_enabled", false) && !TextUtils.isEmpty(proxyAddress)) {
             native_setProxySettings(currentAccount, proxyAddress, proxyPort, proxyUsername, proxyPassword, proxySecret);
         }
-        // Re-apply the built-in VLESS proxy after a process restart if it is still enabled.
-        VlessProxyManager.startIfNeeded();
         String installer = "";
         try {
             Context context = ApplicationLoader.applicationContext;
