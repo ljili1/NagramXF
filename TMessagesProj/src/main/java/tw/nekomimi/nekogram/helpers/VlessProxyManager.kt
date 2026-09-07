@@ -85,6 +85,25 @@ object VlessProxyManager {
         return true
     }
 
+    /**
+     * Parses a block of text (pasted links or a fetched subscription body) into
+     * nodes. Every `vless://...` occurrence is validated and added once.
+     * @return number of nodes newly added
+     */
+    @JvmStatic
+    fun importFromText(text: String): Int {
+        var added = 0
+        text.lineSequence().forEach { line ->
+            val idx = line.indexOf("vless://", ignoreCase = true)
+            if (idx < 0) return@forEach
+            val candidate = line.substring(idx).trim()
+            val end = candidate.indexOfAny(charArrayOf(' ', '\t'))
+            val link = if (end >= 0) candidate.substring(0, end) else candidate
+            if (addNode(link)) added++
+        }
+        return added
+    }
+
     /** Removes a node. When the current selection is removed, selects the first remaining node. */
     @JvmStatic
     fun removeNode(link: String) {

@@ -64,11 +64,18 @@ public class VlessProxyService extends Service {
             String config = VlessConfig.buildConfig(link, VlessProxyManager.LOCAL_PORT);
             if (config == null) {
                 FileLog.e("VlessProxyService: invalid or empty vless config");
+                stopSelf();
                 return;
             }
-            LibboxEngine.INSTANCE.start(this, config);
+            if (!LibboxEngine.INSTANCE.start(this, config)) {
+                // Engine failed to start — do not leave Telegram pointed at a dead
+                // local port; disable VLESS so the app falls back to direct.
+                FileLog.e("VlessProxyService: sing-box failed to start, disabling VLESS");
+                VlessProxyManager.setEnabled(false);
+            }
         } catch (Throwable e) {
             FileLog.e(e);
+            stopSelf();
         }
     }
 

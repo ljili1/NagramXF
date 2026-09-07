@@ -68,10 +68,23 @@ object VlessConfig {
             if (at < 0) return null
             val uuid = authority.substring(0, at)
             val hostPort = authority.substring(at + 1)
-            val colon = hostPort.lastIndexOf(':')
-            if (colon < 0) return null
-            val host = hostPort.substring(0, colon)
-            val port = hostPort.substring(colon + 1).toIntOrNull() ?: return null
+
+            // host:port, tolerating bare IPv6 hosts like [2001:db8::1]:443
+            var host: String
+            var portStr: String
+            if (hostPort.startsWith("[")) {
+                val end = hostPort.indexOf(']')
+                if (end < 0) return null
+                host = hostPort.substring(1, end)
+                val rest = hostPort.substring(end + 1)
+                portStr = if (rest.startsWith(":")) rest.substring(1) else ""
+            } else {
+                val colon = hostPort.lastIndexOf(':')
+                if (colon < 0) return null
+                host = hostPort.substring(0, colon)
+                portStr = hostPort.substring(colon + 1)
+            }
+            val port = portStr.toIntOrNull() ?: return null
 
             val params = parseQuery(query)
 
