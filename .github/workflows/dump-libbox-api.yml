@@ -1,0 +1,52 @@
+name: Dump libbox API (temp)
+
+# Temporary helper: prints the exact Java API of the sing-box libbox AAR
+# so it can be bound against without a local Android build.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  dump:
+    name: Dump libbox Java API
+    runs-on: ubuntu-latest
+    env:
+      LIBBOX_TAG: "v1.13.21"
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+
+      - name: Download libbox AAR
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/aar
+          gh release download "${LIBBOX_TAG}" \
+            --repo proother/sing-box-lib \
+            --pattern 'libbox-android.aar.zip' \
+            --dir /tmp/aar
+          unzip -o -j /tmp/aar/libbox-android.aar.zip -d /tmp/aar
+          ls -lh /tmp/aar
+
+      - name: Extract classes.jar
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/cls/x
+          unzip -o -j /tmp/aar/libbox.aar 'classes.jar' -d /tmp/cls
+          cd /tmp/cls/x && unzip -o ../classes.jar
+          echo "=== ALL CLASSES ==="
+          find /tmp/cls/x -name '*.class' | sed 's|/tmp/cls/x/||; s|\.class$||; s|/|.|g' | sort
+
+      - name: javap libbox API
+        run: |
+          set -euo pipefail
+          cd /tmp/cls/x
+          CLASSES=$(find ./io -name '*.class' ! -name '*$*' | sed 's|^\./||; s|\.class$||; s|/|.|g' | sort)
+          echo "===== BEGIN API ====="
+          javap -p -classpath . $CLASSES
+          echo "===== END API ====="
