@@ -16,6 +16,7 @@ import io.nekohasekai.libbox.StringIterator
 import io.nekohasekai.libbox.SystemProxyStatus
 import io.nekohasekai.libbox.TunOptions
 import io.nekohasekai.libbox.WIFIState
+import org.telegram.messenger.ApplicationLoader
 import org.telegram.messenger.FileLog
 
 /**
