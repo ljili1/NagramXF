@@ -92,6 +92,24 @@ object VlessProxyManager {
         }
     }
 
+    // --- Ping cache (proxy list shows the last measured latency) ---
+
+    private val pingCache = HashMap<String, Long>()
+
+    /** Cached TCP latency in ms, or -1 when the node has not been measured yet. */
+    @JvmStatic
+    fun getPing(link: String): Long = pingCache[link] ?: -1
+
+    /** Stores [ping] for [link]; a negative value clears the cached entry. */
+    @JvmStatic
+    fun setPing(link: String, ping: Long) {
+        if (ping < 0) {
+            pingCache.remove(link)
+        } else {
+            pingCache[link] = ping
+        }
+    }
+
     // --- Node list (NekoX-style management) ---
 
     /** Saved `vless://` nodes, oldest first. Empty when none have been added. */

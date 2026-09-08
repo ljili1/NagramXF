@@ -49,6 +49,7 @@ import org.telegram.messenger.ProxyRotationController;
 import org.telegram.messenger.R;
 import org.telegram.messenger.SharedConfig;
 import org.telegram.messenger.SvgHelper;
+import org.telegram.messenger.Utilities;
 import org.telegram.tgnet.ConnectionsManager;
 import org.telegram.ui.ActionBar.ActionBar;
 import org.telegram.ui.ActionBar.ActionBarMenu;
@@ -79,6 +80,7 @@ import tw.nekomimi.nekogram.helpers.VlessProxyManager;
 import tw.nekomimi.nekogram.helpers.WebSocketHelper;
 import tw.nekomimi.nekogram.utils.AlertUtil;
 import tw.nekomimi.nekogram.utils.ProxyUtil;
+import tw.nekomimi.nekogram.utils.VlessImportHelper;
 
 public class ProxyListActivity extends BaseFragment implements NotificationCenter.NotificationCenterDelegate {
     private final static boolean IS_PROXY_ROTATION_AVAILABLE = true;
@@ -217,7 +219,7 @@ public class ProxyListActivity extends BaseFragment implements NotificationCente
             addView(checkImageView, LayoutHelper.createFrame(48, 48, (LocaleController.isRTL ? Gravity.LEFT : Gravity.RIGHT) | Gravity.TOP, 8, 8, 8, 0));
             checkImageView.setOnClickListener(v -> {
                 if (vlessLink != null) {
-                    presentFragment(new tw.nekomimi.nekogram.settings.VlessSettingsActivity());
+                    presentFragment(new tw.nekomimi.nekogram.settings.VlessNodeEditActivity(vlessLink));
                 } else if (WebSocketHelper.proxyServer.equals(currentInfo.address)) {
                     presentFragment(new tw.nekomimi.nekogram.settings.WsSettingsActivity(currentInfo));
                 } else {
@@ -267,6 +269,10 @@ public class ProxyListActivity extends BaseFragment implements NotificationCente
             if (isVlessRow) {
                 boolean active = VlessProxyManager.isActiveNode(vlessLink);
                 String serverPort = VlessProxyManager.nodeServerPort(vlessLink);
+                long ping = VlessProxyManager.getPing(vlessLink);
+                if (ping >= 0) {
+                    serverPort = serverPort + ", " + LocaleController.formatString("Ping", R.string.Ping, ping);
+                }
                 String status;
                 int colorKey;
                 if (active) {
@@ -278,7 +284,7 @@ public class ProxyListActivity extends BaseFragment implements NotificationCente
                         status = serverPort + ", " + getString(R.string.Connecting);
                     }
                 } else {
-                    colorKey = Theme.key_windowBackgroundWhiteGrayText2;
+                    colorKey = ping >= 0 ? Theme.key_windowBackgroundWhiteGreenText : Theme.key_windowBackgroundWhiteGrayText2;
                     status = serverPort;
                 }
                 color = Theme.getColor(colorKey);
@@ -505,6 +511,9 @@ public class ProxyListActivity extends BaseFragment implements NotificationCente
     private final static int na_menu_retest_ping = 1004;
     private final static int na_menu_delete_all = 1005;
     private final static int na_menu_delete_unavailable = 1006;
+    private final static int na_menu_vless_add = 1007;
+    private final static int na_menu_vless_subscribe = 1008;
+    private final static int na_menu_vless_test = 1009;
 
     @Override
     public View createView(Context context) {
@@ -530,6 +539,12 @@ public class ProxyListActivity extends BaseFragment implements NotificationCente
         otherItem.setContentDescription(LocaleController.getString("AccDescrMoreOptions", R.string.AccDescrMoreOptions));
         otherItem.addSubItem(na_menu_add_input_telegram, LocaleController.getString("AddProxyTelegram", R.string.AddProxyTelegram)).setOnClickListener((v) -> presentFragment(new ProxySettingsActivity()));
         otherItem.addSubItem(na_menu_add_import_from_clipboard, LocaleController.getString("ImportProxyFromClipboard", R.string.ImportProxyFromClipboard)).setOnClickListener((v) -> ProxyUtil.importFromClipboard(getParentActivity()));
+        otherItem.addSubItem(na_menu_vless_add, LocaleController.getString(R.string.VlessAddNode)).setOnClickListener((v) ->
+                presentFragment(new tw.nekomimi.nekogram.settings.VlessNodeEditActivity()));
+        otherItem.addSubItem(na_menu_vless_subscribe, LocaleController.getString(R.string.VlessImportSubscription)).setOnClickListener((v) ->
+                VlessImportHelper.showSubscriptionDialog(ProxyListActivity.this, () -> updateRows(true)));
+        otherItem.addSubItem(na_menu_vless_test, LocaleController.getString(R.string.VlessTestNodes)).setOnClickListener((v) ->
+                testVlessNodes());
         otherItem.addSubItem(na_menu_retest_ping, LocaleController.getString("RetestPing", R.string.RetestPing)).setOnClickListener((v) -> {
             checkProxyList(true);
             for (int a = proxyStartRow; a < proxyEndRow; a++) {
@@ -786,7 +801,9 @@ public class ProxyListActivity extends BaseFragment implements NotificationCente
                     }
                 }
             } else if (position == vlessManageRow) {
-                presentFragment(new tw.nekomimi.nekogram.settings.VlessSettingsActivity());
+                // 8.x structure: the list page is the only carrier, "add" opens
+                // the field form (same as AddProxy -> ProxySettingsActivity).
+                presentFragment(new tw.nekomimi.nekogram.settings.VlessNodeEditActivity());
             } else if (position == proxyAddRow) {
                 presentFragment(new ProxySettingsActivity());
             } else if (position == deleteAllRow) {
@@ -1048,6 +1065,36 @@ public class ProxyListActivity extends BaseFragment implements NotificationCente
         if (notify && listAdapter != null) {
             listAdapter.notifyDataSetChanged();
         }
+    }
+
+    /**
+     * Measures TCP latency for every VLESS node on the global queue and shows
+     * the result on the node row (the native page pings native proxies the same
+     * way through [checkProxyList]).
+     */
+    private void testVlessNodes() {
+        if (vlessNodes.isEmpty()) {
+            return;
+        }
+        final ArrayList<String> nodes = new ArrayList<>(vlessNodes);
+        Utilities.globalQueue.postRunnable(() -> {
+            for (String link : nodes) {
+                if (link == null) {
+                    continue;
+                }
+                long ping = VlessProxyManager.pingNode(link);
+                AndroidUtilities.runOnUIThread(() -> {
+                    VlessProxyManager.setPing(link, ping);
+                    if (listAdapter == null || vlessStartRow < 0) {
+                        return;
+                    }
+                    int idx = vlessNodes.indexOf(link);
+                    if (idx >= 0) {
+                        listAdapter.notifyItemChanged(vlessStartRow + idx);
+                    }
+                });
+            }
+        });
     }
 
     private void checkProxyList() {

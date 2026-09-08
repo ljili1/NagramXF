@@ -48,6 +48,7 @@ import org.telegram.ui.BasePermissionsActivity;
 import org.telegram.ui.Cells.SettingsSearchCell;
 import org.telegram.ui.Cells.TextCell;
 import org.telegram.ui.Components.EditTextBoldCursor;
+import org.telegram.ui.ProxyListActivity;
 import org.telegram.ui.Components.LayoutHelper;
 import org.telegram.ui.Components.RecyclerListView;
 import org.telegram.ui.DocumentSelectActivity;
@@ -400,7 +401,8 @@ public class NekoSettingsActivity extends BaseNekoSettingsActivity {
         } else if (position == generalRow) {
             presentFragment(new NekoGeneralSettingsActivity());
         } else if (position == proxyRow) {
-            presentFragment(new VlessSettingsActivity());
+            // VLESS is managed inside the native proxy page (8.x front end).
+            presentFragment(new ProxyListActivity());
         } else if (position == appearanceRow) {
             presentFragment(new NekoAppearanceSettingsActivity());
         } else if (position == ayuMomentsRow) {
