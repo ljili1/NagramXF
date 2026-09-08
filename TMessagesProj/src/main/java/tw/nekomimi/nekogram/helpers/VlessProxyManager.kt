@@ -155,7 +155,7 @@ object VlessProxyManager {
         return added
     }
 
-    /** Removes a node. When the current selection is removed, selects the first remaining node. */
+    /** Removes a node. When the current selection is removed, hot-switches to the first remaining node. */
     @JvmStatic
     fun removeNode(link: String) {
         val nodes = getNodes()
@@ -164,6 +164,16 @@ object VlessProxyManager {
         if (getVlessLink() == link) {
             if (nodes.isNotEmpty()) {
                 setVlessLink(nodes[0])
+                if (isEnabled()) {
+                    // The engine was running the removed node: hot-reload it onto
+                    // the next node so Telegram stays connected.
+                    val config = VlessConfig.buildConfig(nodes[0], LOCAL_PORT)
+                    if (config != null && LibboxEngine.reload(config)) {
+                        applyLocalProxy()
+                    } else {
+                        ensureServiceStarted()
+                    }
+                }
             } else {
                 setVlessLink("")
                 if (isEnabled()) {

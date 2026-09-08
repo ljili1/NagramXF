@@ -127,6 +127,8 @@ public class ProxyListActivity extends BaseFragment implements NotificationCente
     private ActionBarMenuItem deleteMenuItem;
 
     private List<SharedConfig.ProxyInfo> selectedItems = new ArrayList<>();
+    // VLESS nodes selected in the same actionMode as native proxies.
+    private List<String> selectedVless = new ArrayList<>();
     private List<SharedConfig.ProxyInfo> proxyList = new ArrayList<>();
     private boolean wasCheckedAllList;
 
@@ -477,8 +479,11 @@ public class ProxyListActivity extends BaseFragment implements NotificationCente
         NotificationCenter.getInstance(currentAccount).addObserver(this, NotificationCenter.didUpdateConnectionState);
 
         final SharedPreferences preferences = MessagesController.getGlobalMainSettings();
-        useProxySettings = preferences.getBoolean("proxy_enabled", false) && !SharedConfig.proxyList.isEmpty();
-        useProxyForCalls = preferences.getBoolean("proxy_enabled_calls", false);
+        boolean proxyEnabledPref = preferences.getBoolean("proxy_enabled", false);
+        // The VLESS engine keeps the master switch on even when no native proxy
+        // rows exist (only the hidden 127.0.0.1 shadow entry is stored).
+        useProxySettings = VlessProxyManager.isEnabled() || proxyEnabledPref && !SharedConfig.proxyList.isEmpty();
+        useProxyForCalls = proxyEnabledPref && preferences.getBoolean("proxy_enabled_calls", false);
 
         updateRows(true);
 
@@ -539,7 +544,16 @@ public class ProxyListActivity extends BaseFragment implements NotificationCente
                 LocaleController.getString("DeleteAllServer", R.string.DeleteAllServer),
                 R.drawable.msg_delete, LocaleController.getString("Delete", R.string.Delete),
                 true, () -> {
+                    // Deleting every native server must not leave the VLESS engine
+                    // running against a deleted shadow entry.
+                    if (VlessProxyManager.isEnabled()) {
+                        VlessProxyManager.setEnabled(false);
+                    }
                     SharedConfig.deleteAllProxy();
+                    if (SharedConfig.currentProxy == null) {
+                        useProxySettings = false;
+                        useProxyForCalls = false;
+                    }
                     updateRows(true);
                 })
         );
@@ -550,6 +564,10 @@ public class ProxyListActivity extends BaseFragment implements NotificationCente
                     true, () -> {
                         for (SharedConfig.ProxyInfo info : SharedConfig.getProxyList()) {
                             if (info.checking) {
+                                continue;
+                            }
+                            // Never remove the internal 127.0.0.1 shadow entry.
+                            if ("127.0.0.1".equals(info.address) && info.port == VlessProxyManager.LOCAL_PORT) {
                                 continue;
                             }
                             if (!info.available) {
@@ -591,6 +609,42 @@ public class ProxyListActivity extends BaseFragment implements NotificationCente
         listView.setAdapter(listAdapter);
         listView.setOnItemClickListener((view, position) -> {
             if (position == useProxyRow) {
+                // VLESS-aware master switch. The switch controls whichever proxy
+                // scheme is active: the built-in VLESS engine when it is running,
+                // otherwise a saved native proxy.
+                if (VlessProxyManager.isEnabled()) {
+                    // Turning the VLESS engine off.
+                    VlessProxyManager.setEnabled(false);
+                    useProxySettings = false;
+                    useProxyForCalls = false;
+                    TextCheckCell vlessSwitch = (TextCheckCell) view;
+                    vlessSwitch.setChecked(false);
+                    updateRows(true);
+                    NotificationCenter.getGlobalInstance().removeObserver(ProxyListActivity.this, NotificationCenter.proxySettingsChanged);
+                    NotificationCenter.getGlobalInstance().postNotificationName(NotificationCenter.proxySettingsChanged);
+                    NotificationCenter.getGlobalInstance().addObserver(ProxyListActivity.this, NotificationCenter.proxySettingsChanged);
+                    return;
+                }
+                if (!useProxySettings && VlessProxyManager.hasConfig()) {
+                    // Turning on: a VLESS node is configured, so boot the engine
+                    // (never auto-enable the stopped 127.0.0.1 shadow entry).
+                    VlessProxyManager.selectNode(VlessProxyManager.getVlessLink());
+                    useProxySettings = true;
+                    useProxyForCalls = false;
+                    TextCheckCell vlessSwitch = (TextCheckCell) view;
+                    vlessSwitch.setChecked(true);
+                    updateRows(false);
+                    NotificationCenter.getGlobalInstance().removeObserver(ProxyListActivity.this, NotificationCenter.proxySettingsChanged);
+                    NotificationCenter.getGlobalInstance().postNotificationName(NotificationCenter.proxySettingsChanged);
+                    NotificationCenter.getGlobalInstance().addObserver(ProxyListActivity.this, NotificationCenter.proxySettingsChanged);
+                    for (int a = vlessStartRow; a < vlessEndRow; a++) {
+                        RecyclerListView.Holder h = (RecyclerListView.Holder) listView.findViewHolderForAdapterPosition(a);
+                        if (h != null) {
+                            ((TextDetailProxyCell) h.itemView).updateStatus();
+                        }
+                    }
+                    return;
+                }
                 if (SharedConfig.currentProxy == null) {
                     if (!proxyList.isEmpty()) {
                         SharedConfig.currentProxy = proxyList.get(0);
@@ -657,9 +711,13 @@ public class ProxyListActivity extends BaseFragment implements NotificationCente
                 editor.putBoolean("proxy_enabled_calls", useProxyForCalls);
                 editor.commit();
             } else if (position >= proxyStartRow && position < proxyEndRow) {
-                if (!selectedItems.isEmpty()) {
+                if (!selectedItems.isEmpty() || !selectedVless.isEmpty()) {
                     listAdapter.toggleSelected(position);
                     return;
+                }
+                // Native proxy takes over: stop the VLESS engine if it was running.
+                if (VlessProxyManager.isEnabled()) {
+                    VlessProxyManager.setEnabled(false);
                 }
                 SharedConfig.ProxyInfo info = proxyList.get(position - proxyStartRow);
                 useProxySettings = true;
@@ -684,6 +742,12 @@ public class ProxyListActivity extends BaseFragment implements NotificationCente
                         cell.updateStatus();
                     }
                 }
+                for (int a = vlessStartRow; a < vlessEndRow; a++) {
+                    RecyclerListView.Holder h = (RecyclerListView.Holder) listView.findViewHolderForAdapterPosition(a);
+                    if (h != null) {
+                        ((TextDetailProxyCell) h.itemView).updateStatus();
+                    }
+                }
                 updateRows(false);
                 RecyclerListView.Holder holder = (RecyclerListView.Holder) listView.findViewHolderForAdapterPosition(useProxyRow);
                 if (holder != null) {
@@ -692,7 +756,8 @@ public class ProxyListActivity extends BaseFragment implements NotificationCente
                 }
                 ConnectionsManager.setProxySettings(useProxySettings, SharedConfig.currentProxy.address, SharedConfig.currentProxy.port, SharedConfig.currentProxy.username, SharedConfig.currentProxy.password, SharedConfig.currentProxy.secret);
             } else if (position >= vlessStartRow && position < vlessEndRow) {
-                if (!selectedItems.isEmpty()) {
+                if (!selectedItems.isEmpty() || !selectedVless.isEmpty()) {
+                    listAdapter.toggleSelected(position);
                     return;
                 }
                 String link = vlessNodes.get(position - vlessStartRow);
@@ -705,6 +770,14 @@ public class ProxyListActivity extends BaseFragment implements NotificationCente
                 if (holder != null) {
                     TextCheckCell textCheckCell = (TextCheckCell) holder.itemView;
                     textCheckCell.setChecked(true);
+                }
+                for (int a = proxyStartRow; a < proxyEndRow; a++) {
+                    RecyclerListView.Holder h = (RecyclerListView.Holder) listView.findViewHolderForAdapterPosition(a);
+                    if (h != null) {
+                        TextDetailProxyCell cell = (TextDetailProxyCell) h.itemView;
+                        cell.setChecked(false);
+                        cell.updateStatus();
+                    }
                 }
                 for (int a = vlessStartRow; a < vlessEndRow; a++) {
                     RecyclerListView.Holder h = (RecyclerListView.Holder) listView.findViewHolderForAdapterPosition(a);
@@ -746,7 +819,7 @@ public class ProxyListActivity extends BaseFragment implements NotificationCente
             }
         });
         listView.setOnItemLongClickListener((view, position) -> {
-            if (position >= proxyStartRow && position < proxyEndRow) {
+            if (position >= proxyStartRow && position < proxyEndRow || position >= vlessStartRow && position < vlessEndRow) {
                 listAdapter.toggleSelected(position);
                 return true;
             }
@@ -771,22 +844,26 @@ public class ProxyListActivity extends BaseFragment implements NotificationCente
             public void onItemClick(int id) {
                 switch (id) {
                     case -1:
-                        if (selectedItems.isEmpty()) {
+                        if (selectedItems.isEmpty() && selectedVless.isEmpty()) {
                             finishFragment();
                         } else {
                             listAdapter.clearSelected();
                         }
                         break;
                     case MENU_DELETE:
+                        int deleteCount = selectedItems.size() + selectedVless.size();
                         AlertDialog.Builder builder = new AlertDialog.Builder(getParentActivity());
-                        builder.setMessage(getString(selectedItems.size() > 1 ? R.string.DeleteProxyMultiConfirm : R.string.DeleteProxyConfirm));
+                        builder.setMessage(getString(deleteCount > 1 ? R.string.DeleteProxyMultiConfirm : R.string.DeleteProxyConfirm));
                         builder.setNegativeButton(getString(R.string.Cancel), null);
                         builder.setTitle(getString(R.string.DeleteProxyTitle));
                         builder.setPositiveButton(getString(R.string.Delete), (dialog, which) -> {
                             for (SharedConfig.ProxyInfo info : selectedItems) {
                                 SharedConfig.deleteProxy(info);
                             }
-                            if (SharedConfig.currentProxy == null) {
+                            for (String link : selectedVless) {
+                                VlessProxyManager.removeNode(link);
+                            }
+                            if (!VlessProxyManager.isEnabled() && SharedConfig.currentProxy == null) {
                                 useProxyForCalls = false;
                                 useProxySettings = false;
                             }
@@ -817,11 +894,18 @@ public class ProxyListActivity extends BaseFragment implements NotificationCente
                             }
                             links.append(info.getLink());
                         }
+                        for (String link : selectedVless) {
+                            if (links.length() > 0) {
+                                links.append("\n\n");
+                            }
+                            links.append(link);
+                        }
 
                         Intent shareIntent = new Intent(Intent.ACTION_SEND);
                         shareIntent.setType("text/plain");
                         shareIntent.putExtra(Intent.EXTRA_TEXT, links.toString());
-                        Intent chooserIntent = Intent.createChooser(shareIntent, getString(selectedItems.size() > 1 ? R.string.ShareLinks : R.string.ShareLink));
+                        int shareCount = selectedItems.size() + selectedVless.size();
+                        Intent chooserIntent = Intent.createChooser(shareIntent, getString(shareCount > 1 ? R.string.ShareLinks : R.string.ShareLink));
                         chooserIntent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
                         context.startActivity(chooserIntent);
 
@@ -838,7 +922,7 @@ public class ProxyListActivity extends BaseFragment implements NotificationCente
 
     @Override
     public boolean onBackPressed(boolean invoked) {
-        if (!selectedItems.isEmpty()) {
+        if (!selectedItems.isEmpty() || !selectedVless.isEmpty()) {
             if (invoked) listAdapter.clearSelected();
             return false;
         }
@@ -1106,37 +1190,62 @@ public class ProxyListActivity extends BaseFragment implements NotificationCente
         }
 
         public void toggleSelected(int position) {
-            if (position < proxyStartRow || position >= proxyEndRow) {
+            if (position >= proxyStartRow && position < proxyEndRow) {
+                SharedConfig.ProxyInfo info = proxyList.get(position - proxyStartRow);
+                if (selectedItems.contains(info)) {
+                    selectedItems.remove(info);
+                } else {
+                    selectedItems.add(info);
+                }
+                notifyItemChanged(position, PAYLOAD_SELECTION_CHANGED);
+            } else if (position >= vlessStartRow && position < vlessEndRow) {
+                String link = vlessNodes.get(position - vlessStartRow);
+                if (selectedVless.contains(link)) {
+                    selectedVless.remove(link);
+                } else {
+                    selectedVless.add(link);
+                }
+                notifyItemChanged(position, PAYLOAD_SELECTION_CHANGED);
+            } else {
                 return;
             }
-            SharedConfig.ProxyInfo info = proxyList.get(position - proxyStartRow);
-            if (selectedItems.contains(info)) {
-                selectedItems.remove(info);
-            } else {
-                selectedItems.add(info);
-            }
-            notifyItemChanged(position, PAYLOAD_SELECTION_CHANGED);
             checkActionMode();
         }
 
         public void clearSelected() {
             selectedItems.clear();
-            notifyItemRangeChanged(proxyStartRow, proxyEndRow - proxyStartRow, PAYLOAD_SELECTION_CHANGED);
+            selectedVless.clear();
+            if (proxyStartRow >= 0) {
+                notifyItemRangeChanged(proxyStartRow, proxyEndRow - proxyStartRow, PAYLOAD_SELECTION_CHANGED);
+            }
+            if (vlessStartRow >= 0) {
+                notifyItemRangeChanged(vlessStartRow, vlessEndRow - vlessStartRow, PAYLOAD_SELECTION_CHANGED);
+            }
             checkActionMode();
         }
 
         private void checkActionMode() {
-            int selectedCount = selectedItems.size();
+            int selectedCount = selectedItems.size() + selectedVless.size();
             boolean actionModeShowed = actionBar.isActionModeShowed();
             if (selectedCount > 0) {
                 selectedCountTextView.setNumber(selectedCount, actionModeShowed);
                 if (!actionModeShowed) {
                     actionBar.showActionMode();
-                    notifyItemRangeChanged(proxyStartRow, proxyEndRow - proxyStartRow, PAYLOAD_SELECTION_MODE_CHANGED);
+                    if (proxyStartRow >= 0) {
+                        notifyItemRangeChanged(proxyStartRow, proxyEndRow - proxyStartRow, PAYLOAD_SELECTION_MODE_CHANGED);
+                    }
+                    if (vlessStartRow >= 0) {
+                        notifyItemRangeChanged(vlessStartRow, vlessEndRow - vlessStartRow, PAYLOAD_SELECTION_MODE_CHANGED);
+                    }
                 }
             } else if (actionModeShowed) {
                 actionBar.hideActionMode();
-                notifyItemRangeChanged(proxyStartRow, proxyEndRow - proxyStartRow, PAYLOAD_SELECTION_MODE_CHANGED);
+                if (proxyStartRow >= 0) {
+                    notifyItemRangeChanged(proxyStartRow, proxyEndRow - proxyStartRow, PAYLOAD_SELECTION_MODE_CHANGED);
+                }
+                if (vlessStartRow >= 0) {
+                    notifyItemRangeChanged(vlessStartRow, vlessEndRow - vlessStartRow, PAYLOAD_SELECTION_MODE_CHANGED);
+                }
             }
         }
 
@@ -1200,8 +1309,10 @@ public class ProxyListActivity extends BaseFragment implements NotificationCente
                 case VIEW_TYPE_PROXY_DETAIL: {
                     TextDetailProxyCell cell = (TextDetailProxyCell) holder.itemView;
                     if (position >= vlessStartRow && position < vlessEndRow) {
-                        cell.setVlessNode(vlessNodes.get(position - vlessStartRow));
-                        cell.setSelectionEnabled(false, false);
+                        String link = vlessNodes.get(position - vlessStartRow);
+                        cell.setVlessNode(link);
+                        cell.setItemSelected(selectedVless.contains(link), false);
+                        cell.setSelectionEnabled(!selectedItems.isEmpty() || !selectedVless.isEmpty(), false);
                     } else {
                         SharedConfig.ProxyInfo info = proxyList.get(position - proxyStartRow);
                         cell.setProxy(info);
@@ -1236,6 +1347,12 @@ public class ProxyListActivity extends BaseFragment implements NotificationCente
             if (holder.getItemViewType() == VIEW_TYPE_PROXY_DETAIL && !payloads.isEmpty()) {
                 TextDetailProxyCell cell = (TextDetailProxyCell) holder.itemView;
                 if (position >= vlessStartRow && position < vlessEndRow) {
+                    if (payloads.contains(PAYLOAD_SELECTION_CHANGED)) {
+                        cell.setItemSelected(selectedVless.contains(vlessNodes.get(position - vlessStartRow)), true);
+                    }
+                    if (payloads.contains(PAYLOAD_SELECTION_MODE_CHANGED)) {
+                        cell.setSelectionEnabled(!selectedItems.isEmpty() || !selectedVless.isEmpty(), true);
+                    }
                     cell.updateStatus();
                 } else {
                     if (payloads.contains(PAYLOAD_SELECTION_CHANGED)) {
