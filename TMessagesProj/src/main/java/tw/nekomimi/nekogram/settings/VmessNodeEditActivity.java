@@ -318,6 +318,16 @@ public class VmessNodeEditActivity extends BaseFragment {
             toastInvalid();
             return;
         }
+        // kcp/quic are kept selectable so existing imported nodes can be edited,
+        // but the sing-box engine has no kcp/quic transport: VlessConfig falls
+        // back to plain TCP for them. Surface that so the saved node is not
+        // mistaken for a true kcp/quic connection.
+        if ("kcp".equals(currentNetwork) || "quic".equals(currentNetwork)) {
+            Context context = getParentActivity();
+            if (context != null) {
+                Toast.makeText(context, LocaleController.getString(R.string.ProxyTransportFallback), Toast.LENGTH_SHORT).show();
+            }
+        }
         finishFragment();
     }
 }

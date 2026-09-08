@@ -536,6 +536,7 @@ public class ProxyListActivity extends BaseFragment implements NotificationCente
     private final static int na_menu_add_input_vmess = 1013;
     private final static int na_menu_add_input_trojan = 1014;
     private final static int na_menu_add_input_ss = 1015;
+    private final static int na_menu_add_input_vless = 1016;
 
     @Override
     public View createView(Context context) {
@@ -566,6 +567,7 @@ public class ProxyListActivity extends BaseFragment implements NotificationCente
         addItem.addSubItem(na_menu_add_input_vmess, LocaleController.getString("AddProxyVmess", R.string.AddProxyVmess)).setOnClickListener((v) -> presentFragment(new tw.nekomimi.nekogram.settings.VmessNodeEditActivity()));
         addItem.addSubItem(na_menu_add_input_trojan, LocaleController.getString("AddProxyTrojan", R.string.AddProxyTrojan)).setOnClickListener((v) -> presentFragment(new tw.nekomimi.nekogram.settings.TrojanNodeEditActivity()));
         addItem.addSubItem(na_menu_add_input_ss, LocaleController.getString("AddProxySS", R.string.AddProxySS)).setOnClickListener((v) -> presentFragment(new tw.nekomimi.nekogram.settings.ShadowsocksNodeEditActivity()));
+        addItem.addSubItem(na_menu_add_input_vless, LocaleController.getString(R.string.VlessAddNode)).setOnClickListener((v) -> presentFragment(new tw.nekomimi.nekogram.settings.VlessNodeEditActivity()));
 
         otherItem = menu.addItem(na_menu_other, R.drawable.ic_ab_other);
         otherItem.setContentDescription(LocaleController.getString("AccDescrMoreOptions", R.string.AccDescrMoreOptions));
@@ -594,6 +596,11 @@ public class ProxyListActivity extends BaseFragment implements NotificationCente
                     if (VlessProxyManager.isEnabled()) {
                         VlessProxyManager.setEnabled(false);
                     }
+                    // Note: deleteAllProxy() also clears the internal 127.0.0.1:6357
+                    // shadow row along with all native servers. That is fine: the
+                    // engine was stopped above, and the shadow row is re-created by
+                    // VlessProxyManager.applyLocalProxy() the next time the built-in
+                    // proxy is enabled — no functional break.
                     SharedConfig.deleteAllProxy();
                     if (SharedConfig.currentProxy == null) {
                         useProxySettings = false;
@@ -1187,6 +1194,9 @@ public class ProxyListActivity extends BaseFragment implements NotificationCente
                 }
                 long ping = VlessProxyManager.pingNode(link);
                 AndroidUtilities.runOnUIThread(() -> {
+                    if (isFinished) {
+                        return;
+                    }
                     VlessProxyManager.setPing(link, ping);
                     if (listAdapter == null || vlessStartRow < 0) {
                         return;

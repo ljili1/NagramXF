@@ -2705,6 +2705,7 @@
     <string name="ProxyNodes">Built-in proxy</string>
     <string name="ProxyAddNode">Add proxy node</string>
     <string name="ProxyManageNodes">Manage proxy nodes</string>
+    <string name="ProxyTransportFallback">kcp/quic transport is not supported by the engine; this node will connect as plain TCP.</string>
     <string name="ProxyInfoVmess">VMess Proxy Settings</string>
     <string name="ProxyRemarks">Remarks</string>
     <string name="VmessUserId">User ID</string>
