@@ -13,7 +13,9 @@ import static org.telegram.messenger.LocaleController.getString;
 import android.animation.Animator;
 import android.animation.AnimatorListenerAdapter;
 import android.animation.ValueAnimator;
+import android.app.Activity;
 import android.app.Dialog;
+import android.content.ClipboardManager;
 import android.content.Context;
 import android.content.DialogInterface;
 import android.content.Intent;
@@ -50,6 +52,7 @@ import org.telegram.messenger.R;
 import org.telegram.messenger.SharedConfig;
 import org.telegram.messenger.SvgHelper;
 import org.telegram.messenger.Utilities;
+import org.telegram.messenger.browser.Browser;
 import org.telegram.tgnet.ConnectionsManager;
 import org.telegram.ui.ActionBar.ActionBar;
 import org.telegram.ui.ActionBar.ActionBarMenu;
@@ -76,6 +79,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 
+import tw.nekomimi.nekogram.helpers.ProxyTypes;
 import tw.nekomimi.nekogram.helpers.VlessProxyManager;
 import tw.nekomimi.nekogram.helpers.WebSocketHelper;
 import tw.nekomimi.nekogram.utils.AlertUtil;
@@ -254,14 +258,26 @@ public class ProxyListActivity extends BaseFragment implements NotificationCente
             currentInfo = proxyInfo;
         }
 
-        /** Binds this cell to a saved VLESS node instead of a native proxy. */
+        /** Binds this cell to a saved built-in node instead of a native proxy. */
         public void setVlessNode(String link) {
             isVlessRow = true;
             vlessLink = link;
             currentInfo = null;
-            String name = VlessProxyManager.nodeName(link);
-            textView.setText(TextUtils.isEmpty(name) ? LocaleController.getString(R.string.VlessSettings) : name);
-            valueTextView.setText(VlessProxyManager.nodeServerPort(link));
+            // Row title shows the protocol tag like "[vmess] name".
+            String tag = ProxyTypes.typeTag(link);
+            String name = ProxyTypes.nodeName(link);
+            StringBuilder sb = new StringBuilder();
+            if (!TextUtils.isEmpty(tag)) {
+                sb.append('[').append(tag).append("] ");
+            }
+            if (!TextUtils.isEmpty(name)) {
+                sb.append(name);
+            }
+            if (sb.length() == 0) {
+                sb.append(LocaleController.getString(R.string.VlessSettings));
+            }
+            textView.setText(sb.toString());
+            valueTextView.setText(ProxyTypes.nodeServerPort(link));
             updateStatus();
         }
 
@@ -514,6 +530,12 @@ public class ProxyListActivity extends BaseFragment implements NotificationCente
     private final static int na_menu_vless_add = 1007;
     private final static int na_menu_vless_subscribe = 1008;
     private final static int na_menu_vless_test = 1009;
+    private final static int na_menu_add = 1010;
+    private final static int na_menu_add_scan_qr = 1011;
+    private final static int na_menu_add_input_socks = 1012;
+    private final static int na_menu_add_input_vmess = 1013;
+    private final static int na_menu_add_input_trojan = 1014;
+    private final static int na_menu_add_input_ss = 1015;
 
     @Override
     public View createView(Context context) {
@@ -533,12 +555,20 @@ public class ProxyListActivity extends BaseFragment implements NotificationCente
             }
         });
 
-        // na: action bar menu
+        // na: action bar menu — "＋" add menu + "⋮" tools menu.
         ActionBarMenu menu = actionBar.createMenu();
+        ActionBarMenuItem addItem = menu.addItem(na_menu_add, R.drawable.add);
+        addItem.setContentDescription(LocaleController.getString("AddProxy", R.string.AddProxy));
+        addItem.addSubItem(na_menu_add_import_from_clipboard, LocaleController.getString("ImportProxyFromClipboard", R.string.ImportProxyFromClipboard)).setOnClickListener((v) -> importFromClipboardMenu());
+        addItem.addSubItem(na_menu_add_scan_qr, LocaleController.getString("ScanQRCode", R.string.ScanQRCode)).setOnClickListener((v) -> scanQrCodeMenu());
+        addItem.addSubItem(na_menu_add_input_socks, LocaleController.getString("AddProxySocks5", R.string.AddProxySocks5)).setOnClickListener((v) -> presentFragment(new ProxySettingsActivity()));
+        addItem.addSubItem(na_menu_add_input_telegram, LocaleController.getString("AddProxyTelegram", R.string.AddProxyTelegram)).setOnClickListener((v) -> presentFragment(new ProxySettingsActivity()));
+        addItem.addSubItem(na_menu_add_input_vmess, LocaleController.getString("AddProxyVmess", R.string.AddProxyVmess)).setOnClickListener((v) -> presentFragment(new tw.nekomimi.nekogram.settings.VlessNodeEditActivity()));
+        addItem.addSubItem(na_menu_add_input_trojan, LocaleController.getString("AddProxyTrojan", R.string.AddProxyTrojan)).setOnClickListener((v) -> presentFragment(new tw.nekomimi.nekogram.settings.VlessNodeEditActivity()));
+        addItem.addSubItem(na_menu_add_input_ss, LocaleController.getString("AddProxySS", R.string.AddProxySS)).setOnClickListener((v) -> presentFragment(new tw.nekomimi.nekogram.settings.VlessNodeEditActivity()));
+
         otherItem = menu.addItem(na_menu_other, R.drawable.ic_ab_other);
         otherItem.setContentDescription(LocaleController.getString("AccDescrMoreOptions", R.string.AccDescrMoreOptions));
-        otherItem.addSubItem(na_menu_add_input_telegram, LocaleController.getString("AddProxyTelegram", R.string.AddProxyTelegram)).setOnClickListener((v) -> presentFragment(new ProxySettingsActivity()));
-        otherItem.addSubItem(na_menu_add_import_from_clipboard, LocaleController.getString("ImportProxyFromClipboard", R.string.ImportProxyFromClipboard)).setOnClickListener((v) -> ProxyUtil.importFromClipboard(getParentActivity()));
         otherItem.addSubItem(na_menu_vless_add, LocaleController.getString(R.string.VlessAddNode)).setOnClickListener((v) ->
                 presentFragment(new tw.nekomimi.nekogram.settings.VlessNodeEditActivity()));
         otherItem.addSubItem(na_menu_vless_subscribe, LocaleController.getString(R.string.VlessImportSubscription)).setOnClickListener((v) ->
@@ -559,7 +589,7 @@ public class ProxyListActivity extends BaseFragment implements NotificationCente
                 LocaleController.getString("DeleteAllServer", R.string.DeleteAllServer),
                 R.drawable.msg_delete, LocaleController.getString("Delete", R.string.Delete),
                 true, () -> {
-                    // Deleting every native server must not leave the VLESS engine
+                    // Deleting every native server must not leave the proxy engine
                     // running against a deleted shadow entry.
                     if (VlessProxyManager.isEnabled()) {
                         VlessProxyManager.setEnabled(false);
@@ -1067,10 +1097,66 @@ public class ProxyListActivity extends BaseFragment implements NotificationCente
         }
     }
 
+    /** "＋" → import from clipboard. Native tg:// links keep their legacy path. */
+    private void importFromClipboardMenu() {
+        Activity activity = getParentActivity();
+        if (activity == null) {
+            return;
+        }
+        String text = readClipboardText(activity);
+        if (text != null && containsTgProxyLink(text)) {
+            ProxyUtil.importFromClipboard(activity);
+            return;
+        }
+        VlessImportHelper.importFromClipboard(ProxyListActivity.this, () -> updateRows(true));
+    }
+
+    /** "＋" → scan QR. Node links are imported directly; other links open/copy. */
+    private void scanQrCodeMenu() {
+        CameraScanActivity.showAsSheet(ProxyListActivity.this, false, CameraScanActivity.TYPE_QR, new CameraScanActivity.CameraScanActivityDelegate() {
+            @Override
+            public void didFindQr(String text) {
+                handleScannedText(text);
+            }
+        });
+    }
+
+    private void handleScannedText(String text) {
+        if (text == null || text.trim().isEmpty()) {
+            return;
+        }
+        String trimmed = text.trim();
+        if (!ProxyUtil.parseProxies(trimmed).isEmpty()) {
+            VlessImportHelper.importText(ProxyListActivity.this, trimmed, () -> updateRows(true));
+            return;
+        }
+        if (Browser.isInternalUrl(trimmed, new boolean[]{false})) {
+            Browser.openUrl(getParentActivity(), trimmed);
+            return;
+        }
+        AlertUtil.showCopyAlert(getParentActivity(), trimmed);
+    }
+
+    private static String readClipboardText(Context context) {
+        ClipboardManager cm = (ClipboardManager) context.getSystemService(Context.CLIPBOARD_SERVICE);
+        if (cm != null && cm.getPrimaryClip() != null && cm.getPrimaryClip().getItemCount() > 0) {
+            CharSequence cs = cm.getPrimaryClip().getItemAt(0).coerceToText(context);
+            if (cs != null) {
+                return cs.toString();
+            }
+        }
+        return null;
+    }
+
+    private static boolean containsTgProxyLink(String text) {
+        return text.contains("tg://proxy") || text.contains("tg://socks") ||
+                text.contains("https://t.me/proxy") || text.contains("https://t.me/socks");
+    }
+
     /**
-     * Measures TCP latency for every VLESS node on the global queue and shows
-     * the result on the node row (the native page pings native proxies the same
-     * way through [checkProxyList]).
+     * Measures TCP latency for every node on the global queue and shows the
+     * result on the node row (the native page pings native proxies the same way
+     * through [checkProxyList]).
      */
     private void testVlessNodes() {
         if (vlessNodes.isEmpty()) {

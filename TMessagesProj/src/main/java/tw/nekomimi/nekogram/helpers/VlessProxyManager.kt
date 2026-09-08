@@ -9,60 +9,126 @@ import tw.nekomimi.nekogram.NekoConfig
 import tw.nekomimi.nekogram.VlessProxyService
 
 /**
- * Manages the built-in VLESS proxy.
+ * Manages the built-in sing-box proxy (generalized from the original VLESS-only
+ * manager; class name kept to avoid a whole-repo rename).
  *
- * The proxy is a first-class entry of the app's own settings (NekoSettings →
- * "VLESS 代理"), NOT a fake entry inside Telegram's native proxy list. Enabling
- * starts the sing-box foreground service and then points Telegram's proxy at
- * the local mixed inbound `127.0.0.1:[LOCAL_PORT]` through the ordinary
- * [SharedConfig.setCurrentProxy] path, so the selection is persisted.
+ * Nodes are plain protocol link strings (`vless://`, `vmess://`, `trojan://`,
+ * `ss://`) stored as a JSON array under the canonical NekoConfig keys
+ * `proxyEnabled` / `proxyActiveLink` / `proxyNodes`. The legacy
+ * `vlessEnabled` / `vlessLink` / `vlessNodes` keys are still readable and are
+ * migrated (written back once) the first time the manager is used.
  *
- * NOTE: the engine is started only when the user explicitly enables VLESS from
- * the settings page — it is deliberately NOT auto-started from
- * `ConnectionsManager.init()`, so a libbox runtime problem cannot crash the app
- * on launch.
+ * Enabling starts the sing-box foreground service and then points Telegram's
+ * proxy at the local mixed inbound `127.0.0.1:[LOCAL_PORT]` through the
+ * ordinary [SharedConfig.setCurrentProxy] path, so the selection is persisted.
  */
 object VlessProxyManager {
 
     /** Local mixed (SOCKS5/HTTP) inbound port of the sing-box engine. */
     const val LOCAL_PORT = 6357
 
-    @JvmStatic
-    fun isEnabled(): Boolean = NekoConfig.vlessEnabled.Bool()
+    private const val KEY_ENABLED = "proxyEnabled"
+    private const val KEY_ACTIVE_LINK = "proxyActiveLink"
+    private const val KEY_NODES = "proxyNodes"
 
-    /** Whether a usable `vless://` link has been configured. */
-    @JvmStatic
-    fun hasConfig(): Boolean = NekoConfig.vlessLink.String().isNotBlank()
+    // Legacy keys, still read when the canonical keys have not been written yet.
+    private const val LEGACY_KEY_ENABLED = "vlessEnabled"
+    private const val LEGACY_KEY_ACTIVE_LINK = "vlessLink"
+    private const val LEGACY_KEY_NODES = "vlessNodes"
+
+    @Volatile
+    private var migrationAttempted = false
+
+    private val schemeRegex = Regex(
+        "(vless|vmess|vmess1|trojan|ss)://",
+        RegexOption.IGNORE_CASE
+    )
+
+    /** Copies the legacy vless* prefs into the canonical proxy* keys once. */
+    @Synchronized
+    private fun ensureMigrated() {
+        if (migrationAttempted) return
+        try {
+            val prefs = NekoConfig.getPreferences()
+            val hasNew = prefs.contains(KEY_ENABLED) ||
+                prefs.contains(KEY_ACTIVE_LINK) ||
+                prefs.contains(KEY_NODES)
+            if (hasNew) {
+                migrationAttempted = true
+                return
+            }
+            val hasOld = prefs.contains(LEGACY_KEY_ENABLED) ||
+                prefs.contains(LEGACY_KEY_ACTIVE_LINK) ||
+                prefs.contains(LEGACY_KEY_NODES)
+            if (hasOld) {
+                if (prefs.contains(LEGACY_KEY_ENABLED)) {
+                    NekoConfig.proxyEnabled.setConfigBool(prefs.getBoolean(LEGACY_KEY_ENABLED, false))
+                }
+                if (prefs.contains(LEGACY_KEY_ACTIVE_LINK)) {
+                    NekoConfig.proxyActiveLink.setConfigString(prefs.getString(LEGACY_KEY_ACTIVE_LINK, ""))
+                }
+                if (prefs.contains(LEGACY_KEY_NODES)) {
+                    NekoConfig.proxyNodes.setConfigString(prefs.getString(LEGACY_KEY_NODES, ""))
+                }
+                FileLog.d("VlessProxyManager: migrated legacy vless* keys to proxy* keys")
+            }
+            migrationAttempted = true
+        } catch (e: Throwable) {
+            // Context may not be ready yet; retry on the next access.
+            FileLog.e(e)
+        }
+    }
 
     @JvmStatic
-    fun getVlessLink(): String = NekoConfig.vlessLink.String()
+    fun isEnabled(): Boolean {
+        ensureMigrated()
+        return NekoConfig.proxyEnabled.Bool()
+    }
+
+    /** Whether a usable proxy link has been configured. */
+    @JvmStatic
+    fun hasConfig(): Boolean = getVlessLink().isNotBlank()
+
+    /** The active (currently selected) node link. Name kept for backward compatibility. */
+    @JvmStatic
+    fun getVlessLink(): String {
+        ensureMigrated()
+        return NekoConfig.proxyActiveLink.String()
+    }
+
+    /** Alias of [getVlessLink] expressing the generalized node semantics. */
+    @JvmStatic
+    fun getActiveLink(): String = getVlessLink()
 
     @JvmStatic
     fun setVlessLink(link: String) {
-        NekoConfig.vlessLink.setConfigString(link)
+        ensureMigrated()
+        NekoConfig.proxyActiveLink.setConfigString(link)
+    }
+
+    /** Alias of [setVlessLink] expressing the generalized node semantics. */
+    @JvmStatic
+    fun setActiveLink(link: String) {
+        setVlessLink(link)
     }
 
     // --- Display helpers (proxy list / node manager UI) ---
 
-    /** Human name carried in the link fragment (`vless://...#name`), or "". */
+    /** Human name carried in the link fragment, or "" when absent. */
     @JvmStatic
-    fun nodeName(link: String): String {
-        val hash = link.lastIndexOf('#')
-        return if (hash >= 0 && hash < link.length - 1) link.substring(hash + 1).trim() else ""
-    }
+    fun nodeName(link: String): String = ProxyTypes.nodeName(link)
 
     /** `host:port` from a valid link, or the raw link when unparsable. */
     @JvmStatic
-    fun nodeServerPort(link: String): String {
-        val parsed = VlessConfig.parseVless(link) ?: return link
-        val server = parsed.optString("server")
-        val port = parsed.optInt("server_port")
-        return if (server.isBlank() || port <= 0) link else "$server:$port"
-    }
+    fun nodeServerPort(link: String): String = ProxyTypes.nodeServerPort(link)
 
     /** Row title for a node: fragment name, falling back to host:port. */
     @JvmStatic
-    fun nodeTitle(link: String): String = nodeName(link).ifBlank { nodeServerPort(link) }
+    fun nodeTitle(link: String): String = ProxyTypes.nodeTitle(link)
+
+    /** `[type] name` style row title. */
+    @JvmStatic
+    fun taggedTitle(link: String): String = ProxyTypes.taggedTitle(link)
 
     /** True when [link] is the node the engine is currently using. */
     @JvmStatic
@@ -71,7 +137,6 @@ object VlessProxyManager {
     /**
      * TCP connect latency to the node's server:port. Returns the round-trip time
      * in ms, or -1 when the host is unreachable / the link is unparsable.
-     * Used by the node manager for a lightweight "is this node alive" check.
      */
     @JvmStatic
     fun pingNode(link: String): Long {
@@ -110,12 +175,13 @@ object VlessProxyManager {
         }
     }
 
-    // --- Node list (NekoX-style management) ---
+    // --- Node list (generalized NekoX-style management) ---
 
-    /** Saved `vless://` nodes, oldest first. Empty when none have been added. */
+    /** Saved node links, oldest first. Empty when none have been added. */
     @JvmStatic
     fun getNodes(): ArrayList<String> {
-        val raw = NekoConfig.vlessNodes.String()
+        ensureMigrated()
+        val raw = NekoConfig.proxyNodes.String()
         val list = ArrayList<String>()
         if (raw.isBlank()) return list
         try {
@@ -133,17 +199,24 @@ object VlessProxyManager {
         try {
             val arr = org.json.JSONArray()
             nodes.forEach { arr.put(it) }
-            NekoConfig.vlessNodes.setConfigString(arr.toString())
+            NekoConfig.proxyNodes.setConfigString(arr.toString())
         } catch (e: Throwable) {
             FileLog.e(e)
         }
+    }
+
+    /** True when [link] is parseable into a supported outbound config. */
+    private fun isValidNode(link: String): Boolean {
+        if (link.isBlank()) return false
+        if (!VlessConfig.isSupportedProxy(link)) return false
+        return VlessConfig.buildConfig(link, LOCAL_PORT) != null
     }
 
     /** Adds a valid, not-yet-present node. Returns true when added. */
     @JvmStatic
     fun addNode(link: String): Boolean {
         val trimmed = link.trim()
-        if (trimmed.isEmpty() || VlessConfig.parseVless(trimmed) == null) return false
+        if (!isValidNode(trimmed)) return false
         val nodes = getNodes()
         if (nodes.any { it == trimmed }) return false
         nodes.add(trimmed)
@@ -156,16 +229,15 @@ object VlessProxyManager {
 
     /**
      * Parses a block of text (pasted links or a fetched subscription body) into
-     * nodes. Every `vless://...` occurrence is validated and added once.
+     * nodes. Every supported proxy link occurrence is validated and added once.
      * @return number of nodes newly added
      */
     @JvmStatic
     fun importFromText(text: String): Int {
         var added = 0
         text.lineSequence().forEach { line ->
-            val idx = line.indexOf("vless://", ignoreCase = true)
-            if (idx < 0) return@forEach
-            val candidate = line.substring(idx).trim()
+            val match = schemeRegex.find(line) ?: return@forEach
+            val candidate = line.substring(match.range.first).trim()
             val end = candidate.indexOfAny(charArrayOf(' ', '\t'))
             val link = if (end >= 0) candidate.substring(0, end) else candidate
             if (addNode(link)) added++
@@ -204,7 +276,7 @@ object VlessProxyManager {
     /** Selects [link] as the active node and makes sure the proxy is running. */
     @JvmStatic
     fun selectNode(link: String) {
-        if (VlessConfig.parseVless(link) == null) return
+        if (!isValidNode(link)) return
         val nodes = getNodes()
         if (nodes.none { it == link }) {
             nodes.add(0, link)
@@ -226,7 +298,7 @@ object VlessProxyManager {
     }
 
     /**
-     * Enables or disables the built-in VLESS proxy.
+     * Enables or disables the built-in proxy.
      *
      * Enable: persist the flag, start the engine, then select
      * `127.0.0.1:LOCAL_PORT` as Telegram's current proxy.
@@ -235,11 +307,12 @@ object VlessProxyManager {
     @JvmStatic
     fun setEnabled(enabled: Boolean) {
         if (enabled && !hasConfig()) {
-            NekoConfig.vlessEnabled.setConfigBool(false)
-            FileLog.d("VlessProxyManager: refusing to enable without a vless:// link")
+            NekoConfig.proxyEnabled.setConfigBool(false)
+            FileLog.d("VlessProxyManager: refusing to enable without a configured node")
             return
         }
-        NekoConfig.vlessEnabled.setConfigBool(enabled)
+        ensureMigrated()
+        NekoConfig.proxyEnabled.setConfigBool(enabled)
         if (enabled) {
             ensureServiceStarted()
             applyLocalProxy()

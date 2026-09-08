@@ -23,15 +23,22 @@ import org.telegram.ui.Cells.TextSettingsCell;
 import org.telegram.ui.Components.EditTextBoldCursor;
 import org.telegram.ui.Components.LayoutHelper;
 
+import tw.nekomimi.nekogram.helpers.ProxyTypes;
 import tw.nekomimi.nekogram.helpers.VlessProxyManager;
+import tw.nekomimi.nekogram.utils.ProxyUtil;
+
+import java.util.List;
 
 /**
- * Add / edit a single VLESS node.
+ * Add / edit a single built-in proxy node by its standard link.
  *
  * This is the form page that pairs with the native proxy list page — the same
- * structure the 8.x front end uses (list page + one field form). All bulk
- * operations (multi-select, share, delete, subscription import, ping) live in
- * ProxyListActivity, so there is no second management page.
+ * structure the 8.x front end uses (list page + one field form). It accepts any
+ * link the sing-box engine can carry (vless://, vmess://, trojan://, ss://), so
+ * it doubles as the generic fallback editor for protocols whose dedicated form
+ * does not exist yet. All bulk operations (multi-select, share, delete,
+ * subscription import, ping) live in ProxyListActivity, so there is no second
+ * management page.
  */
 public class VlessNodeEditActivity extends BaseFragment {
 
@@ -111,10 +118,7 @@ public class VlessNodeEditActivity extends BaseFragment {
         scanCell.setOnClickListener(v -> CameraScanActivity.showAsSheet(VlessNodeEditActivity.this, false, CameraScanActivity.TYPE_QR, new CameraScanActivity.CameraScanActivityDelegate() {
             @Override
             public void didFindQr(String text) {
-                if (text != null && text.contains("vless://")) {
-                    linkEdit.setText(text);
-                    linkEdit.setSelection(text.length());
-                }
+                fillLinkFromText(text);
             }
         }));
         content.addView(scanCell, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
@@ -148,8 +152,25 @@ public class VlessNodeEditActivity extends BaseFragment {
         ClipboardManager cm = (ClipboardManager) context.getSystemService(Context.CLIPBOARD_SERVICE);
         if (cm != null && cm.getPrimaryClip() != null && cm.getPrimaryClip().getItemCount() > 0) {
             CharSequence cs = cm.getPrimaryClip().getItemAt(0).coerceToText(context);
-            if (cs != null && cs.toString().contains("vless://")) {
-                linkEdit.setText(cs.toString());
+            if (cs != null) {
+                fillLinkFromText(cs.toString());
+                return;
+            }
+        }
+        toastInvalidLink();
+    }
+
+    /** Fills the editor with the first supported proxy link found in [text]. */
+    private void fillLinkFromText(String text) {
+        if (text == null || text.trim().isEmpty()) {
+            toastInvalidLink();
+            return;
+        }
+        List<String> links = ProxyUtil.parseProxies(text);
+        for (String link : links) {
+            if (ProxyTypes.isSupported(link)) {
+                linkEdit.setText(link);
+                linkEdit.setSelection(link.length());
                 return;
             }
         }

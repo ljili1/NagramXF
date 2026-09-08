@@ -231,10 +231,18 @@ public class NekoConfig {
     public static ConfigItem wsServerHost = addConfig("wsServerHost", configTypeString, "");
     public static ConfigItem wsBuiltInProxyBackend = addConfig("wsBuiltInProxyBackend", configTypeInt, 0);
 
-    // --- VLESS Proxy (sing-box) ---
+    // --- VLESS Proxy (sing-box) [legacy keys — still readable for migration] ---
     public static ConfigItem vlessEnabled = addConfig("vlessEnabled", configTypeBool, false);
     public static ConfigItem vlessLink = addConfig("vlessLink", configTypeString, "");
     public static ConfigItem vlessNodes = addConfig("vlessNodes", configTypeString, ""); // JSON array of vless:// links
+
+    // --- Built-in Proxy (sing-box) canonical keys (generalized VLESS store) ---
+    // New nodes of any supported type (vless/vmess/trojan/ss) are stored as their
+    // original link strings under these keys. The legacy vless* keys above are
+    // still honored for one-time migration so existing users keep their nodes.
+    public static ConfigItem proxyEnabled = addConfig("proxyEnabled", configTypeBool, false);
+    public static ConfigItem proxyActiveLink = addConfig("proxyActiveLink", configTypeString, "");
+    public static ConfigItem proxyNodes = addConfig("proxyNodes", configTypeString, ""); // JSON array of node links
     private static ConfigItem ghostDelegate(String key, boolean defaultValue,
                                             java.util.function.BooleanSupplier getter,
                                             java.util.function.Consumer<Boolean> setter) {

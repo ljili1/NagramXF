@@ -23,19 +23,21 @@ import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.net.HttpURLConnection;
 import java.net.URL;
+import java.util.List;
 
 import tw.nekomimi.nekogram.helpers.VlessProxyManager;
 
 /**
- * Shared "add VLESS nodes" helpers.
+ * Shared "add built-in proxy nodes" helpers.
  *
- * The 8.x-style front end has a single carrier (the native proxy list page) plus
- * an edit form, so these dialogs are static utilities that any caller can show
- * instead of living inside a second management page.
+ * Generalized from the VLESS-only helper (class name kept): it now accepts any
+ * node link the sing-box engine can carry — vless://, vmess://, vmess1://,
+ * trojan:// and ss:// — extracted from pasted text / subscription bodies / QR
+ * payloads through {@link ProxyUtil#parseProxies}.
  */
 public class VlessImportHelper {
 
-    /** Parses pasted text / subscription body / QR payload and adds every vless:// link found. */
+    /** Parses pasted text / subscription body / QR payload and adds every supported node link found. */
     public static void importText(BaseFragment fragment, String raw, Runnable onChanged) {
         if (fragment == null || raw == null || raw.trim().isEmpty()) {
             return;
@@ -43,7 +45,13 @@ public class VlessImportHelper {
         if (!isAlive(fragment)) {
             return;
         }
-        int added = VlessProxyManager.importFromText(raw);
+        List<String> links = ProxyUtil.parseProxies(raw);
+        int added = 0;
+        for (String link : links) {
+            if (VlessProxyManager.addNode(link)) {
+                added++;
+            }
+        }
         if (isAlive(fragment)) {
             toast(fragment, added > 0
                     ? LocaleController.formatString("VlessNodesAdded", R.string.VlessNodesAdded, added)
@@ -81,7 +89,7 @@ public class VlessImportHelper {
         ClipboardManager cm = (ClipboardManager) context.getSystemService(Context.CLIPBOARD_SERVICE);
         if (cm != null && cm.getPrimaryClip() != null && cm.getPrimaryClip().getItemCount() > 0) {
             CharSequence cs = cm.getPrimaryClip().getItemAt(0).coerceToText(context);
-            if (cs != null && cs.toString().contains("vless://")) {
+            if (cs != null && !ProxyUtil.parseProxies(cs.toString()).isEmpty()) {
                 importText(fragment, cs.toString(), onChanged);
                 return;
             }
