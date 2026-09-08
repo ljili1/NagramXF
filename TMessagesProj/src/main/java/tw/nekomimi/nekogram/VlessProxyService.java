@@ -39,7 +39,17 @@ public class VlessProxyService extends Service {
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
         startForeground(NOTIFICATION_ID, buildNotification());
-        startSingBox();
+        // If the engine is already running (e.g. user switched node while the
+        // service was alive), hot-reload instead of tearing it down.
+        if (LibboxEngine.INSTANCE.isRunning()) {
+            String link = VlessProxyManager.getVlessLink();
+            String config = VlessConfig.buildConfig(link, VlessProxyManager.LOCAL_PORT);
+            if (config != null) {
+                LibboxEngine.INSTANCE.reload(config);
+            }
+        } else {
+            startSingBox();
+        }
         return START_STICKY;
     }
 

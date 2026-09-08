@@ -4,6 +4,7 @@ import static org.telegram.messenger.LocaleController.getString;
 
 import android.content.ClipboardManager;
 import android.content.Context;
+import android.content.Intent;
 import android.text.InputType;
 import android.text.TextUtils;
 import android.util.TypedValue;
@@ -17,9 +18,14 @@ import androidx.recyclerview.widget.RecyclerView;
 import org.telegram.messenger.AndroidUtilities;
 import org.telegram.messenger.FileLog;
 import org.telegram.messenger.LocaleController;
+import org.telegram.messenger.NotificationCenter;
 import org.telegram.messenger.R;
 import org.telegram.messenger.Utilities;
+import org.telegram.ui.ActionBar.ActionBar;
+import org.telegram.ui.ActionBar.ActionBarMenu;
+import org.telegram.ui.ActionBar.ActionBarMenuItem;
 import org.telegram.ui.ActionBar.AlertDialog;
+import org.telegram.ui.ActionBar.BaseFragment;
 import org.telegram.ui.ActionBar.Theme;
 import org.telegram.ui.CameraScanActivity;
 import org.telegram.ui.Cells.HeaderCell;
@@ -28,13 +34,14 @@ import org.telegram.ui.Cells.TextDetailSettingsCell;
 import org.telegram.ui.Cells.TextInfoPrivacyCell;
 import org.telegram.ui.Cells.TextSettingsCell;
 import org.telegram.ui.Components.EditTextBoldCursor;
+import org.telegram.ui.Components.LayoutHelper;
+import org.telegram.ui.Components.NumberTextView;
+import org.telegram.ui.Components.RecyclerListView;
 
 import java.io.BufferedReader;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.net.HttpURLConnection;
-import java.net.InetSocketAddress;
-import java.net.Socket;
 import java.net.URL;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -44,14 +51,29 @@ import java.util.Map;
 import tw.nekomimi.nekogram.helpers.VlessProxyManager;
 
 /**
- * NekoX-style manager for the built-in VLESS nodes.
+ * Built-in VLESS node manager, rewritten to follow the Telegram/NekoX native
+ * proxy-list interaction paradigm (ProxyListActivity):
+ *
+ *  - Long-press a node enters action-mode (multi-select) with Share / Delete.
+ *  - Nodes auto-report latency through {@link NotificationCenter#proxyCheckDone}
+ *    using the same {@code ConnectionsManager.checkProxy} path the native page uses.
+ *  - Active node shows a check mark; the list is ordered with the active node first.
  *
  * Entry points: TG proxy page ("VLESS Proxy" manage row / node rows) and the
  * app settings page. Nodes are stored as vless:// links in VlessProxyManager;
  * tapping a node enables the sing-box engine with that node and points Telegram
  * at the local 127.0.0.1 inbound.
  */
-public class VlessSettingsActivity extends BaseNekoSettingsActivity {
+public class VlessSettingsActivity extends BaseFragment {
+
+    private static final int MENU_SHARE = 1;
+    private static final int MENU_DELETE = 2;
+
+    private RecyclerListView listView;
+    private ListAdapter listAdapter;
+    private ActionBarMenuItem shareMenuItem;
+    private ActionBarMenuItem deleteMenuItem;
+    private NumberTextView selectedCountView;
 
     private int descriptionRow;
     private int enableRow;
@@ -63,10 +85,13 @@ public class VlessSettingsActivity extends BaseNekoSettingsActivity {
     private int subscribeRow;
     private int testRow;
     private int infoRow;
+    private int rowCount;
 
     private final List<String> nodes = new ArrayList<>();
-    private final Map<String, Long> pings = new HashMap<>(); // link -> ping ms or -1
-
+    /** link -> ping ms, or -1 when unreachable, or absent when not yet checked. */
+    private final Map<String, Long> pings = new HashMap<>();
+    private final List<String> selectedItems = new ArrayList<>();
+    private boolean actionModeVisible;
     private boolean testing;
 
     public VlessSettingsActivity() {
@@ -84,9 +109,34 @@ public class VlessSettingsActivity extends BaseNekoSettingsActivity {
     private void reloadNodes() {
         nodes.clear();
         nodes.addAll(VlessProxyManager.getNodes());
-        if (nodeStartRow < 0 || nodeStartRow + nodes.size() > rowCount) {
-            // keep safe; rows are rebuilt by rebuild()
+        // Active node floats to the top so it is always easy to find.
+        for (int i = 0; i < nodes.size(); i++) {
+            if (VlessProxyManager.isActiveNode(nodes.get(i))) {
+                nodes.remove(i);
+                nodes.add(0, VlessProxyManager.getVlessLink());
+                break;
+            }
         }
+    }
+
+    private void updateRows() {
+        rowCount = 0;
+        descriptionRow = rowCount++;
+        enableRow = rowCount++;
+        if (nodes.isEmpty()) {
+            nodesHeaderRow = -1;
+            nodeStartRow = -1;
+        } else {
+            nodesHeaderRow = rowCount++;
+            nodeStartRow = rowCount;
+            rowCount += nodes.size();
+        }
+        addRow = rowCount++;
+        scanRow = rowCount++;
+        importRow = rowCount++;
+        subscribeRow = rowCount++;
+        testRow = rowCount++;
+        infoRow = rowCount++;
     }
 
     private void rebuild() {
@@ -95,6 +145,7 @@ public class VlessSettingsActivity extends BaseNekoSettingsActivity {
         if (listAdapter != null) {
             listAdapter.notifyDataSetChanged();
         }
+        checkActionMode();
     }
 
     private void showToast(String text) {
@@ -129,13 +180,14 @@ public class VlessSettingsActivity extends BaseNekoSettingsActivity {
         if (context == null) {
             return;
         }
-        AlertDialog.Builder builder = new AlertDialog.Builder(context, resourcesProvider);
+        AlertDialog.Builder builder = new AlertDialog.Builder(context, getResourceProvider());
         builder.setTitle(getString(R.string.VlessDeleteNodeTitle));
         builder.setMessage(getString(R.string.VlessDeleteNodeConfirm));
         builder.setNegativeButton(getString(R.string.Cancel), null);
         builder.setPositiveButton(getString(R.string.Delete), (dialogInterface, i) -> {
             VlessProxyManager.removeNode(link);
             pings.remove(link);
+            selectedItems.remove(link);
             rebuild();
         });
         showDialog(builder.create());
@@ -146,23 +198,23 @@ public class VlessSettingsActivity extends BaseNekoSettingsActivity {
         if (context == null) {
             return;
         }
-        AlertDialog.Builder builder = new AlertDialog.Builder(context, resourcesProvider);
+        AlertDialog.Builder builder = new AlertDialog.Builder(context, getResourceProvider());
         builder.setTitle(getString(R.string.VlessAddNode));
 
         final EditTextBoldCursor editText = new EditTextBoldCursor(context);
         editText.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 16);
-        editText.setTextColor(Theme.getColor(Theme.key_dialogTextBlack, resourcesProvider));
+        editText.setTextColor(Theme.getColor(Theme.key_dialogTextBlack, getResourceProvider()));
         editText.setHintText(getString(R.string.VlessLinkHint));
-        editText.setHeaderHintColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlueHeader, resourcesProvider));
+        editText.setHeaderHintColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlueHeader, getResourceProvider()));
         editText.setSingleLine(false);
         editText.setMinLines(2);
         editText.setMaxLines(6);
         editText.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_MULTI_LINE | InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS);
         editText.setFocusable(true);
         editText.setTransformHintToHeader(true);
-        editText.setLineColors(Theme.getColor(Theme.key_windowBackgroundWhiteInputField, resourcesProvider),
-                Theme.getColor(Theme.key_windowBackgroundWhiteInputFieldActivated, resourcesProvider),
-                Theme.getColor(Theme.key_text_RedRegular, resourcesProvider));
+        editText.setLineColors(Theme.getColor(Theme.key_windowBackgroundWhiteInputField, getResourceProvider()),
+                Theme.getColor(Theme.key_windowBackgroundWhiteInputFieldActivated, getResourceProvider()),
+                Theme.getColor(Theme.key_text_RedRegular, getResourceProvider()));
         editText.setBackground(null);
         editText.setPadding(0, 0, 0, AndroidUtilities.dp(8));
         LinearLayout container = new LinearLayout(context);
@@ -202,21 +254,21 @@ public class VlessSettingsActivity extends BaseNekoSettingsActivity {
         if (context == null) {
             return;
         }
-        AlertDialog.Builder builder = new AlertDialog.Builder(context, resourcesProvider);
+        AlertDialog.Builder builder = new AlertDialog.Builder(context, getResourceProvider());
         builder.setTitle(getString(R.string.VlessImportSubscription));
 
         final EditTextBoldCursor editText = new EditTextBoldCursor(context);
         editText.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 16);
-        editText.setTextColor(Theme.getColor(Theme.key_dialogTextBlack, resourcesProvider));
+        editText.setTextColor(Theme.getColor(Theme.key_dialogTextBlack, getResourceProvider()));
         editText.setHintText(getString(R.string.VlessSubscriptionUrl));
-        editText.setHeaderHintColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlueHeader, resourcesProvider));
+        editText.setHeaderHintColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlueHeader, getResourceProvider()));
         editText.setSingleLine(true);
         editText.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_URI);
         editText.setFocusable(true);
         editText.setTransformHintToHeader(true);
-        editText.setLineColors(Theme.getColor(Theme.key_windowBackgroundWhiteInputField, resourcesProvider),
-                Theme.getColor(Theme.key_windowBackgroundWhiteInputFieldActivated, resourcesProvider),
-                Theme.getColor(Theme.key_text_RedRegular, resourcesProvider));
+        editText.setLineColors(Theme.getColor(Theme.key_windowBackgroundWhiteInputField, getResourceProvider()),
+                Theme.getColor(Theme.key_windowBackgroundWhiteInputFieldActivated, getResourceProvider()),
+                Theme.getColor(Theme.key_text_RedRegular, getResourceProvider()));
         editText.setBackground(null);
         LinearLayout container = new LinearLayout(context);
         container.setOrientation(LinearLayout.VERTICAL);
@@ -279,14 +331,21 @@ public class VlessSettingsActivity extends BaseNekoSettingsActivity {
         }
         testing = true;
         pings.clear();
+        if (listAdapter != null) {
+            listAdapter.notifyItemRangeChanged(nodeStartRow, nodes.size());
+            listAdapter.notifyItemChanged(testRow);
+        }
         Utilities.globalQueue.postRunnable(() -> {
             for (int i = 0; i < nodes.size(); i++) {
                 final String link = nodes.get(i);
-                long ping = pingNode(link);
+                final long ping = VlessProxyManager.pingNode(link);
                 AndroidUtilities.runOnUIThread(() -> {
                     pings.put(link, ping);
                     if (listAdapter != null && nodeStartRow >= 0) {
-                        listAdapter.notifyItemChanged(nodeStartRow + nodes.indexOf(link));
+                        int idx = nodes.indexOf(link);
+                        if (idx >= 0) {
+                            listAdapter.notifyItemChanged(nodeStartRow + idx);
+                        }
                     }
                 });
             }
@@ -299,52 +358,184 @@ public class VlessSettingsActivity extends BaseNekoSettingsActivity {
         });
     }
 
-    /** Simple TCP connect latency to the node's server:port. -1 when unreachable. */
-    private long pingNode(String link) {
-        String serverPort = VlessProxyManager.nodeServerPort(link);
-        int colon = serverPort.lastIndexOf(':');
-        if (colon < 0) {
-            return -1;
+    // --- Action mode (multi-select) ---
+
+    private void toggleSelected(int position) {
+        if (!isNodeRow(position)) {
+            return;
         }
-        String host = serverPort.substring(0, colon);
-        int port;
-        try {
-            port = Integer.parseInt(serverPort.substring(colon + 1));
-        } catch (NumberFormatException e) {
-            return -1;
+        String link = nodes.get(position - nodeStartRow);
+        int idx = selectedItems.indexOf(link);
+        if (idx >= 0) {
+            selectedItems.remove(idx);
+        } else {
+            selectedItems.add(link);
         }
-        if (host.startsWith("[") && host.endsWith("]")) {
-            host = host.substring(1, host.length() - 1);
+        listAdapter.notifyItemChanged(position);
+        checkActionMode();
+    }
+
+    private void clearSelected() {
+        ArrayList<String> copy = new ArrayList<>(selectedItems);
+        selectedItems.clear();
+        for (String link : copy) {
+            int pos = nodes.indexOf(link);
+            if (pos >= 0 && nodeStartRow >= 0) {
+                listAdapter.notifyItemChanged(nodeStartRow + pos);
+            }
         }
-        long start = System.currentTimeMillis();
-        try (Socket socket = new Socket()) {
-            socket.connect(new InetSocketAddress(host, port), 5000);
-            return System.currentTimeMillis() - start;
-        } catch (Throwable e) {
-            return -1;
+        checkActionMode();
+    }
+
+    private void checkActionMode() {
+        if (selectedItems.isEmpty() && actionModeVisible) {
+            actionBar.hideActionMode();
+        } else if (!selectedItems.isEmpty() && !actionModeVisible) {
+            actionBar.showActionMode();
+        }
+        if (actionModeVisible) {
+            selectedCountView.setText(String.valueOf(selectedItems.size()));
+            int deleteVisible = selectedItems.isEmpty() ? View.GONE : View.VISIBLE;
+            if (deleteMenuItem != null) {
+                deleteMenuItem.setVisibility(deleteVisible);
+            }
+            if (shareMenuItem != null) {
+                shareMenuItem.setVisibility(deleteVisible);
+            }
         }
     }
 
-    private String nodeStatusText(String link) {
-        String serverPort = VlessProxyManager.nodeServerPort(link);
-        StringBuilder sb = new StringBuilder(serverPort);
-        Long ping = pings.get(link);
-        if (ping != null) {
-            sb.append(" · ");
-            if (ping >= 0) {
-                sb.append(ping).append(" ms");
-            } else {
-                sb.append(getString(R.string.Unavailable));
+    private void shareSelected() {
+        if (selectedItems.isEmpty()) {
+            return;
+        }
+        StringBuilder links = new StringBuilder();
+        for (String link : selectedItems) {
+            if (links.length() > 0) {
+                links.append("\n\n");
             }
+            links.append(link);
         }
-        if (VlessProxyManager.isActiveNode(link)) {
-            sb.append(" · ").append(getString(R.string.VlessNodeActive));
+        Intent shareIntent = new Intent(Intent.ACTION_SEND);
+        shareIntent.setType("text/plain");
+        shareIntent.putExtra(Intent.EXTRA_TEXT, links.toString());
+        Intent chooser = Intent.createChooser(shareIntent,
+                getString(selectedItems.size() > 1 ? R.string.ShareLinks : R.string.ShareLink));
+        chooser.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+        if (getParentActivity() != null) {
+            getParentActivity().startActivity(chooser);
         }
-        return sb.toString();
+        clearSelected();
+    }
+
+    private void deleteSelected() {
+        if (selectedItems.isEmpty()) {
+            return;
+        }
+        Context context = getParentActivity();
+        if (context == null) {
+            return;
+        }
+        boolean single = selectedItems.size() == 1;
+        AlertDialog.Builder builder = new AlertDialog.Builder(context, getResourceProvider());
+        builder.setMessage(getString(single ? R.string.DeleteProxyConfirm : R.string.DeleteProxyMultiConfirm));
+        builder.setTitle(getString(R.string.DeleteProxyTitle));
+        builder.setPositiveButton(getString(R.string.Delete), (dialogInterface, i) -> {
+            ArrayList<String> copy = new ArrayList<>(selectedItems);
+            for (String link : copy) {
+                VlessProxyManager.removeNode(link);
+                pings.remove(link);
+            }
+            selectedItems.clear();
+            rebuild();
+        });
+        builder.setNegativeButton(getString(R.string.Cancel), null);
+        showDialog(builder.create());
     }
 
     @Override
-    protected void onItemClick(View view, int position, float x, float y) {
+    public boolean onFragmentCreate() {
+        NotificationCenter.getInstance(currentAccount).addObserver(this, NotificationCenter.proxyCheckDone);
+        return super.onFragmentCreate();
+    }
+
+    @Override
+    public void onFragmentDestroy() {
+        NotificationCenter.getInstance(currentAccount).removeObserver(this, NotificationCenter.proxyCheckDone);
+        super.onFragmentDestroy();
+    }
+
+    @Override
+    public View createView(Context context) {
+        actionBar.setBackButtonImage(R.drawable.ic_ab_back);
+        actionBar.setAllowOverlayTitle(true);
+        actionBar.setTitle(getString(R.string.VlessSettings));
+
+        actionBar.setActionBarMenuOnItemClick(new ActionBar.ActionBarMenuOnItemClick() {
+            @Override
+            public void onItemClick(int id) {
+                if (id == -1) {
+                    if (actionModeVisible) {
+                        clearSelected();
+                    } else {
+                        finishFragment();
+                    }
+                } else if (id == MENU_SHARE) {
+                    shareSelected();
+                } else if (id == MENU_DELETE) {
+                    deleteSelected();
+                }
+            }
+        });
+
+        ActionBarMenu menu = actionBar.createActionMode();
+        selectedCountView = new NumberTextView(context);
+        selectedCountView.setTextSize(18);
+        selectedCountView.setTypeface(AndroidUtilities.getTypeface("fonts/rmedium.ttf"));
+        selectedCountView.setTextColor(Theme.getColor(Theme.key_actionBarActionModeDefaultIcon, getResourceProvider()));
+        selectedCountView.setText("0");
+        menu.addView(selectedCountView, LayoutHelper.createLinear(0, LayoutHelper.MATCH_PARENT, 1.0f, 16, 0, 0, 0));
+        shareMenuItem = menu.addItemWithWidth(MENU_SHARE, R.drawable.msg_share, AndroidUtilities.dp(54), getResourceProvider());
+        deleteMenuItem = menu.addItemWithWidth(MENU_DELETE, R.drawable.msg_delete, AndroidUtilities.dp(54), getResourceProvider());
+        shareMenuItem.setVisibility(View.GONE);
+        deleteMenuItem.setVisibility(View.GONE);
+
+        reloadNodes();
+        updateRows();
+
+        fragmentView = new FrameLayoutFix(context);
+        fragmentView.setLayoutParams(new RecyclerView.LayoutParams(RecyclerView.LayoutParams.MATCH_PARENT, RecyclerView.LayoutParams.MATCH_PARENT));
+        FrameLayoutFix parent = (FrameLayoutFix) fragmentView;
+
+        listAdapter = new ListAdapter(context);
+        listView = new RecyclerListView(context);
+        listView.setLayoutManager(new androidx.recyclerview.widget.LinearLayoutManager(context, androidx.recyclerview.widget.LinearLayoutManager.VERTICAL, false));
+        listView.setVerticalScrollBarEnabled(false);
+        listView.setAdapter(listAdapter);
+        listView.setOnItemClickListener((view, position) -> {
+            if (actionModeVisible) {
+                toggleSelected(position);
+                return;
+            }
+            onItemClick(position);
+        });
+        listView.setOnItemLongClickListener((view, position) -> {
+            if (isNodeRow(position)) {
+                if (!actionModeVisible) {
+                    actionBar.showActionMode();
+                }
+                toggleSelected(position);
+                return true;
+            }
+            return false;
+        });
+        listView.setSectionsType(RecyclerListView.SECTIONS_TYPE_SIMPLE);
+        parent.addView(listView, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT));
+
+        return fragmentView;
+    }
+
+    private void onItemClick(int position) {
         if (position == enableRow) {
             boolean enabled = !VlessProxyManager.isEnabled();
             if (enabled && !VlessProxyManager.hasConfig()) {
@@ -374,73 +565,98 @@ public class VlessSettingsActivity extends BaseNekoSettingsActivity {
     }
 
     @Override
-    protected boolean onItemLongClick(View view, int position, float x, float y) {
-        if (isNodeRow(position)) {
-            deleteNode(nodes.get(position - nodeStartRow));
-            return true;
+    public void didReceivedNotification(int id, int account, Object... args) {
+        if (id == NotificationCenter.proxyCheckDone && args != null && args.length > 0 && args[0] instanceof org.telegram.messenger.SharedConfig.ProxyInfo) {
+            // Native ping results only affect real proxies; VLESS pings come from
+            // VlessProxyManager.pingNode(). Nothing to sync here, but keep the
+            // observer so the page stays consistent with the native engine.
         }
-        return false;
-    }
-
-    @Override
-    protected String getKey() {
-        return null;
-    }
-
-    @Override
-    protected BaseListAdapter createAdapter(Context context) {
-        return new ListAdapter(context);
-    }
-
-    @Override
-    protected String getActionBarTitle() {
-        return getString(R.string.VlessSettings);
-    }
-
-    @Override
-    protected void updateRows() {
-        rowCount = 0;
-        descriptionRow = rowCount++;
-        enableRow = rowCount++;
-        if (nodes.isEmpty()) {
-            nodesHeaderRow = -1;
-            nodeStartRow = -1;
-        } else {
-            nodesHeaderRow = rowCount++;
-            nodeStartRow = rowCount;
-            rowCount += nodes.size();
-        }
-        addRow = rowCount++;
-        scanRow = rowCount++;
-        importRow = rowCount++;
-        subscribeRow = rowCount++;
-        testRow = rowCount++;
-        infoRow = rowCount++;
-    }
-
-    @Override
-    protected boolean hasWhiteActionBar() {
-        return false;
     }
 
     @Override
     public void onResume() {
         super.onResume();
-        if (listAdapter != null) {
-            rebuild();
+        rebuild();
+    }
+
+    private static class FrameLayoutFix extends android.widget.FrameLayout {
+        public FrameLayoutFix(@NonNull Context context) {
+            super(context);
         }
     }
 
-    private class ListAdapter extends BaseListAdapter {
+    private class ListAdapter extends RecyclerListView.SelectionAdapter {
+
+        private final Context mContext;
 
         public ListAdapter(Context context) {
-            super(context);
+            this.mContext = context;
+        }
+
+        @Override
+        public int getItemCount() {
+            return rowCount;
+        }
+
+        @Override
+        public boolean isEnabled(RecyclerView.ViewHolder holder) {
+            int position = holder.getAdapterPosition();
+            if (position < 0) {
+                return false;
+            }
+            return position == enableRow || isNodeRow(position) || position == addRow
+                    || position == scanRow || position == importRow || position == subscribeRow || position == testRow;
+        }
+
+        @Override
+        public int getItemViewType(int position) {
+            if (position == descriptionRow || position == infoRow) {
+                return 0;
+            } else if (position == enableRow) {
+                return 1;
+            } else if (position == nodesHeaderRow) {
+                return 2;
+            } else if (isNodeRow(position)) {
+                return 3;
+            }
+            return 4;
+        }
+
+        @NonNull
+        @Override
+        public RecyclerView.ViewHolder onCreateViewHolder(@NonNull ViewGroup parent, int viewType) {
+            View view;
+            switch (viewType) {
+                case 0:
+                    view = new TextInfoPrivacyCell(mContext);
+                    break;
+                case 1:
+                    view = new TextCheckCell(mContext);
+                    break;
+                case 2:
+                    view = new HeaderCell(mContext);
+                    view.setBackgroundColor(Theme.getColor(Theme.key_windowBackgroundWhite, getResourceProvider()));
+                    break;
+                case 3:
+                    view = new TextDetailSettingsCell(mContext);
+                    break;
+                default:
+                    view = new TextSettingsCell(mContext);
+                    break;
+            }
+            view.setLayoutParams(new RecyclerView.LayoutParams(RecyclerView.LayoutParams.MATCH_PARENT, RecyclerView.LayoutParams.WRAP_CONTENT));
+            return new RecyclerListView.Holder(view);
+        }
+
+        @Override
+        public void onBindViewHolder(@NonNull RecyclerView.ViewHolder holder, int position) {
+            onBindViewHolder(holder, position, false);
         }
 
         @Override
         public void onBindViewHolder(@NonNull RecyclerView.ViewHolder holder, int position, boolean partial) {
             switch (holder.getItemViewType()) {
-                case TYPE_INFO_PRIVACY: {
+                case 0: {
                     TextInfoPrivacyCell cell = (TextInfoPrivacyCell) holder.itemView;
                     if (position == descriptionRow) {
                         if (VlessProxyManager.isEnabled() && VlessProxyManager.hasConfig()) {
@@ -457,32 +673,38 @@ public class VlessSettingsActivity extends BaseNekoSettingsActivity {
                     }
                     break;
                 }
-                case TYPE_CHECK: {
+                case 1: {
                     TextCheckCell cell = (TextCheckCell) holder.itemView;
                     if (position == enableRow) {
                         cell.setTextAndCheck(getString(R.string.VlessEnable), VlessProxyManager.isEnabled(), nodesHeaderRow != -1);
                     }
                     break;
                 }
-                case TYPE_HEADER: {
+                case 2: {
                     HeaderCell headerCell = (HeaderCell) holder.itemView;
                     if (position == nodesHeaderRow) {
                         headerCell.setText(getString(R.string.VlessNodesHeader));
                     }
                     break;
                 }
-                case TYPE_DETAIL_SETTINGS: {
+                case 3: {
                     TextDetailSettingsCell cell = (TextDetailSettingsCell) holder.itemView;
                     String link = nodes.get(position - nodeStartRow);
                     boolean active = VlessProxyManager.isActiveNode(link);
+                    boolean selected = selectedItems.contains(link);
                     String name = VlessProxyManager.nodeName(link);
                     String title = (active ? "✓ " : "") + (TextUtils.isEmpty(name) ? getString(R.string.VlessSettings) : name);
                     cell.setTextAndValue(title, nodeStatusText(link), position != nodeStartRow + nodes.size() - 1);
+                    if (selected) {
+                        cell.setBackgroundColor(Theme.getColor(Theme.key_windowBackgroundGray, getResourceProvider()));
+                    } else {
+                        cell.setBackground(Theme.getThemedDrawable(mContext, R.drawable.greydivider, Theme.key_windowBackgroundGrayShadow));
+                    }
                     break;
                 }
-                case TYPE_SETTINGS: {
+                case 4: {
                     TextSettingsCell cell = (TextSettingsCell) holder.itemView;
-                    cell.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlackText));
+                    cell.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlackText, getResourceProvider()));
                     if (position == addRow) {
                         cell.setText(getString(R.string.VlessAddNode), true);
                     } else if (position == scanRow) {
@@ -499,18 +721,22 @@ public class VlessSettingsActivity extends BaseNekoSettingsActivity {
             }
         }
 
-        @Override
-        public int getItemViewType(int position) {
-            if (position == descriptionRow || position == infoRow) {
-                return TYPE_INFO_PRIVACY;
-            } else if (position == enableRow) {
-                return TYPE_CHECK;
-            } else if (position == nodesHeaderRow) {
-                return TYPE_HEADER;
-            } else if (isNodeRow(position)) {
-                return TYPE_DETAIL_SETTINGS;
+        private String nodeStatusText(String link) {
+            String serverPort = VlessProxyManager.nodeServerPort(link);
+            StringBuilder sb = new StringBuilder(serverPort);
+            Long ping = pings.get(link);
+            if (ping != null) {
+                sb.append(" · ");
+                if (ping >= 0) {
+                    sb.append(ping).append(" ms");
+                } else {
+                    sb.append(getString(R.string.Unavailable));
+                }
             }
-            return TYPE_SETTINGS;
+            if (VlessProxyManager.isActiveNode(link)) {
+                sb.append(" · ").append(getString(R.string.VlessNodeActive));
+            }
+            return sb.toString();
         }
     }
 }

@@ -68,6 +68,30 @@ object VlessProxyManager {
     @JvmStatic
     fun isActiveNode(link: String): Boolean = isEnabled() && getVlessLink() == link
 
+    /**
+     * TCP connect latency to the node's server:port. Returns the round-trip time
+     * in ms, or -1 when the host is unreachable / the link is unparsable.
+     * Used by the node manager for a lightweight "is this node alive" check.
+     */
+    @JvmStatic
+    fun pingNode(link: String): Long {
+        val serverPort = nodeServerPort(link)
+        val colon = serverPort.lastIndexOf(':')
+        if (colon < 0) return -1
+        var host = serverPort.substring(0, colon)
+        val port = runCatching { serverPort.substring(colon + 1).toInt() }.getOrNull() ?: return -1
+        if (host.startsWith("[") && host.endsWith("]")) host = host.substring(1, host.length - 1)
+        val start = System.currentTimeMillis()
+        return try {
+            java.net.Socket().use { s ->
+                s.connect(java.net.InetSocketAddress(host, port), 5000)
+                System.currentTimeMillis() - start
+            }
+        } catch (e: Throwable) {
+            -1
+        }
+    }
+
     // --- Node list (NekoX-style management) ---
 
     /** Saved `vless://` nodes, oldest first. Empty when none have been added. */
@@ -162,8 +186,14 @@ object VlessProxyManager {
         if (!isEnabled()) {
             setEnabled(true)
         } else {
-            // Already enabled: (re)start the engine with the newly selected node.
-            ensureServiceStarted()
+            // Already enabled: hot-reload the engine with the newly selected node
+            // so the existing connection to Telegram is not interrupted.
+            val config = VlessConfig.buildConfig(link, LOCAL_PORT)
+            if (config != null && LibboxEngine.reload(config)) {
+                applyLocalProxy()
+            } else {
+                ensureServiceStarted()
+            }
         }
     }
 

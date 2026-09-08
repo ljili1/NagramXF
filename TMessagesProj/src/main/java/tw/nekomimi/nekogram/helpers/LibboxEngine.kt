@@ -38,6 +38,9 @@ object LibboxEngine {
     private var commandServer: CommandServer? = null
     private var setupDone = false
 
+    /** Last config we successfully (re)loaded, so a reload can reuse it. */
+    private var lastConfig: String? = null
+
     @Synchronized
     fun start(context: Context, configJson: String): Boolean {
         stop()
@@ -57,6 +60,7 @@ object LibboxEngine {
             server.start()
             server.startOrReloadService(configJson, OverrideOptions())
             commandServer = server
+            lastConfig = configJson
             FileLog.d("LibboxEngine: started (libbox ${Libbox.version()})")
             true
         } catch (e: Throwable) {
@@ -65,10 +69,34 @@ object LibboxEngine {
         }
     }
 
+    /**
+     * Reloads the running engine with a new config (e.g. after the user switches
+     * the active node) without tearing the process down. Falls back to a full
+     * [start] when no engine is currently up.
+     */
+    @Synchronized
+    fun reload(configJson: String): Boolean {
+        val server = commandServer
+        return if (server != null) {
+            try {
+                server.startOrReloadService(configJson, OverrideOptions())
+                lastConfig = configJson
+                FileLog.d("LibboxEngine: reloaded config")
+                true
+            } catch (e: Throwable) {
+                FileLog.e(e)
+                start(ApplicationLoader.applicationContext, configJson)
+            }
+        } else {
+            start(ApplicationLoader.applicationContext, configJson)
+        }
+    }
+
     @Synchronized
     fun stop() {
         val server = commandServer ?: return
         commandServer = null
+        lastConfig = null
         try {
             server.closeService()
         } catch (e: Throwable) {
@@ -83,6 +111,10 @@ object LibboxEngine {
 
     @Synchronized
     fun isRunning(): Boolean = commandServer != null
+
+    /** The most recent config handed to the engine, or null if stopped. */
+    @Synchronized
+    fun currentConfig(): String? = lastConfig
 
     /** Callbacks the engine invokes on the host app. */
     private class ServerHandler : CommandServerHandler {
