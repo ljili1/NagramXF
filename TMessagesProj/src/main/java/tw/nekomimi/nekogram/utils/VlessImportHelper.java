@@ -98,8 +98,7 @@ public class VlessImportHelper {
     }
 
     private static boolean isAlive(BaseFragment fragment) {
-        return fragment != null && fragment.isAdded() && fragment.getParentActivity() != null
-                && !fragment.isRemoving() && !fragment.isDetached();
+        return fragment != null && fragment.getParentActivity() != null && !fragment.isFinished;
     }
 
     private interface InputCallback {
