@@ -73,19 +73,46 @@ public class VlessProxyService extends Service {
             String link = VlessProxyManager.getVlessLink();
             String config = VlessConfig.buildConfig(link, VlessProxyManager.LOCAL_PORT);
             if (config == null) {
-                FileLog.e("VlessProxyService: invalid or empty vless config");
+                FileLog.e("VlessProxyService: invalid or empty vless config; link=" + safeLinkSummary(link));
                 stopSelf();
                 return;
             }
+            FileLog.d("VlessProxyService: starting sing-box with link=" + safeLinkSummary(link));
             if (!LibboxEngine.INSTANCE.start(this, config)) {
                 // Engine failed to start — do not leave Telegram pointed at a dead
                 // local port; disable VLESS so the app falls back to direct.
-                FileLog.e("VlessProxyService: sing-box failed to start, disabling VLESS");
+                FileLog.e("VlessProxyService: sing-box failed to start, disabling VLESS (link=" + safeLinkSummary(link) + ")");
                 VlessProxyManager.setEnabled(false);
+                stopSelf();
             }
         } catch (Throwable e) {
+            FileLog.e("VlessProxyService: exception while starting sing-box");
             FileLog.e(e);
+            try {
+                VlessProxyManager.setEnabled(false);
+            } catch (Throwable inner) {
+                FileLog.e(inner);
+            }
             stopSelf();
+        }
+    }
+
+    /** Trims a vless:// link to host:port so it is safe to log. */
+    private static String safeLinkSummary(String link) {
+        if (link == null || link.isEmpty()) {
+            return "<empty>";
+        }
+        try {
+            String body = link.substring("vless://".length());
+            int hash = body.indexOf('#');
+            if (hash >= 0) body = body.substring(0, hash);
+            int q = body.indexOf('?');
+            if (q >= 0) body = body.substring(0, q);
+            int at = body.indexOf('@');
+            if (at >= 0) body = body.substring(at + 1);
+            return body;
+        } catch (Throwable t) {
+            return "<unparseable>";
         }
     }
 

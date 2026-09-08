@@ -138,6 +138,9 @@ public class VlessNodeEditActivity extends BaseFragment {
     }
 
     private void pasteFromClipboard() {
+        if (!isAdded() || getParentActivity() == null) {
+            return;
+        }
         Context context = getParentActivity();
         if (context == null) {
             return;
@@ -161,6 +164,9 @@ public class VlessNodeEditActivity extends BaseFragment {
     }
 
     private void save() {
+        if (!isAdded() || getParentActivity() == null) {
+            return;
+        }
         String link = linkEdit == null ? "" : linkEdit.getText().toString().trim();
         if (editingLink != null) {
             if (!link.equals(editingLink)) {

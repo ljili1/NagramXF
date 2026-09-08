@@ -40,26 +40,40 @@ public class VlessImportHelper {
         if (fragment == null || raw == null || raw.trim().isEmpty()) {
             return;
         }
+        if (!isAlive(fragment)) {
+            return;
+        }
         int added = VlessProxyManager.importFromText(raw);
-        toast(fragment, added > 0
-                ? LocaleController.formatString("VlessNodesAdded", R.string.VlessNodesAdded, added)
-                : LocaleController.getString(R.string.VlessNoLinkFound));
+        if (isAlive(fragment)) {
+            toast(fragment, added > 0
+                    ? LocaleController.formatString("VlessNodesAdded", R.string.VlessNodesAdded, added)
+                    : LocaleController.getString(R.string.VlessNoLinkFound));
+        }
         if (added > 0 && onChanged != null) {
             onChanged.run();
         }
     }
 
     public static void showAddDialog(final BaseFragment fragment, final Runnable onChanged) {
+        if (!isAlive(fragment)) {
+            return;
+        }
         showInputDialog(fragment, R.string.VlessAddNode, R.string.VlessLinkHint, false,
                 text -> importText(fragment, text, onChanged));
     }
 
     public static void showSubscriptionDialog(final BaseFragment fragment, final Runnable onChanged) {
+        if (!isAlive(fragment)) {
+            return;
+        }
         showInputDialog(fragment, R.string.VlessImportSubscription, R.string.VlessSubscriptionUrl, true,
                 url -> fetchSubscription(fragment, url, onChanged));
     }
 
     public static void importFromClipboard(final BaseFragment fragment, final Runnable onChanged) {
+        if (!isAlive(fragment)) {
+            return;
+        }
         Context context = fragment.getParentActivity();
         if (context == null) {
             return;
@@ -75,12 +89,20 @@ public class VlessImportHelper {
         toast(fragment, LocaleController.getString(R.string.VlessNoLinkFound));
     }
 
+    private static boolean isAlive(BaseFragment fragment) {
+        return fragment != null && fragment.isAdded() && fragment.getParentActivity() != null
+                && !fragment.isRemoving() && !fragment.isDetached();
+    }
+
     private interface InputCallback {
         void run(String value);
     }
 
     private static void showInputDialog(final BaseFragment fragment, int titleRes, int hintRes,
                                         final boolean singleLine, final InputCallback callback) {
+        if (!isAlive(fragment)) {
+            return;
+        }
         Context context = fragment.getParentActivity();
         if (context == null) {
             return;
@@ -158,6 +180,9 @@ public class VlessImportHelper {
             }
             final String text = body;
             AndroidUtilities.runOnUIThread(() -> {
+                if (!isAlive(fragment)) {
+                    return;
+                }
                 if (text == null || text.isEmpty()) {
                     toast(fragment, LocaleController.getString(R.string.VlessFetchFailed));
                 } else {
