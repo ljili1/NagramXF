@@ -8,6 +8,7 @@ import android.text.InputType;
 import android.text.TextUtils;
 import android.util.TypedValue;
 import android.view.View;
+import android.widget.LinearLayout;
 import android.widget.Toast;
 
 import androidx.annotation.NonNull;
@@ -164,7 +165,11 @@ public class VlessSettingsActivity extends BaseNekoSettingsActivity {
                 Theme.getColor(Theme.key_text_RedRegular, resourcesProvider));
         editText.setBackground(null);
         editText.setPadding(0, 0, 0, AndroidUtilities.dp(8));
-        builder.setView(editText, AndroidUtilities.dp(20), AndroidUtilities.dp(8), AndroidUtilities.dp(20), 0);
+        LinearLayout container = new LinearLayout(context);
+        container.setOrientation(LinearLayout.VERTICAL);
+        container.setPadding(AndroidUtilities.dp(20), AndroidUtilities.dp(8), AndroidUtilities.dp(20), 0);
+        container.addView(editText);
+        builder.setView(container);
 
         builder.setPositiveButton(getString(R.string.Add), (dialogInterface, i2) -> doImport(editText.getText().toString()));
         builder.setNegativeButton(getString(R.string.Cancel), null);
@@ -213,7 +218,11 @@ public class VlessSettingsActivity extends BaseNekoSettingsActivity {
                 Theme.getColor(Theme.key_windowBackgroundWhiteInputFieldActivated, resourcesProvider),
                 Theme.getColor(Theme.key_text_RedRegular, resourcesProvider));
         editText.setBackground(null);
-        builder.setView(editText, AndroidUtilities.dp(20), AndroidUtilities.dp(8), AndroidUtilities.dp(20), 0);
+        LinearLayout container = new LinearLayout(context);
+        container.setOrientation(LinearLayout.VERTICAL);
+        container.setPadding(AndroidUtilities.dp(20), AndroidUtilities.dp(8), AndroidUtilities.dp(20), 0);
+        container.addView(editText);
+        builder.setView(container);
 
         builder.setPositiveButton(getString(R.string.OK), (dialogInterface, i2) -> fetchSubscription(editText.getText().toString().trim()));
         builder.setNegativeButton(getString(R.string.Cancel), null);
