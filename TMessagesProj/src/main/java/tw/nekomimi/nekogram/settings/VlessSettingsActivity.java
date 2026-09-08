@@ -19,7 +19,6 @@ import androidx.recyclerview.widget.RecyclerView;
 import org.telegram.messenger.AndroidUtilities;
 import org.telegram.messenger.FileLog;
 import org.telegram.messenger.LocaleController;
-import org.telegram.messenger.NotificationCenter;
 import org.telegram.messenger.R;
 import org.telegram.messenger.Utilities;
 import org.telegram.ui.ActionBar.ActionBar;
@@ -56,8 +55,9 @@ import tw.nekomimi.nekogram.helpers.VlessProxyManager;
  * proxy-list interaction paradigm (ProxyListActivity):
  *
  *  - Long-press a node enters action-mode (multi-select) with Share / Delete.
- *  - Nodes auto-report latency through {@link NotificationCenter#proxyCheckDone}
- *    using the same {@code ConnectionsManager.checkProxy} path the native page uses.
+ *  - Nodes report TCP latency through VlessProxyManager.pingNode() on the
+ *    global queue (the native page's ConnectionsManager.checkProxy path only
+ *    understands SOCKS5/MTProto proxies, so it is not used here).
  *  - Active node shows a check mark; the list is ordered with the active node first.
  *
  * Entry points: TG proxy page ("VLESS Proxy" manage row / node rows) and the
@@ -389,13 +389,17 @@ public class VlessSettingsActivity extends BaseFragment {
     }
 
     private void checkActionMode() {
-        if (selectedItems.isEmpty() && actionModeVisible) {
-            actionBar.hideActionMode();
-        } else if (!selectedItems.isEmpty() && !actionModeVisible) {
-            actionBar.showActionMode();
+        boolean shouldShow = !selectedItems.isEmpty();
+        if (shouldShow != actionModeVisible) {
+            if (shouldShow) {
+                actionBar.showActionMode();
+            } else {
+                actionBar.hideActionMode();
+            }
+            actionModeVisible = shouldShow;
         }
         if (actionModeVisible) {
-            selectedCountView.setText(String.valueOf(selectedItems.size()));
+            selectedCountView.setNumber(selectedItems.size(), true);
             int deleteVisible = selectedItems.isEmpty() ? View.GONE : View.VISIBLE;
             if (deleteMenuItem != null) {
                 deleteMenuItem.setVisibility(deleteVisible);
@@ -455,18 +459,6 @@ public class VlessSettingsActivity extends BaseFragment {
     }
 
     @Override
-    public boolean onFragmentCreate() {
-        NotificationCenter.getInstance(currentAccount).addObserver(this, NotificationCenter.proxyCheckDone);
-        return super.onFragmentCreate();
-    }
-
-    @Override
-    public void onFragmentDestroy() {
-        NotificationCenter.getInstance(currentAccount).removeObserver(this, NotificationCenter.proxyCheckDone);
-        super.onFragmentDestroy();
-    }
-
-    @Override
     public View createView(Context context) {
         actionBar.setBackButtonImage(R.drawable.ic_ab_back);
         actionBar.setAllowOverlayTitle(true);
@@ -494,10 +486,10 @@ public class VlessSettingsActivity extends BaseFragment {
         selectedCountView.setTextSize(18);
         selectedCountView.setTypeface(AndroidUtilities.getTypeface("fonts/rmedium.ttf"));
         selectedCountView.setTextColor(Theme.getColor(Theme.key_actionBarActionModeDefaultIcon, getResourceProvider()));
-        selectedCountView.setText("0");
+        selectedCountView.setNumber(0, false);
         menu.addView(selectedCountView, LayoutHelper.createLinear(0, LayoutHelper.MATCH_PARENT, 1.0f, 16, 0, 0, 0));
-        shareMenuItem = menu.addItemWithWidth(MENU_SHARE, R.drawable.msg_share, AndroidUtilities.dp(54), getResourceProvider());
-        deleteMenuItem = menu.addItemWithWidth(MENU_DELETE, R.drawable.msg_delete, AndroidUtilities.dp(54), getResourceProvider());
+        shareMenuItem = menu.addItemWithWidth(MENU_SHARE, R.drawable.msg_share, AndroidUtilities.dp(54));
+        deleteMenuItem = menu.addItemWithWidth(MENU_DELETE, R.drawable.msg_delete, AndroidUtilities.dp(54));
         shareMenuItem.setVisibility(View.GONE);
         deleteMenuItem.setVisibility(View.GONE);
 
@@ -562,15 +554,6 @@ public class VlessSettingsActivity extends BaseFragment {
             showSubscriptionDialog();
         } else if (position == testRow) {
             testAllNodes();
-        }
-    }
-
-    @Override
-    public void didReceivedNotification(int id, int account, Object... args) {
-        if (id == NotificationCenter.proxyCheckDone && args != null && args.length > 0 && args[0] instanceof org.telegram.messenger.SharedConfig.ProxyInfo) {
-            // Native ping results only affect real proxies; VLESS pings come from
-            // VlessProxyManager.pingNode(). Nothing to sync here, but keep the
-            // observer so the page stays consistent with the native engine.
         }
     }
 
@@ -654,7 +637,10 @@ public class VlessSettingsActivity extends BaseFragment {
             onBindViewHolder(holder, position, false);
         }
 
-        @Override
+        /**
+         * Custom 3-arg binder (not a RecyclerView override): the standard
+         * 2-arg [onBindViewHolder] delegates here with partial = false.
+         */
         public void onBindViewHolder(@NonNull RecyclerView.ViewHolder holder, int position, boolean partial) {
             switch (holder.getItemViewType()) {
                 case 0: {
