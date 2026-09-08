@@ -20,11 +20,11 @@ import tw.nekomimi.nekogram.helpers.VlessConfig;
 import tw.nekomimi.nekogram.helpers.VlessProxyManager;
 
 /**
- * Foreground service hosting the sing-box engine for the built-in VLESS proxy.
+ * Foreground service hosting the sing-box engine for the built-in proxy.
  *
  * Runs a local mixed SOCKS/HTTP inbound on 127.0.0.1:[VlessProxyManager.LOCAL_PORT]
- * and forwards to the configured VLESS outbound. Telegram's proxy setting is
- * pointed at that local port by ConnectionsManager.
+ * and forwards to the configured node outbound (vless/vmess/trojan/ss). Telegram's
+ * proxy setting is pointed at that local port by ConnectionsManager.
  */
 public class VlessProxyService extends Service {
 
@@ -42,7 +42,7 @@ public class VlessProxyService extends Service {
         // If the engine is already running (e.g. user switched node while the
         // service was alive), hot-reload instead of tearing it down.
         if (LibboxEngine.INSTANCE.isRunning()) {
-            String link = VlessProxyManager.getVlessLink();
+            String link = VlessProxyManager.getActiveLink();
             String config = VlessConfig.buildConfig(link, VlessProxyManager.LOCAL_PORT);
             if (config != null) {
                 LibboxEngine.INSTANCE.reload(config);
@@ -70,7 +70,7 @@ public class VlessProxyService extends Service {
 
     private void startSingBox() {
         try {
-            String link = VlessProxyManager.getVlessLink();
+            String link = VlessProxyManager.getActiveLink();
             String config = VlessConfig.buildConfig(link, VlessProxyManager.LOCAL_PORT);
             if (config == null) {
                 FileLog.e("VlessProxyService: invalid or empty vless config; link=" + safeLinkSummary(link));
@@ -97,13 +97,14 @@ public class VlessProxyService extends Service {
         }
     }
 
-    /** Trims a vless:// link to host:port so it is safe to log. */
+    /** Trims any supported node link (vless/vmess/trojan/ss/…) to host:port so it is safe to log. */
     private static String safeLinkSummary(String link) {
         if (link == null || link.isEmpty()) {
             return "<empty>";
         }
         try {
-            String body = link.substring("vless://".length());
+            int scheme = link.indexOf("://");
+            String body = scheme >= 0 ? link.substring(scheme + 3) : link;
             int hash = body.indexOf('#');
             if (hash >= 0) body = body.substring(0, hash);
             int q = body.indexOf('?');

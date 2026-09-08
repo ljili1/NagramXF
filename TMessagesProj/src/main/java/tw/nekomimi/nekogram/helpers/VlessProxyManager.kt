@@ -273,6 +273,25 @@ object VlessProxyManager {
         }
     }
 
+    /**
+     * Replaces [oldLink] with [newLink] in the node list. When the edited node
+     * was active, the engine keeps running with the new link so Telegram is not
+     * disconnected. Returns true when the edit was saved (a no-op when both
+     * links are identical).
+     */
+    @JvmStatic
+    fun replaceNode(oldLink: String, newLink: String): Boolean {
+        val trimmed = newLink.trim()
+        if (oldLink == trimmed) return true
+        if (!addNode(trimmed)) return false
+        val wasActive = isActiveNode(oldLink)
+        removeNode(oldLink)
+        if (wasActive) {
+            selectNode(trimmed)
+        }
+        return true
+    }
+
     /** Selects [link] as the active node and makes sure the proxy is running. */
     @JvmStatic
     fun selectNode(link: String) {
@@ -294,6 +313,36 @@ object VlessProxyManager {
             } else {
                 ensureServiceStarted()
             }
+        }
+    }
+
+    /**
+     * Cold-start recovery hook invoked at the end of
+     * [org.telegram.tgnet.ConnectionsManager.init]. When Telegram's persisted
+     * proxy is our local mixed inbound (proxy_ip == 127.0.0.1 and
+     * proxy_port == LOCAL_PORT), a node is configured and the sing-box engine is
+     * not running yet (the process was restarted), this restarts the engine so
+     * the connection resumes without the user toggling the switch again.
+     *
+     * The hook is intentionally defensive: it never enables the proxy by itself
+     * and never throws, so connection init is unaffected when the engine cannot
+     * be started (e.g. Android background-start restrictions).
+     */
+    @JvmStatic
+    fun maybeRestoreAfterColdStart() {
+        try {
+            if (!isEnabled()) return
+            if (!hasConfig()) return
+            if (LibboxEngine.isRunning()) return
+            val prefs = MessagesController.getGlobalMainSettings()
+            if (!prefs.getBoolean("proxy_enabled", false)) return
+            val address = prefs.getString("proxy_ip", "")
+            val port = prefs.getInt("proxy_port", 0)
+            if (!"127.0.0.1".equals(address, ignoreCase = true) || port != LOCAL_PORT) return
+            FileLog.d("VlessProxyManager: cold-start restore, starting sing-box engine")
+            ensureServiceStarted()
+        } catch (e: Throwable) {
+            FileLog.e(e)
         }
     }
 

@@ -2702,6 +2702,9 @@
     <string name="VlessNodesAdded">%1$d node(s) added</string>
     <string name="VlessRunningDescription">VLESS proxy is running via %1$s</string>
     <string name="VlessOffDescription">VLESS proxy is off. Tap a node below to enable it.</string>
+    <string name="ProxyNodes">Built-in proxy</string>
+    <string name="ProxyAddNode">Add proxy node</string>
+    <string name="ProxyManageNodes">Manage proxy nodes</string>
     <string name="ProxyInfoVmess">VMess Proxy Settings</string>
     <string name="ProxyRemarks">Remarks</string>
     <string name="VmessUserId">User ID</string>

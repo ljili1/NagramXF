@@ -731,6 +731,14 @@ FileLog.e(finalRequestObject + " got error " + error.code + " " + error.text);
 
         native_init(currentAccount, version, layer, apiId, deviceModel, systemVersion, appVersion, langCode, systemLangCode, configPath, logPath, regId, cFingerprint, installer, packageId, timezoneOffset, userId, userPremium, enablePushConnection, ApplicationLoader.isNetworkOnline(), ApplicationLoader.getCurrentNetworkType(), SharedConfig.measureDevicePerformanceClass());
         checkConnection();
+        // ngx: if Telegram's saved proxy is our local 127.0.0.1:6357 inbound and a
+        // built-in node is configured but the engine is not running (the process was
+        // restarted), bring the engine back up. The hook never throws.
+        try {
+            tw.nekomimi.nekogram.helpers.VlessProxyManager.maybeRestoreAfterColdStart();
+        } catch (Throwable ignore) {
+            FileLog.e(ignore);
+        }
     }
 
     public static void setLangCode(String langCode) {

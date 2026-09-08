@@ -223,7 +223,7 @@ public class ProxyListActivity extends BaseFragment implements NotificationCente
             addView(checkImageView, LayoutHelper.createFrame(48, 48, (LocaleController.isRTL ? Gravity.LEFT : Gravity.RIGHT) | Gravity.TOP, 8, 8, 8, 0));
             checkImageView.setOnClickListener(v -> {
                 if (vlessLink != null) {
-                    presentFragment(new tw.nekomimi.nekogram.settings.VlessNodeEditActivity(vlessLink));
+                    presentNodeEditor(vlessLink);
                 } else if (WebSocketHelper.proxyServer.equals(currentInfo.address)) {
                     presentFragment(new tw.nekomimi.nekogram.settings.WsSettingsActivity(currentInfo));
                 } else {
@@ -274,7 +274,7 @@ public class ProxyListActivity extends BaseFragment implements NotificationCente
                 sb.append(name);
             }
             if (sb.length() == 0) {
-                sb.append(LocaleController.getString(R.string.VlessSettings));
+                sb.append(LocaleController.getString(R.string.ProxyNodes));
             }
             textView.setText(sb.toString());
             valueTextView.setText(ProxyTypes.nodeServerPort(link));
@@ -563,13 +563,13 @@ public class ProxyListActivity extends BaseFragment implements NotificationCente
         addItem.addSubItem(na_menu_add_scan_qr, LocaleController.getString("ScanQRCode", R.string.ScanQRCode)).setOnClickListener((v) -> scanQrCodeMenu());
         addItem.addSubItem(na_menu_add_input_socks, LocaleController.getString("AddProxySocks5", R.string.AddProxySocks5)).setOnClickListener((v) -> presentFragment(new ProxySettingsActivity()));
         addItem.addSubItem(na_menu_add_input_telegram, LocaleController.getString("AddProxyTelegram", R.string.AddProxyTelegram)).setOnClickListener((v) -> presentFragment(new ProxySettingsActivity()));
-        addItem.addSubItem(na_menu_add_input_vmess, LocaleController.getString("AddProxyVmess", R.string.AddProxyVmess)).setOnClickListener((v) -> presentFragment(new tw.nekomimi.nekogram.settings.VlessNodeEditActivity()));
-        addItem.addSubItem(na_menu_add_input_trojan, LocaleController.getString("AddProxyTrojan", R.string.AddProxyTrojan)).setOnClickListener((v) -> presentFragment(new tw.nekomimi.nekogram.settings.VlessNodeEditActivity()));
-        addItem.addSubItem(na_menu_add_input_ss, LocaleController.getString("AddProxySS", R.string.AddProxySS)).setOnClickListener((v) -> presentFragment(new tw.nekomimi.nekogram.settings.VlessNodeEditActivity()));
+        addItem.addSubItem(na_menu_add_input_vmess, LocaleController.getString("AddProxyVmess", R.string.AddProxyVmess)).setOnClickListener((v) -> presentFragment(new tw.nekomimi.nekogram.settings.VmessNodeEditActivity()));
+        addItem.addSubItem(na_menu_add_input_trojan, LocaleController.getString("AddProxyTrojan", R.string.AddProxyTrojan)).setOnClickListener((v) -> presentFragment(new tw.nekomimi.nekogram.settings.TrojanNodeEditActivity()));
+        addItem.addSubItem(na_menu_add_input_ss, LocaleController.getString("AddProxySS", R.string.AddProxySS)).setOnClickListener((v) -> presentFragment(new tw.nekomimi.nekogram.settings.ShadowsocksNodeEditActivity()));
 
         otherItem = menu.addItem(na_menu_other, R.drawable.ic_ab_other);
         otherItem.setContentDescription(LocaleController.getString("AccDescrMoreOptions", R.string.AccDescrMoreOptions));
-        otherItem.addSubItem(na_menu_vless_add, LocaleController.getString(R.string.VlessAddNode)).setOnClickListener((v) ->
+        otherItem.addSubItem(na_menu_vless_add, LocaleController.getString(R.string.ProxyAddNode)).setOnClickListener((v) ->
                 presentFragment(new tw.nekomimi.nekogram.settings.VlessNodeEditActivity()));
         otherItem.addSubItem(na_menu_vless_subscribe, LocaleController.getString(R.string.VlessImportSubscription)).setOnClickListener((v) ->
                 VlessImportHelper.showSubscriptionDialog(ProxyListActivity.this, () -> updateRows(true)));
@@ -1097,6 +1097,23 @@ public class ProxyListActivity extends BaseFragment implements NotificationCente
         }
     }
 
+    /**
+     * Opens the protocol-specific editor for a built-in node link, falling back
+     * to the generic link editor for protocols without a dedicated form (vless).
+     */
+    private void presentNodeEditor(String link) {
+        String kind = ProxyTypes.typeTag(link);
+        if ("vmess".equals(kind)) {
+            presentFragment(new tw.nekomimi.nekogram.settings.VmessNodeEditActivity(link));
+        } else if ("trojan".equals(kind)) {
+            presentFragment(new tw.nekomimi.nekogram.settings.TrojanNodeEditActivity(link));
+        } else if ("ss".equals(kind)) {
+            presentFragment(new tw.nekomimi.nekogram.settings.ShadowsocksNodeEditActivity(link));
+        } else {
+            presentFragment(new tw.nekomimi.nekogram.settings.VlessNodeEditActivity(link));
+        }
+    }
+
     /** "＋" → import from clipboard. Native tg:// links keep their legacy path. */
     private void importFromClipboardMenu() {
         Activity activity = getParentActivity();
@@ -1403,9 +1420,9 @@ public class ProxyListActivity extends BaseFragment implements NotificationCente
                         textCell.setText(getString(R.string.DeleteAllProxies), false);
                     } else if (position == vlessManageRow) {
                         if (vlessNodes.isEmpty()) {
-                            textCell.setText(getString(R.string.VlessSettings), false);
+                            textCell.setText(getString(R.string.ProxyAddNode), false);
                         } else {
-                            textCell.setText(getString(R.string.VlessManageNodes), false);
+                            textCell.setText(getString(R.string.ProxyManageNodes), false);
                         }
                     }
                     break;
@@ -1415,7 +1432,7 @@ public class ProxyListActivity extends BaseFragment implements NotificationCente
                     if (position == connectionsHeaderRow) {
                         headerCell.setText(getString(R.string.ProxyConnections));
                     } else if (position == vlessHeaderRow) {
-                        headerCell.setText(getString(R.string.VlessSettings));
+                        headerCell.setText(getString(R.string.ProxyNodes));
                     }
                     break;
                 }

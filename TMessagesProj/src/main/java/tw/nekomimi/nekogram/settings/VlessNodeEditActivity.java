@@ -189,19 +189,13 @@ public class VlessNodeEditActivity extends BaseFragment {
             return;
         }
         String link = linkEdit == null ? "" : linkEdit.getText().toString().trim();
+        boolean ok;
         if (editingLink != null) {
-            if (!link.equals(editingLink)) {
-                if (!VlessProxyManager.addNode(link)) {
-                    toastInvalidLink();
-                    return;
-                }
-                boolean wasActive = VlessProxyManager.isActiveNode(editingLink);
-                VlessProxyManager.removeNode(editingLink);
-                if (wasActive) {
-                    VlessProxyManager.selectNode(link);
-                }
-            }
-        } else if (!VlessProxyManager.addNode(link)) {
+            ok = VlessProxyManager.replaceNode(editingLink, link);
+        } else {
+            ok = VlessProxyManager.addNode(link);
+        }
+        if (!ok) {
             toastInvalidLink();
             return;
         }

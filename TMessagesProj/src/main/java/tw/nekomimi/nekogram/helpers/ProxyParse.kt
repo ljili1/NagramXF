@@ -280,7 +280,9 @@ object ProxyParse {
                 val pass = urlDecode(rawUser.substring(colon + 1))
                 password = if (pass.isNotBlank()) "$user:$pass" else user
             }
-            val sni = params["sni"]?.ifBlank { null } ?: hp.first
+            // Keep the sni empty when the link has none; the engine falls back
+            // to the server address at build time (VlessConfig.buildTrojanOutbound).
+            val sni = params["sni"] ?: ""
             TrojanBean(hp.first, hp.second, password, sni, fragment)
         } catch (e: Throwable) {
             null
