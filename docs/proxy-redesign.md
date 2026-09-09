@@ -100,7 +100,7 @@ MTProto 是**最省资源**的选择：Telegram 原生支持、无需本地进�
 VlessSettingsActivity ──► NekoConfig.vlessLink / vlessEnabled
         │
         ▼
-VlessProxyService（前台 Service，常驻通知）
+VlessProxyManager（应用进程内，后台 singbox-engine 线程；无 Service、无常驻通知）
         │
         ▼
 LibboxEngine:
@@ -150,7 +150,7 @@ Telegram ──SOCKS5──► 127.0.0.1:6357 ──► sing-box ──VLESS─�
 | `helpers/VlessConfig.kt` | `vless://` 解析 → sing-box 配置 JSON（reality/tls/ws/grpc/flow 等） |
 | `helpers/VlessProxyManager.kt` | 对外唯一入口：哨兵地址、本地端口、`hasConfig()`、启停 |
 | `helpers/LibboxEngine.kt` | libbox 生命周期 + `CommandServerHandler` + `PlatformInterface` 桩 |
-| `VlessProxyService.java` | 前台 Service，承载内核、常驻通知 |
+| ~~`VlessProxyService.java`~~ | **已移除**：内核改为应用进程内直接驱动（`VlessProxyManager.engineExecutor`），不再有前台 Service 与常驻通知 |
 | `settings/VlessSettingsActivity.java` | 设置页：填链接 + 开关（无 ProxyInfo 依赖的独立页，由 NekoSettings 进入） |
 | `settings/NekoSettingsActivity.java` | 新增“VLESS 代理”行 → 打开 `VlessSettingsActivity` |
 
@@ -163,7 +163,7 @@ Telegram ──SOCKS5──► 127.0.0.1:6357 ──► sing-box ──VLESS─�
 | `ProxyListActivity.java` | 还原为纯原生逻辑（不再区分哨兵条目） |
 | `NekoConfig.java` | 新增 `vlessEnabled` / `vlessLink` |
 | `build.gradle` | `implementation fileTree("libs")`（对齐 Momogram：`TMessagesProj/libs/` 下任意 AAR 自动纳入；并取代原 `compileOnly fileTree('libs')`，避免同 AAR 双 classpath） |
-| `AndroidManifest.xml` | 登记 `VlessProxyService` |
+| `AndroidManifest.xml` | ~~登记 `VlessProxyService`~~ **已移除**（无前台 Service） |
 | `values/strings.xml` | 新增 vless 相关文案 |
 | `.github/workflows/build_arm64.yml` | CI 拉取并缓存 libbox.aar（v1.13.21） |
 
