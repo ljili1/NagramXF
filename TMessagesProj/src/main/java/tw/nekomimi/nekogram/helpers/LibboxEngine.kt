@@ -16,7 +16,7 @@ import io.nekohasekai.libbox.StringIterator
 import io.nekohasekai.libbox.SystemProxyStatus
 import io.nekohasekai.libbox.TunOptions
 import io.nekohasekai.libbox.WIFIState
-import org.telegram.messenger.FileLog
+import android.util.Log
 
 /**
  * sing-box `libbox` engine handle for one proxy node.
@@ -68,10 +68,10 @@ object LibboxEngine {
         try {
             server.start()
             server.startOrReloadService(configJson, OverrideOptions())
-            FileLog.d("LibboxEngine: node engine up (libbox ${Libbox.version()})")
+            Log.i("LibboxEngine", "node engine up (libbox ${Libbox.version()})")
             return server
         } catch (e: Throwable) {
-            FileLog.e(e)
+            Log.e("LibboxEngine", "engine failure", e)
             release(server)
             throw IllegalStateException("sing-box failed to start: ${e.message}", e)
         }
@@ -82,7 +82,7 @@ object LibboxEngine {
     fun stop(server: CommandServer?) {
         if (server == null) return
         release(server)
-        FileLog.d("LibboxEngine: node engine stopped")
+        Log.i("LibboxEngine", "node engine stopped")
     }
 
     private fun ensureSetup(context: Context) {
@@ -103,12 +103,12 @@ object LibboxEngine {
         try {
             server.closeService()
         } catch (e: Throwable) {
-            FileLog.e(e)
+            Log.e("LibboxEngine", "engine failure", e)
         }
         try {
             server.close()
         } catch (e: Throwable) {
-            FileLog.e(e)
+            Log.e("LibboxEngine", "engine failure", e)
         }
     }
 
@@ -119,7 +119,7 @@ object LibboxEngine {
         override fun serviceStop() {}
         override fun setSystemProxyEnabled(enabled: Boolean) {}
         override fun writeDebugMessage(message: String) {
-            FileLog.d("libbox: $message")
+            Log.d("LibboxEngine", "libbox: $message")
         }
     }
 

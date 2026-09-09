@@ -883,11 +883,9 @@ public class ProxyListActivity extends BaseFragment implements NotificationCente
         for (int a = 0, count = proxyList.size(); a < count; a++) {
             final SharedConfig.ProxyInfo proxyInfo = proxyList.get(a);
             if (proxyInfo.isExternal()) {
-                // sing-box nodes: only a running engine can answer a TG proxy probe
-                // (its local mixed inbound). Stopped nodes keep their last state.
-                if (!(proxyInfo instanceof SharedConfig.SingProxy) || !((SharedConfig.SingProxy) proxyInfo).isStarted() || proxyInfo != SharedConfig.currentProxy) {
-                    continue;
-                }
+                // sing-box nodes run their engine in the isolated process and are
+                // not probed from here; they keep their last measured state.
+                continue;
             }
             if (proxyInfo.checking || SystemClock.elapsedRealtime() - proxyInfo.availableCheckTime < (proxyInfo.available ? 20 : 5) * 1000 && !force) {
                 continue;

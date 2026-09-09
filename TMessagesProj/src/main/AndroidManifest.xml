@@ -907,6 +907,13 @@
 
         <meta-data android:name="firebase_crashlytics_collection_enabled" android:value="false" />
 
+        <!-- sing-box engine host: runs libbox in its own process so a native
+             crash inside the engine can never take the Telegram UI down. -->
+        <service
+            android:name="tw.nekomimi.nekogram.services.SingBoxEngineService"
+            android:process=":singbox"
+            android:exported="false" />
+
     </application>
 
 </manifest>

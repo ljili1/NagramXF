@@ -304,7 +304,6 @@ object ProxyUtil {
     }
 
     @JvmStatic
-    @JvmStatic
     fun importFromClipboard(ctx: Activity) {
         val text = clipboardText(ctx)
         val parsed = ProxyLinkParser.parse(text)
@@ -344,7 +343,7 @@ object ProxyUtil {
             }
             if (singAdded.isNotEmpty()) {
                 if (isNotEmpty()) append("\n\n")
-                append(getString(R.string.VlessNodesAdded, singAdded.size))
+                append(getString(R.string.VlessNodesAdded).replace("%1\$d", singAdded.size.toString()))
                 append("\n\n")
                 append(singAdded.joinToString("\n"))
             }

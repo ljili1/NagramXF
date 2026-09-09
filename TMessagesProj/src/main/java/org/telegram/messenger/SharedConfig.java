@@ -46,6 +46,7 @@ import org.telegram.ui.LaunchActivity;
 
 import io.nekohasekai.libbox.CommandServer;
 import tw.nekomimi.nekogram.helpers.LibboxEngine;
+import tw.nekomimi.nekogram.helpers.ProxyEngineClient;
 import tw.nekomimi.nekogram.helpers.ProxyTypes;
 import tw.nekomimi.nekogram.helpers.VlessConfig;
 
@@ -551,9 +552,6 @@ public class SharedConfig {
         /** Full self-describing link (`vless://`…). */
         public final String link;
 
-        /** Engine handle; null while the node is stopped. */
-        public volatile CommandServer server;
-
         public SingProxy(String link) {
             super("127.0.0.1", 0, "", "", "");
             this.link = link == null ? "" : link.trim();
@@ -596,51 +594,6 @@ public class SharedConfig {
             return obj instanceof SingProxy && getClass() == obj.getClass() && link.equals(((SingProxy) obj).link);
         }
 
-        /**
-         * Starts this node's engine. Blocking (seconds) — callers MUST run on
-         * the background proxy executor, never on the UI thread. When this node
-         * is the enabled current proxy the local inbound is also applied to
-         * Telegram, exactly like the 9.3.3 `VmessProxy.start()`.
-         */
-        public synchronized void start() throws Exception {
-            if (server != null) {
-                return;
-            }
-            int localPort = pickPort();
-            String config = VlessConfig.buildConfig(link, localPort);
-            if (config == null) {
-                throw new IllegalStateException("Unsupported or invalid proxy link");
-            }
-            CommandServer started = LibboxEngine.start(ApplicationLoader.applicationContext, config);
-            address = "127.0.0.1";
-            port = localPort;
-            server = started;
-            if (isProxyEnabledPref() && currentProxy == this) {
-                // Persist the local inbound exactly like a tapped native proxy row,
-                // so ConnectionsManager.init() can restore it after a restart.
-                MessagesController.getGlobalMainSettings().edit()
-                        .putString("proxy_ip", address)
-                        .putInt("proxy_port", port)
-                        .putString("proxy_user", "")
-                        .putString("proxy_pass", "")
-                        .putString("proxy_secret", "")
-                        .putBoolean("proxy_enabled", true)
-                        .apply();
-                ConnectionsManager.setProxySettings(true, address, port, username, password, secret);
-            }
-        }
-
-        /** Stops this node's engine. Never throws. Safe to call when stopped. */
-        public synchronized void stop() {
-            CommandServer running = server;
-            server = null;
-            LibboxEngine.stop(running);
-        }
-
-        public boolean isStarted() {
-            return server != null;
-        }
-
         @Override
         public JSONObject toJsonInternal() throws JSONException {
             JSONObject obj = new JSONObject();
@@ -653,29 +606,6 @@ public class SharedConfig {
             obj.put("ping", ping);
             obj.put("availableCheckTime", availableCheckTime);
             return obj;
-        }
-
-        private int pickPort() {
-            int base = port > 0 ? port : 31000 + Math.abs(link.hashCode() % 18000);
-            for (int i = 0; i < 400; i++) {
-                int candidate = base + i;
-                if (candidate > 65535) {
-                    candidate = 1024 + (candidate - 65535);
-                }
-                if (isLocalPortFree(candidate)) {
-                    return candidate;
-                }
-            }
-            return base;
-        }
-
-        private static boolean isLocalPortFree(int candidate) {
-            try (ServerSocket socket = new ServerSocket()) {
-                socket.bind(new InetSocketAddress(InetAddress.getByName("127.0.0.1"), candidate));
-                return true;
-            } catch (Throwable e) {
-                return false;
-            }
         }
     }
 
@@ -1743,46 +1673,12 @@ public class SharedConfig {
         LocaleController.resetImperialSystemType();
     }
 
-    /** Single background thread that serializes every engine start/stop. */
-    private static final ExecutorService proxyEngineExecutor = Executors.newSingleThreadExecutor(r -> {
-        Thread thread = new Thread(r, "singbox-node");
-        thread.setDaemon(true);
-        return thread;
-    });
-
     private static boolean isProxyEnabledPref() {
         return MessagesController.getGlobalMainSettings().getBoolean("proxy_enabled", false);
     }
 
     private static void notifyProxyChanged() {
         AndroidUtilities.runOnUIThread(() -> NotificationCenter.getGlobalInstance().postNotificationName(NotificationCenter.proxySettingsChanged));
-    }
-
-    /**
-     * Drops the persisted local-inbound state and the `current_proxy` selection.
-     * Called after a sing-box engine start failed: the link may be bad, the
-     * port may be in use, or libbox may have rejected the config. Leaving the
-     * previous proxy_ip/proxy_port/proxy_enabled=true around would otherwise
-     * make Telegram keep retrying the dead inbound and the next cold start would
-     * hit the same error before the user could fix it.
-     */
-    private static void cleanupExternalProxyState() {
-        try {
-            SharedPreferences preferences = MessagesController.getGlobalMainSettings();
-            preferences.edit()
-                    .putString("proxy_ip", "")
-                    .putInt("proxy_port", 1080)
-                    .putString("proxy_user", "")
-                    .putString("proxy_pass", "")
-                    .putString("proxy_secret", "")
-                    .putBoolean("proxy_enabled", false)
-                    .putBoolean("proxy_enabled_calls", false)
-                    .apply();
-            currentProxy = null;
-            FileLog.d("SharedConfig: cleaned up external proxy state after engine failure");
-        } catch (Throwable e) {
-            FileLog.e(e);
-        }
     }
 
     /** Creates a node proxy object for [link]; null when the link scheme is unsupported. */
@@ -1845,49 +1741,69 @@ public class SharedConfig {
         return true;
     }
 
-    /** Starts [proxyInfo] on the background proxy executor; never blocks the caller. */
+    /** Starts the engine (in its own process) for [proxyInfo]; never blocks the caller. */
     public static void startProxyAsync(final ProxyInfo proxyInfo) {
-        proxyEngineExecutor.execute(() -> {
-            try {
-                if (proxyInfo instanceof SingProxy) {
-                    SingProxy sing = (SingProxy) proxyInfo;
-                    if (!sing.isStarted()) {
-                        sing.start();
+        if (!(proxyInfo instanceof SingProxy)) {
+            return;
+        }
+        final SingProxy sing = (SingProxy) proxyInfo;
+        try {
+            ProxyEngineClient.start(ApplicationLoader.applicationContext, sing.link, sing.port, new ProxyEngineClient.StartCallback() {
+                @Override
+                public void onStarted(int port) {
+                    try {
+                        sing.port = port;
+                        // Persist the live local port so cold start can rebind the
+                        // very same endpoint.
+                        saveProxyList();
+                        if (isProxyEnabledPref() && currentProxy == sing) {
+                            MessagesController.getGlobalMainSettings().edit()
+                                    .putString("proxy_ip", "127.0.0.1")
+                                    .putInt("proxy_port", port)
+                                    .putString("proxy_user", "")
+                                    .putString("proxy_pass", "")
+                                    .putString("proxy_secret", "")
+                                    .putBoolean("proxy_enabled", true)
+                                    .apply();
+                            Utilities.globalQueue.postRunnable(() -> ConnectionsManager.setProxySettings(true, "127.0.0.1", port, "", "", ""));
+                        }
+                    } catch (Throwable e) {
+                        FileLog.e(e);
+                    } finally {
+                        notifyProxyChanged();
                     }
                 }
-            } catch (Throwable e) {
-                FileLog.e(e);
-                // sing-box refused to start: the link is unsupported, the local
-                // port could not be bound, or libbox rejected the config. Without
-                // this cleanup Telegram would keep trying to use the dead local
-                // inbound and the next cold start would hit the same crash.
-                cleanupExternalProxyState();
-            } finally {
-                notifyProxyChanged();
-            }
-        });
+
+                @Override
+                public void onError(String error) {
+                    // The engine (isolated process) refused the node. The user's
+                    // saved proxy selection is deliberately kept — nothing is
+                    // cleared automatically.
+                    FileLog.e("startProxyAsync failed: " + error);
+                    notifyProxyChanged();
+                }
+            });
+        } catch (Throwable e) {
+            FileLog.e(e);
+            notifyProxyChanged();
+        }
     }
 
-    /** Stops [proxyInfo] on the background proxy executor; never blocks the caller. */
+    /** Stops the engine for [proxyInfo]; never blocks the caller. */
     public static void stopProxyAsync(final ProxyInfo proxyInfo) {
-        proxyEngineExecutor.execute(() -> {
-            try {
-                if (proxyInfo instanceof SingProxy) {
-                    ((SingProxy) proxyInfo).stop();
-                }
-            } catch (Throwable e) {
-                FileLog.e(e);
-            } finally {
-                notifyProxyChanged();
-            }
-        });
+        try {
+            ProxyEngineClient.stop(ApplicationLoader.applicationContext, () -> notifyProxyChanged());
+        } catch (Throwable e) {
+            FileLog.e(e);
+            notifyProxyChanged();
+        }
     }
 
     /**
-     * Cold-start hook: when the persisted proxy is a sing-box node that is not
-     * running yet (process restart), brings its engine back up so Telegram's
-     * restored connection to the local inbound actually has a listener.
-     * Runs on the background executor; never throws.
+     * Cold-start hook: when the persisted proxy is a sing-box node, brings its
+     * engine (isolated `:singbox` process) back up so Telegram's restored
+     * connection to the local inbound has a listener. Never throws; a bad node
+     * simply fails in the engine process and the saved state is kept.
      */
     public static void ensureCurrentExternalStarted() {
         try {
@@ -1896,18 +1812,9 @@ public class SharedConfig {
                 return;
             }
             ProxyInfo info = currentProxy;
-            if (info instanceof SingProxy && !((SingProxy) info).isStarted()) {
-                // Pre-flight synchronously before touching the native engine: an
-                // unparseable / field-incomplete node must not reach libbox at
-                // all (a rejected outbound can abort the process, and the next
-                // cold start would repeat it). When invalid, drop the persisted
-                // enabled state so the app always boots clean.
-                String preflight = VlessConfig.buildConfig(((SingProxy) info).link, 1);
-                if (preflight == null) {
-                    FileLog.e("SharedConfig: cold-start node is invalid, clearing proxy state");
-                    cleanupExternalProxyState();
-                    return;
-                }
+            if (info instanceof SingProxy) {
+                // Idempotent on the engine side: if the same node is already
+                // running it simply reports its live port back.
                 startProxyAsync(info);
             }
         } catch (Throwable e) {
@@ -1925,7 +1832,7 @@ public class SharedConfig {
         if (enable) {
             if (info instanceof SingProxy) {
                 // The local inbound must be listening before Telegram can use it;
-                // SingProxy.start() applies setProxySettings once the engine is up.
+                // The isolated engine process applies the local inbound once up.
                 startProxyAsync(info);
             } else {
                 applyNativeProxy(info);
@@ -1957,7 +1864,7 @@ public class SharedConfig {
                 .putInt("current_proxy", info == null ? 0 : info.hashCode())
                 .apply();
         boolean enabled = isProxyEnabledPref();
-        if (previous instanceof SingProxy && previous != info && ((SingProxy) previous).isStarted()) {
+        if (previous instanceof SingProxy && previous != info) {
             stopProxyAsync(previous);
         }
         if (enabled) {
@@ -2170,7 +2077,7 @@ public class SharedConfig {
     }
 
     public static void deleteProxy(ProxyInfo proxyInfo) {
-        if (proxyInfo instanceof SingProxy && ((SingProxy) proxyInfo).isStarted()) {
+        if (proxyInfo instanceof SingProxy) {
             stopProxyAsync(proxyInfo);
         }
         if (currentProxy == proxyInfo) {

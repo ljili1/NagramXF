@@ -64,7 +64,11 @@ object ProxyLinkParser {
             for (line in chunk.split('\n', '\r')) {
                 val trimmedLine = line.trim(' ', '\t', ';')
                 if (trimmedLine.isEmpty() || trimmedLine.contains("://")) continue
-                parseBareHost(trimmedLine)?.let { out.put("native:" + it.address + ":" + it.port, it) }
+                parseBareHost(trimmedLine)?.let { parsed ->
+                    if (parsed is Parsed.NativeConfig) {
+                        out.put("native:" + parsed.address + ":" + parsed.port, parsed)
+                    }
+                }
             }
         }
         return out.values.toList()
