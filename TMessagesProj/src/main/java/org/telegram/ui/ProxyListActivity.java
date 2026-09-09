@@ -507,31 +507,45 @@ public class ProxyListActivity extends BaseFragment implements NotificationCente
         frameLayout.addView(listView, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT, Gravity.TOP | Gravity.LEFT));
         listView.setAdapter(listAdapter);
         listView.setOnItemClickListener((view, position) -> {
-            if (position == useProxyRow) {
-                toggleUseProxy();
-            } else if (callsRow >= 0 && position == callsRow) {
-                useProxyForCalls = !useProxyForCalls;
-                TextCheckCell textCheckCell = (TextCheckCell) view;
-                textCheckCell.setChecked(useProxyForCalls);
-                SharedPreferences.Editor editor = MessagesController.getGlobalMainSettings().edit();
-                editor.putBoolean("proxy_enabled_calls", useProxyForCalls);
-                editor.commit();
-            } else {
-                ProxyRow row = rowAt(position);
-                if (row != null) {
-                    if (row.isNode()) {
-                        selectNode(row);
-                    } else {
-                        selectNativeProxy(row);
+            // Top-level guard: every tap on this page can reach the engine
+            // executor (selectNode -> LibboxEngine.startOrReload) and the
+            // native SOCKS layer. Any uncaught throwable here kills the
+            // process because the click is dispatched on the UI thread, so
+            // swallow anything that the per-action try/catches missed and
+            // log it instead of letting it propagate.
+            try {
+                if (position == useProxyRow) {
+                    toggleUseProxy();
+                } else if (callsRow >= 0 && position == callsRow) {
+                    useProxyForCalls = !useProxyForCalls;
+                    TextCheckCell textCheckCell = (TextCheckCell) view;
+                    textCheckCell.setChecked(useProxyForCalls);
+                    SharedPreferences.Editor editor = MessagesController.getGlobalMainSettings().edit();
+                    editor.putBoolean("proxy_enabled_calls", useProxyForCalls);
+                    editor.commit();
+                } else {
+                    ProxyRow row = rowAt(position);
+                    if (row != null) {
+                        if (row.isNode()) {
+                            selectNode(row);
+                        } else {
+                            selectNativeProxy(row);
+                        }
                     }
                 }
+            } catch (Throwable e) {
+                FileLog.e(e);
             }
         });
         listView.setOnItemLongClickListener((view, position) -> {
-            ProxyRow row = rowAt(position);
-            if (row != null) {
-                showProxyActions(row);
-                return true;
+            try {
+                ProxyRow row = rowAt(position);
+                if (row != null) {
+                    showProxyActions(row);
+                    return true;
+                }
+            } catch (Throwable e) {
+                FileLog.e(e);
             }
             return false;
         });

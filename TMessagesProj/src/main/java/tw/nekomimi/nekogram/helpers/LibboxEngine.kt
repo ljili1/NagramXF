@@ -71,10 +71,15 @@ object LibboxEngine {
      * `startOrReloadService`.
      *
      * After the first successful call every subsequent call is a hot reload, so
-     * switching the active node never restarts the command server. A failing
-     * (re)load leaves an already-running engine untouched; a server that was
-     * created for this call and could not be loaded is released again so the
-     * next attempt starts from a clean state.
+     * switching the active node never restarts the command server.
+     *
+     * CRITICAL: any failure during [startOrReloadService] (e.g. an invalid
+     * reality/ws combination in the config, or the engine rejecting the
+     * outbound) leaves the command server in a state that the next call into
+     * native code will not recover from. We therefore **always** release the
+     * command server on failure — even when we reused an existing one — so the
+     * next call creates a fresh server instead of driving a corrupted one into
+     * a native abort.
      *
      * The libbox calls are native and block for seconds — callers MUST run this
      * off the UI thread (see `VlessProxyManager.engineExecutor`).
@@ -82,7 +87,6 @@ object LibboxEngine {
     @Synchronized
     fun startOrReload(context: Context, configJson: String): Boolean {
         var server = commandServer
-        var created = false
         return try {
             if (!setupDone) {
                 val base = context.filesDir.absolutePath
@@ -96,10 +100,20 @@ object LibboxEngine {
             }
 
             if (server == null) {
-                server = Libbox.newCommandServer(ServerHandler(), PlatformStub())
-                server.start()
-                commandServer = server
-                created = true
+                // Build + start the command server in its own scope so a throw
+                // from `start()` cannot leak the half-initialised handle.
+                val fresh = Libbox.newCommandServer(ServerHandler(), PlatformStub())
+                try {
+                    fresh.start()
+                } catch (e: Throwable) {
+                    try {
+                        fresh.close()
+                    } catch (ignore: Throwable) {
+                    }
+                    throw e
+                }
+                commandServer = fresh
+                server = fresh
             }
             server.startOrReloadService(configJson, OverrideOptions())
             lastConfig = configJson
@@ -107,11 +121,15 @@ object LibboxEngine {
             true
         } catch (e: Throwable) {
             FileLog.e(e)
-            val fresh = server
-            if (created && fresh != null) {
-                commandServer = null
-                lastConfig = null
-                release(fresh)
+            // Always tear down the server on failure (even when we reused the
+            // existing one): a half-broken libbox will SIGABRT the next call
+            // and bypass the Java try/catch — tearing down here keeps the
+            // process alive at the cost of one extra setup on the next call.
+            val broken = commandServer
+            commandServer = null
+            lastConfig = null
+            if (broken != null) {
+                release(broken)
             }
             false
         }
