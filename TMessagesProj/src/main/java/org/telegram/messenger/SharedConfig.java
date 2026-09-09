@@ -1758,6 +1758,33 @@ public class SharedConfig {
         AndroidUtilities.runOnUIThread(() -> NotificationCenter.getGlobalInstance().postNotificationName(NotificationCenter.proxySettingsChanged));
     }
 
+    /**
+     * Drops the persisted local-inbound state and the `current_proxy` selection.
+     * Called after a sing-box engine start failed: the link may be bad, the
+     * port may be in use, or libbox may have rejected the config. Leaving the
+     * previous proxy_ip/proxy_port/proxy_enabled=true around would otherwise
+     * make Telegram keep retrying the dead inbound and the next cold start would
+     * hit the same error before the user could fix it.
+     */
+    private static void cleanupExternalProxyState() {
+        try {
+            SharedPreferences preferences = MessagesController.getGlobalMainSettings();
+            preferences.edit()
+                    .putString("proxy_ip", "")
+                    .putInt("proxy_port", 1080)
+                    .putString("proxy_user", "")
+                    .putString("proxy_pass", "")
+                    .putString("proxy_secret", "")
+                    .putBoolean("proxy_enabled", false)
+                    .putBoolean("proxy_enabled_calls", false)
+                    .apply();
+            currentProxy = null;
+            FileLog.d("SharedConfig: cleaned up external proxy state after engine failure");
+        } catch (Throwable e) {
+            FileLog.e(e);
+        }
+    }
+
     /** Creates a node proxy object for [link]; null when the link scheme is unsupported. */
     public static ProxyInfo createNodeProxy(String link) {
         String kind = ProxyTypes.kind(link);
@@ -1830,6 +1857,11 @@ public class SharedConfig {
                 }
             } catch (Throwable e) {
                 FileLog.e(e);
+                // sing-box refused to start: the link is unsupported, the local
+                // port could not be bound, or libbox rejected the config. Without
+                // this cleanup Telegram would keep trying to use the dead local
+                // inbound and the next cold start would hit the same crash.
+                cleanupExternalProxyState();
             } finally {
                 notifyProxyChanged();
             }
@@ -1865,7 +1897,12 @@ public class SharedConfig {
             }
             ProxyInfo info = currentProxy;
             if (info instanceof SingProxy && !((SingProxy) info).isStarted()) {
-                startProxyAsync(info);
+                try {
+                    startProxyAsync(info);
+                } catch (Throwable ignore) {
+                    FileLog.e(ignore);
+                    cleanupExternalProxyState();
+                }
             }
         } catch (Throwable e) {
             FileLog.e(e);

@@ -41,6 +41,8 @@ import org.telegram.messenger.R
 import org.telegram.messenger.SharedConfig
 import org.telegram.messenger.TelegramQRCodeWriter
 import org.telegram.messenger.browser.Browser
+import tw.nekomimi.nekogram.helpers.ProxyLinkParser
+import tw.nekomimi.nekogram.helpers.ProxyTypes
 import tw.nekomimi.nekogram.ui.BottomBuilder
 import tw.nekomimi.nekogram.utils.AlertUtil.showToast
 import java.io.File
@@ -302,92 +304,55 @@ object ProxyUtil {
     }
 
     @JvmStatic
+    @JvmStatic
     fun importFromClipboard(ctx: Activity) {
-
-        val text = (ApplicationLoader.applicationContext.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager).primaryClip?.getItemAt(0)?.text?.toString()
-
-        val proxies = mutableListOf<SharedConfig.ProxyInfo>()
-
-        var error = false
-
-        text?.trim()?.split('\n')?.map { it.split(" ") }?.forEach { it ->
-
-            it.forEach { line ->
-
-                if (line.startsWith("tg://proxy") ||
-                    line.startsWith("tg://socks") ||
-                    line.startsWith("https://t.me/proxy") ||
-                    line.startsWith("https://t.me/socks")) {
-
-                    runCatching { proxies.add(SharedConfig.ProxyInfo.fromUrl(line)) }.onFailure {
-
-                        error = true
-
-                        showToast(getString(R.string.BrokenLink) + ": ${it.message ?: it.javaClass.simpleName}")
-
-                    }
-
-                }
-
-            }
-
-        }
-
-        runCatching {
-
-            if (proxies.isEmpty() && !error) {
-
-                String(Base64.decode(text, Base64.NO_PADDING)).trim().split('\n').map { it.split(" ") }.forEach { str ->
-
-                    str.forEach { line ->
-
-                        if (line.startsWith("tg://proxy") ||
-                            line.startsWith("tg://socks") ||
-                            line.startsWith("https://t.me/proxy") ||
-                            line.startsWith("https://t.me/socks")) {
-
-                            runCatching { proxies.add(SharedConfig.ProxyInfo.fromUrl(line)) }.onFailure {
-
-                                error = true
-
-                                showToast(getString(R.string.BrokenLink) + ": ${it.message ?: it.javaClass.simpleName}")
-
-                            }
-
-                        }
-
-                    }
-
-                }
-
-            }
-
-        }
-
-        if (proxies.isEmpty()) {
-
-            if (!error) showToast(getString(R.string.BrokenLink))
-
+        val text = clipboardText(ctx)
+        val parsed = ProxyLinkParser.parse(text)
+        if (parsed.isEmpty()) {
+            showToast(getString(R.string.BrokenLink))
             return
-
-        } else if (!error) {
-
-            AlertUtil.showSimpleAlert(ctx, getString(R.string.ImportedProxies) + "\n\n" + proxies.joinToString("\n") { it.address })
-
         }
-
-        proxies.forEach {
-
-            SharedConfig.addProxy(it)
-
+        val nativeAdded = mutableListOf<String>()
+        val singAdded = mutableListOf<String>()
+        for (p in parsed) {
+            when (p) {
+                is ProxyLinkParser.Parsed.NodeLink -> {
+                    if (!ProxyTypes.isSupported(p.link)) continue
+                    val obj = SharedConfig.createNodeProxy(p.link) ?: continue
+                    if (SharedConfig.proxyList.none { it == obj }) {
+                        SharedConfig.addProxy(obj)
+                        singAdded.add(obj.getAddressLine())
+                    }
+                }
+                is ProxyLinkParser.Parsed.NativeConfig -> {
+                    val existing = SharedConfig.proxyList.any {
+                        it.address == p.address && it.port == p.port &&
+                                it.username == p.username && it.password == p.password && it.secret == p.secret
+                    }
+                    if (existing) continue
+                    val info = SharedConfig.ProxyInfo(p.address, p.port, p.username, p.password, p.secret)
+                    SharedConfig.addProxy(info)
+                    nativeAdded.add(info.address)
+                }
+            }
         }
-
+        val summary = buildString {
+            if (nativeAdded.isNotEmpty()) {
+                append(getString(R.string.ImportedProxies))
+                append("\n\n")
+                append(nativeAdded.joinToString("\n"))
+            }
+            if (singAdded.isNotEmpty()) {
+                if (isNotEmpty()) append("\n\n")
+                append(getString(R.string.VlessNodesAdded, singAdded.size))
+                append("\n\n")
+                append(singAdded.joinToString("\n"))
+            }
+        }
+        AlertUtil.showSimpleAlert(ctx, summary)
         AndroidUtilities.runOnUIThread {
-
             NotificationCenter.getGlobalInstance().postNotificationName(NotificationCenter.proxySettingsChanged)
-
         }
-
     }
 
     @JvmStatic
@@ -413,8 +378,10 @@ object ProxyUtil {
         }
         var added = 0
         runCatching {
-            for (link in parseProxies(text)) {
-                val created = SharedConfig.createNodeProxy(link) ?: continue
+            for (p in ProxyLinkParser.parse(text)) {
+                if (p !is ProxyLinkParser.Parsed.NodeLink) continue
+                if (!ProxyTypes.isSupported(p.link)) continue
+                val created = SharedConfig.createNodeProxy(p.link) ?: continue
                 if (SharedConfig.proxyList.none { it == created }) {
                     SharedConfig.addProxy(created)
                     added++

@@ -82,7 +82,6 @@ import tw.nekomimi.nekogram.settings.TrojanNodeEditActivity;
 import tw.nekomimi.nekogram.settings.VlessNodeEditActivity;
 import tw.nekomimi.nekogram.utils.AlertUtil;
 import tw.nekomimi.nekogram.utils.ProxyUtil;
-
 public class ProxyListActivity extends BaseFragment implements NotificationCenter.NotificationCenterDelegate {
     private final static boolean IS_PROXY_ROTATION_AVAILABLE = true;
     private static final int MENU_DELETE = 0;
@@ -452,10 +451,6 @@ public class ProxyListActivity extends BaseFragment implements NotificationCente
     private final static int na_menu_retest_ping = 1004;
     private final static int na_menu_delete_all = 1005;
     private final static int na_menu_delete_unavailable = 1006;
-    private final static int na_menu_add_input_vless = 1007;
-    private final static int na_menu_add_input_trojan = 1008;
-    private final static int na_menu_add_input_ss = 1009;
-    private final static int na_menu_add_input_hysteria2 = 1010;
 
     @Override
     public View createView(Context context) {
@@ -480,22 +475,7 @@ public class ProxyListActivity extends BaseFragment implements NotificationCente
         otherItem = menu.addItem(na_menu_other, R.drawable.ic_ab_other);
         otherItem.setContentDescription(LocaleController.getString("AccDescrMoreOptions", R.string.AccDescrMoreOptions));
         otherItem.addSubItem(na_menu_add_input_telegram, LocaleController.getString("AddProxyTelegram", R.string.AddProxyTelegram)).setOnClickListener((v) -> presentFragment(new ProxySettingsActivity()));
-        otherItem.addSubItem(na_menu_add_input_vless, LocaleController.getString(R.string.VlessAddNode)).setOnClickListener((v) -> presentFragment(new VlessNodeEditActivity()));
-        otherItem.addSubItem(na_menu_add_input_trojan, LocaleController.getString("AddProxyTrojan", R.string.AddProxyTrojan)).setOnClickListener((v) -> presentFragment(new TrojanNodeEditActivity()));
-        otherItem.addSubItem(na_menu_add_input_ss, LocaleController.getString("AddProxySS", R.string.AddProxySS)).setOnClickListener((v) -> presentFragment(new ShadowsocksNodeEditActivity()));
-        otherItem.addSubItem(na_menu_add_input_hysteria2, LocaleController.getString("AddProxyHysteria2", R.string.AddProxyHysteria2)).setOnClickListener((v) -> presentFragment(new Hysteria2NodeEditActivity()));
-        otherItem.addSubItem(na_menu_add_import_from_clipboard, LocaleController.getString("ImportProxyFromClipboard", R.string.ImportProxyFromClipboard)).setOnClickListener((v) -> {
-            String text = ProxyUtil.clipboardText(getParentActivity());
-            int singAdded = ProxyUtil.importSingProxies(text);
-            if (singAdded > 0) {
-                if (getParentActivity() != null) {
-                    android.widget.Toast.makeText(getParentActivity(), LocaleController.formatString("VlessNodesAdded", R.string.VlessNodesAdded, singAdded), android.widget.Toast.LENGTH_SHORT).show();
-                }
-            } else {
-                // No sing links: keep the native Telegram-proxy import path.
-                ProxyUtil.importFromClipboard(getParentActivity());
-            }
-        });
+        otherItem.addSubItem(na_menu_add_import_from_clipboard, LocaleController.getString("ImportProxyFromClipboard", R.string.ImportProxyFromClipboard)).setOnClickListener((v) -> ProxyUtil.importFromClipboard(getParentActivity()));
         otherItem.addSubItem(na_menu_retest_ping, LocaleController.getString("RetestPing", R.string.RetestPing)).setOnClickListener((v) -> {
             checkProxyList(true);
             for (int a = proxyStartRow; a < proxyEndRow; a++) {
