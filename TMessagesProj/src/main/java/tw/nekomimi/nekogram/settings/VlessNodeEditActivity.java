@@ -168,8 +168,12 @@ public class VlessNodeEditActivity extends BaseFragment {
         }
         java.util.List<tw.nekomimi.nekogram.helpers.ProxyLinkParser.Parsed> parsed = tw.nekomimi.nekogram.helpers.ProxyLinkParser.parse(text);
         for (tw.nekomimi.nekogram.helpers.ProxyLinkParser.Parsed p : parsed) {
-            if (p instanceof tw.nekomimi.nekogram.helpers.ProxyLinkParser.Parsed.NodeLink && ProxyTypes.isSupported(p.getLink())) {
-                String link = p.getLink();
+            if (!(p instanceof tw.nekomimi.nekogram.helpers.ProxyLinkParser.Parsed.NodeLink)) {
+                continue;
+            }
+            tw.nekomimi.nekogram.helpers.ProxyLinkParser.Parsed.NodeLink node = (tw.nekomimi.nekogram.helpers.ProxyLinkParser.Parsed.NodeLink) p;
+            if (ProxyTypes.isSupported(node.getLink())) {
+                String link = node.getLink();
                 linkEdit.setText(link);
                 linkEdit.setSelection(link.length());
                 return;
