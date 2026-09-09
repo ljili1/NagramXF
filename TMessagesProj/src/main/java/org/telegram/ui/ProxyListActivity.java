@@ -65,6 +65,7 @@ import org.telegram.messenger.NotificationCenter;
 import org.telegram.messenger.R;
 import org.telegram.messenger.SharedConfig;
 import org.telegram.messenger.SvgHelper;
+import org.telegram.messenger.Utilities;
 import org.telegram.messenger.browser.Browser;
 import org.telegram.tgnet.ConnectionsManager;
 import org.telegram.ui.ActionBar.ActionBar;
@@ -512,7 +513,23 @@ public class ProxyListActivity extends BaseFragment implements NotificationCente
         }
         if (!useProxySettings && VlessProxyManager.hasConfig()) {
             // Turning on: boot the engine on the last selected node.
-            VlessProxyManager.selectNode(VlessProxyManager.getVlessLink());
+            try {
+                VlessProxyManager.selectNode(VlessProxyManager.getVlessLink());
+            } catch (Throwable e) {
+                // Same crash surface as tapping a node row: never let an engine
+                // start/reload failure bubble out of the master switch handler.
+                FileLog.e(e);
+                try {
+                    VlessProxyManager.setEnabled(false);
+                } catch (Throwable t) {
+                    FileLog.e(t);
+                }
+                useProxySettings = false;
+                useProxyForCalls = false;
+                notifyProxySettingsChanged();
+                updateRows(true);
+                return;
+            }
             useProxySettings = true;
             useProxyForCalls = false;
             notifyProxySettingsChanged();
@@ -572,8 +589,9 @@ public class ProxyListActivity extends BaseFragment implements NotificationCente
         if (info == null) {
             return;
         }
+        final boolean engineWasEnabled = VlessProxyManager.isEnabled();
         // A native proxy takes over: stop the built-in engine if it is running.
-        if (VlessProxyManager.isEnabled()) {
+        if (engineWasEnabled) {
             VlessProxyManager.setEnabled(false);
         }
         useProxySettings = true;
@@ -590,7 +608,23 @@ public class ProxyListActivity extends BaseFragment implements NotificationCente
             editor.putBoolean("proxy_enabled_calls", false);
         }
         editor.commit();
-        ConnectionsManager.setProxySettings(true, info.address, info.port, info.username, info.password, info.secret);
+        if (engineWasEnabled) {
+            // VlessProxyManager.setEnabled(false) -> SharedConfig.setCurrentProxy(null)
+            // -> SharedConfig.setProxyEnable(false) schedules an asynchronous
+            // ConnectionsManager disable on Utilities.globalQueue. Re-assert the
+            // native selection on the SAME queue (FIFO) so that the engine
+            // teardown disable cannot land after our enable and silently turn
+            // the proxy back off.
+            final String address = info.address;
+            final int port = info.port;
+            final String username = info.username;
+            final String password = info.password;
+            final String secret = info.secret;
+            Utilities.globalQueue.postRunnable(() ->
+                ConnectionsManager.setProxySettings(true, address, port, username, password, secret));
+        } else {
+            ConnectionsManager.setProxySettings(true, info.address, info.port, info.username, info.password, info.secret);
+        }
         notifyProxySettingsChanged();
         updateRows(true);
     }
