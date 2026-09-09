@@ -19,8 +19,13 @@ import java.util.concurrent.Executors
  * migrated (written back once) the first time the manager is used.
  *
  * The engine (libbox) runs **inside the app process** — there is no foreground
- * service and no persistent notification, matching Nekogram X 9.3.3. Every
- * libbox call (setup / start / reload / stop) is dispatched onto
+ * service and no persistent notification, matching Nekogram X 9.3.3. The
+ * lifecycle is the upstream sing-box one (see [LibboxEngine]): `Libbox.setup`
+ * once, `Libbox.newCommandServer` + `CommandServer.start` once, then
+ * `CommandServer.startOrReloadService` for both the first start and every node
+ * switch (hot reload, the command server is never torn down).
+ *
+ * Every libbox call (setup / start-or-reload / stop) is dispatched onto
  * [engineExecutor]: the calls are native and can block for seconds, so they must
  * never run on the UI thread. Enabling also points Telegram's proxy at the
  * local mixed inbound `127.0.0.1:[LOCAL_PORT]` through the ordinary
@@ -467,11 +472,9 @@ object VlessProxyManager {
                 FileLog.e("VlessProxyManager: engine start skipped, no application context")
                 return
             }
-            val ok = if (LibboxEngine.isRunning()) {
-                LibboxEngine.reload(config)
-            } else {
-                LibboxEngine.start(context, config)
-            }
+            // Canonical libbox lifecycle: setup once, command server once,
+            // startOrReloadService for both the first start and every hot swap.
+            val ok = LibboxEngine.startOrReload(context, config)
             FileLog.d("VlessProxyManager: engine start/reload ok=$ok (nodes=${getNodes().size})")
             if (!ok) {
                 FileLog.e("VlessProxyManager: sing-box failed to start; Telegram will fall back to direct")
