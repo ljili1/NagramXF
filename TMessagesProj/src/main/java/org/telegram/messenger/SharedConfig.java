@@ -1897,12 +1897,18 @@ public class SharedConfig {
             }
             ProxyInfo info = currentProxy;
             if (info instanceof SingProxy && !((SingProxy) info).isStarted()) {
-                try {
-                    startProxyAsync(info);
-                } catch (Throwable ignore) {
-                    FileLog.e(ignore);
+                // Pre-flight synchronously before touching the native engine: an
+                // unparseable / field-incomplete node must not reach libbox at
+                // all (a rejected outbound can abort the process, and the next
+                // cold start would repeat it). When invalid, drop the persisted
+                // enabled state so the app always boots clean.
+                String preflight = VlessConfig.buildConfig(((SingProxy) info).link, 1);
+                if (preflight == null) {
+                    FileLog.e("SharedConfig: cold-start node is invalid, clearing proxy state");
                     cleanupExternalProxyState();
+                    return;
                 }
+                startProxyAsync(info);
             }
         } catch (Throwable e) {
             FileLog.e(e);

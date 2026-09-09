@@ -541,6 +541,7 @@ public class ProxyListActivity extends BaseFragment implements NotificationCente
         frameLayout.addView(listView, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT, Gravity.TOP | Gravity.LEFT));
         listView.setAdapter(listAdapter);
         listView.setOnItemClickListener((view, position) -> {
+            try {
             if (position == useProxyRow) {
                 if (SharedConfig.currentProxy == null) {
                     if (!proxyList.isEmpty()) {
@@ -672,11 +673,18 @@ public class ProxyListActivity extends BaseFragment implements NotificationCente
                     button.setTextColor(Theme.getColor(Theme.key_text_RedBold));
                 }
             }
+            } catch (Throwable e) {
+                FileLog.e(e);
+            }
         });
         listView.setOnItemLongClickListener((view, position) -> {
-            if (position >= proxyStartRow && position < proxyEndRow) {
-                listAdapter.toggleSelected(position);
-                return true;
+            try {
+                if (position >= proxyStartRow && position < proxyEndRow) {
+                    listAdapter.toggleSelected(position);
+                    return true;
+                }
+            } catch (Throwable e) {
+                FileLog.e(e);
             }
             return false;
         });

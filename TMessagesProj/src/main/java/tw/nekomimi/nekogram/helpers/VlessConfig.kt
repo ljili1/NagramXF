@@ -121,6 +121,10 @@ object VlessConfig {
                 portStr = hostPort.substring(colon + 1)
             }
             val port = portStr.toIntOrNull() ?: return null
+            // Pre-flight validation: never hand the native engine a config with an
+            // empty identity/address (a rejected outbound can SIGABRT the process,
+            // which no Java catch can contain).
+            if (host.isBlank() || port <= 0 || port > 65535 || uuid.isBlank()) return null
 
             val params = parseQuery(query)
 
@@ -204,7 +208,8 @@ object VlessConfig {
     @JvmStatic
     fun buildShadowsocksOutbound(bean: ProxyParse.SsBean?): JSONObject? {
         if (bean == null) return null
-        if (bean.host.isBlank() || bean.remotePort <= 0) return null
+        if (bean.host.isBlank() || bean.remotePort <= 0 || bean.remotePort > 65535) return null
+        if (bean.password.isBlank() || bean.method.isBlank()) return null
         val outbound = JSONObject()
         outbound.put("type", "shadowsocks")
         outbound.put("tag", "proxy")
