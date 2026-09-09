@@ -731,6 +731,14 @@ FileLog.e(finalRequestObject + " got error " + error.code + " " + error.text);
 
         native_init(currentAccount, version, layer, apiId, deviceModel, systemVersion, appVersion, langCode, systemLangCode, configPath, logPath, regId, cFingerprint, installer, packageId, timezoneOffset, userId, userPremium, enablePushConnection, ApplicationLoader.isNetworkOnline(), ApplicationLoader.getCurrentNetworkType(), SharedConfig.measureDevicePerformanceClass());
         checkConnection();
+        // ngx: when Telegram's persisted proxy is a sing-box node (local mixed
+        // inbound on 127.0.0.1) that is not running yet after a process restart,
+        // bring its engine back up. The hook never throws.
+        try {
+            SharedConfig.ensureCurrentExternalStarted();
+        } catch (Throwable ignore) {
+            FileLog.e(ignore);
+        }
     }
 
     public static void setLangCode(String langCode) {
