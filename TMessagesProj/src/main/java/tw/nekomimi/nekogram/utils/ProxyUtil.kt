@@ -405,10 +405,12 @@ object ProxyUtil {
     // Adapted from Nekogram X 9.3.3 (GPL-3.0): pulls every standard proxy link
     // token out of a pasted text / subscription body / QR payload. Native
     // Telegram proxy links (tg://proxy etc.) are handled by the existing native
-    // import path and intentionally left out of this extractor.
+    // import path and intentionally left out of this extractor. vmess:// links
+    // are intentionally not matched anymore — the sing-box engine no longer
+    // carries them and VlessProxyManager.addNode rejects them at import time.
 
     private val proxySchemeRegex = Regex(
-        "(vless|vmess|vmess1|trojan|ss|socks|ws|wss)://",
+        "(vless|trojan|ss|hysteria2|ssr|socks|ws|wss)://",
         RegexOption.IGNORE_CASE
     )
 

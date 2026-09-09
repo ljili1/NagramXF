@@ -31,8 +31,8 @@ import tw.nekomimi.nekogram.helpers.VlessProxyManager;
  * Shared "add built-in proxy nodes" helpers.
  *
  * Generalized from the VLESS-only helper (class name kept): it now accepts any
- * node link the sing-box engine can carry — vless://, vmess://, vmess1://,
- * trojan:// and ss:// — extracted from pasted text / subscription bodies / QR
+ * node link the sing-box engine can carry — vless://, trojan://, ss:// and
+ * hysteria2:// — extracted from pasted text / subscription bodies / QR
  * payloads through {@link ProxyUtil#parseProxies}.
  */
 public class VlessImportHelper {

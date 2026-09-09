@@ -11,16 +11,16 @@
  *   - "Use proxy" master switch on top;
  *   - a single unified server list under "Connections": official native proxies
  *     (SharedConfig.proxyList, SOCKS5/MTProto) and built-in sing-box nodes
- *     (vless/vmess/trojan/ss kept in VlessProxyManager) are rendered in the same
+ *     (vless/trojan/ss/hysteria2 kept in VlessProxyManager) are rendered in the same
  *     row style "[ Type ] name-or-address" with a status subtitle;
  *   - tapping a row selects and enables it (native → native proxy path,
  *     built-in node → selectNode/engine);
  *   - the edit icon on the right dispatches to the protocol-specific editor;
  *   - long-press shows the Nekogram X-style action sheet (edit/share/share QR/
  *     copy link/delete);
- *   - "＋" add menu (clipboard / QR / SOCKS5 / MTProto / VMess / Trojan / SS /
- *     VLESS / subscription), "⋮" tools menu (retest / delete all / delete
- *     unavailable).
+ *   - "＋" add menu (clipboard / QR / SOCKS5 / MTProto / Trojan / SS /
+ *     VLESS / Hysteria2 / subscription), "⋮" tools menu (retest / delete all /
+ *     delete unavailable).
  *
  * The sing-box engine, the 127.0.0.1:LOCAL_PORT shadow entry and its filtering,
  * the VLESS-aware master switch and the cold-start recovery are untouched.
@@ -398,11 +398,11 @@ public class ProxyListActivity extends BaseFragment implements NotificationCente
     private final static int menu_add_scan_qr = 1011;
     private final static int menu_add_input_socks = 1012;
     private final static int menu_add_input_telegram = 1002;
-    private final static int menu_add_input_vmess = 1013;
     private final static int menu_add_input_trojan = 1014;
     private final static int menu_add_input_ss = 1015;
     private final static int menu_add_input_vless = 1016;
     private final static int menu_add_subscription = 1017;
+    private final static int menu_add_input_hysteria2 = 1018;
     private final static int menu_other = 1001;
     private final static int menu_retest_ping = 1004;
     private final static int menu_delete_all = 1005;
@@ -436,10 +436,10 @@ public class ProxyListActivity extends BaseFragment implements NotificationCente
         addItem.addSubItem(menu_add_scan_qr, LocaleController.getString("ScanQRCode", R.string.ScanQRCode)).setOnClickListener((v) -> scanQrCodeMenu());
         addItem.addSubItem(menu_add_input_socks, LocaleController.getString("AddProxySocks5", R.string.AddProxySocks5)).setOnClickListener((v) -> presentFragment(new ProxySettingsActivity()));
         addItem.addSubItem(menu_add_input_telegram, LocaleController.getString("AddProxyTelegram", R.string.AddProxyTelegram)).setOnClickListener((v) -> presentFragment(new ProxySettingsActivity()));
-        addItem.addSubItem(menu_add_input_vmess, LocaleController.getString("AddProxyVmess", R.string.AddProxyVmess)).setOnClickListener((v) -> presentFragment(new tw.nekomimi.nekogram.settings.VmessNodeEditActivity()));
         addItem.addSubItem(menu_add_input_trojan, LocaleController.getString("AddProxyTrojan", R.string.AddProxyTrojan)).setOnClickListener((v) -> presentFragment(new tw.nekomimi.nekogram.settings.TrojanNodeEditActivity()));
         addItem.addSubItem(menu_add_input_ss, LocaleController.getString("AddProxySS", R.string.AddProxySS)).setOnClickListener((v) -> presentFragment(new tw.nekomimi.nekogram.settings.ShadowsocksNodeEditActivity()));
         addItem.addSubItem(menu_add_input_vless, LocaleController.getString(R.string.VlessAddNode)).setOnClickListener((v) -> presentFragment(new tw.nekomimi.nekogram.settings.VlessNodeEditActivity()));
+        addItem.addSubItem(menu_add_input_hysteria2, LocaleController.getString(R.string.AddProxyHysteria2)).setOnClickListener((v) -> presentFragment(new tw.nekomimi.nekogram.settings.Hysteria2NodeEditActivity()));
         addItem.addSubItem(menu_add_subscription, LocaleController.getString(R.string.VlessImportSubscription)).setOnClickListener((v) ->
                 VlessImportHelper.showSubscriptionDialog(ProxyListActivity.this, () -> updateRows(true)));
 
@@ -662,10 +662,10 @@ public class ProxyListActivity extends BaseFragment implements NotificationCente
         builder.addItems(new String[]{
                 LocaleController.getString("AddProxySocks5", R.string.AddProxySocks5),
                 LocaleController.getString("AddProxyTelegram", R.string.AddProxyTelegram),
-                LocaleController.getString("AddProxyVmess", R.string.AddProxyVmess),
                 LocaleController.getString("AddProxyTrojan", R.string.AddProxyTrojan),
                 LocaleController.getString("AddProxySS", R.string.AddProxySS),
                 LocaleController.getString(R.string.VlessAddNode),
+                LocaleController.getString(R.string.AddProxyHysteria2),
                 LocaleController.getString("ImportProxyFromClipboard", R.string.ImportProxyFromClipboard),
                 LocaleController.getString("ScanQRCode", R.string.ScanQRCode)
         }, null, (i, t, c) -> {
@@ -682,16 +682,16 @@ public class ProxyListActivity extends BaseFragment implements NotificationCente
                 presentFragment(new ProxySettingsActivity());
                 break;
             case 2:
-                presentFragment(new tw.nekomimi.nekogram.settings.VmessNodeEditActivity());
-                break;
-            case 3:
                 presentFragment(new tw.nekomimi.nekogram.settings.TrojanNodeEditActivity());
                 break;
-            case 4:
+            case 3:
                 presentFragment(new tw.nekomimi.nekogram.settings.ShadowsocksNodeEditActivity());
                 break;
-            case 5:
+            case 4:
                 presentFragment(new tw.nekomimi.nekogram.settings.VlessNodeEditActivity());
+                break;
+            case 5:
+                presentFragment(new tw.nekomimi.nekogram.settings.Hysteria2NodeEditActivity());
                 break;
             case 6:
                 importFromClipboardMenu();
@@ -958,14 +958,14 @@ public class ProxyListActivity extends BaseFragment implements NotificationCente
             case "vless":
                 type = "Vless";
                 break;
-            case "vmess":
-                type = "Vmess";
-                break;
             case "trojan":
                 type = "Trojan";
                 break;
             case "ss":
                 type = "Shadowsocks";
+                break;
+            case "hysteria2":
+                type = "Hysteria2";
                 break;
             default:
                 type = TextUtils.isEmpty(kind) ? "Proxy" : kind;
@@ -991,8 +991,8 @@ public class ProxyListActivity extends BaseFragment implements NotificationCente
      */
     private void presentNodeEditor(String link) {
         String kind = ProxyTypes.typeTag(link);
-        if ("vmess".equals(kind)) {
-            presentFragment(new tw.nekomimi.nekogram.settings.VmessNodeEditActivity(link));
+        if ("hysteria2".equals(kind)) {
+            presentFragment(new tw.nekomimi.nekogram.settings.Hysteria2NodeEditActivity(link));
         } else if ("trojan".equals(kind)) {
             presentFragment(new tw.nekomimi.nekogram.settings.TrojanNodeEditActivity(link));
         } else if ("ss".equals(kind)) {

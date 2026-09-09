@@ -5,9 +5,10 @@ import java.net.URLDecoder
 /**
  * Type detection and display helpers for built-in proxy node links.
  *
- * Adapted from Nekogram X 9.3.3 (GPL-3.0) display helpers that originally lived
- * on the VLESS node manager; generalized to any link that the sing-box engine
- * can carry (vless / vmess / trojan / shadowsocks).
+ * Generalized to any link that the sing-box engine can carry (vless / trojan /
+ * shadowsocks / hysteria2). VMess is intentionally not recognized anymore — the
+ * engine no longer builds vmess outbounds and legacy `vmess://` nodes are
+ * dropped by the manager when they are loaded.
  *
  * A node is stored as its original self-describing link string, so the runtime
  * "type" is recognized purely from the scheme prefix.
@@ -17,20 +18,19 @@ object ProxyTypes {
     /** Schemes that the sing-box engine is able to carry as outbounds. */
     private val SUPPORTED_PREFIXES = arrayOf(
         ProxyParse.VLESS_PROTOCOL,
-        ProxyParse.VMESS_PROTOCOL,
-        ProxyParse.VMESS1_PROTOCOL,
         ProxyParse.TROJAN_PROTOCOL,
-        ProxyParse.SS_PROTOCOL
+        ProxyParse.SS_PROTOCOL,
+        ProxyParse.HYSTERIA2_PROTOCOL
     )
 
     /** Scheme used only for the parseProxies extraction regex / QR routing. */
     private val EXTRACT_PREFIXES = arrayOf(
-        "vless://", "vmess://", "vmess1://", "trojan://", "ss://",
+        "vless://", "trojan://", "ss://", "hysteria2://",
         "ssr://", "socks://", "ws://", "wss://"
     )
 
     private val EXTRACT_REGEX = Regex(
-        "(vless|vmess1?|trojan|ss|ssr|socks|ws|wss)://",
+        "(vless|trojan|ss|hysteria2|ssr|socks|ws|wss)://",
         RegexOption.IGNORE_CASE
     )
 
@@ -46,16 +46,16 @@ object ProxyTypes {
         return ""
     }
 
-    /** Protocol family of [link]: vless / vmess / trojan / ss / ssr / socks / ws / wss / "". */
+    /** Protocol family of [link]: vless / trojan / ss / hysteria2 / ssr / socks / ws / wss / "". */
     @JvmStatic
     fun kind(link: String?): String {
         val prefix = scheme(link)
         if (prefix.isEmpty()) return ""
         return when (prefix) {
             "vless://" -> "vless"
-            "vmess://", "vmess1://" -> "vmess"
             "trojan://" -> "trojan"
             "ss://" -> "ss"
+            "hysteria2://" -> "hysteria2"
             "ssr://" -> "ssr"
             "socks://" -> "socks"
             "ws://" -> "ws"
@@ -64,7 +64,7 @@ object ProxyTypes {
         }
     }
 
-    /** Short type tag shown in row titles, e.g. `vless` / `vmess` / `trojan` / `ss`. */
+    /** Short type tag shown in row titles, e.g. `vless` / `trojan` / `ss` / `hysteria2`. */
     @JvmStatic
     fun typeTag(link: String?): String = kind(link)
 
@@ -96,9 +96,8 @@ object ProxyTypes {
             ""
         }
         if (fragmentName.isNotBlank()) return fragmentName
-        // Classic vmess:// stores its name inside the base64 JSON ("ps") — no fragment.
+        // Protocols that can also carry the name inside their encoded payload.
         return when (kind(link)) {
-            "vmess" -> ProxyParse.parseVmess(link)?.remarks?.trim() ?: ""
             "trojan" -> ProxyParse.parseTrojan(link)?.remarks?.trim() ?: ""
             "ss" -> ProxyParse.parseSs(link)?.remarks?.trim() ?: ""
             "ssr" -> ProxyParse.parseSsr(link)?.remarks?.trim() ?: ""
@@ -111,10 +110,6 @@ object ProxyTypes {
     fun nodeServerPort(link: String): String {
         if (link.isBlank()) return link
         val server = when (kind(link)) {
-            "vmess" -> {
-                val b = ProxyParse.parseVmess(link)
-                if (b != null) hostPort(b.address, b.port) else ""
-            }
             "trojan" -> {
                 val b = ProxyParse.parseTrojan(link)
                 if (b != null) hostPort(b.address, b.port) else ""
@@ -127,6 +122,8 @@ object ProxyTypes {
                 val b = ProxyParse.parseSsr(link)
                 if (b != null) hostPort(b.host, b.remotePort) else ""
             }
+            // vless / hysteria2 put the bare host:port after the last '@', so the
+            // generic authority walk below already yields the right value.
             else -> plainAuthorityServerPort(link)
         }
         return server.ifBlank { link }
@@ -139,14 +136,23 @@ object ProxyTypes {
     /** `[type] name` style title shown by the proxy list node rows. */
     @JvmStatic
     fun taggedTitle(link: String): String {
-        val tag = typeTag(link)
+        val tag = displayTag(typeTag(link))
         if (tag.isEmpty()) return nodeTitle(link)
         return "[$tag] " + nodeTitle(link)
     }
 
+    /** Capitalizes the protocol tag used for display (`hysteria2` -> `Hysteria2`). */
+    private fun displayTag(tag: String): String {
+        return when (tag) {
+            "hysteria2" -> "Hysteria2"
+            else -> tag
+        }
+    }
+
     /**
-     * For vless (no bean parser): strip scheme/fragment/query, take the part
-     * after the last '@', then the host:port tail.
+     * For links without a dedicated parser (vless/hysteria2/…): strip
+     * scheme/fragment/query, take the part after the last '@', then the
+     * host:port tail.
      */
     private fun plainAuthorityServerPort(link: String): String {
         var body = link

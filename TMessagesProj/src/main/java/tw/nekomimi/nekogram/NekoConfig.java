@@ -237,7 +237,7 @@ public class NekoConfig {
     public static ConfigItem vlessNodes = addConfig("vlessNodes", configTypeString, ""); // JSON array of vless:// links
 
     // --- Built-in Proxy (sing-box) canonical keys (generalized VLESS store) ---
-    // New nodes of any supported type (vless/vmess/trojan/ss) are stored as their
+    // New nodes of any supported type (vless/trojan/ss/hysteria2) are stored as their
     // original link strings under these keys. The legacy vless* keys above are
     // still honored for one-time migration so existing users keep their nodes.
     public static ConfigItem proxyEnabled = addConfig("proxyEnabled", configTypeBool, false);

@@ -23,7 +23,7 @@ import tw.nekomimi.nekogram.helpers.VlessProxyManager;
  * Foreground service hosting the sing-box engine for the built-in proxy.
  *
  * Runs a local mixed SOCKS/HTTP inbound on 127.0.0.1:[VlessProxyManager.LOCAL_PORT]
- * and forwards to the configured node outbound (vless/vmess/trojan/ss). Telegram's
+ * and forwards to the configured node outbound (vless/trojan/ss/hysteria2). Telegram's
  * proxy setting is pointed at that local port by ConnectionsManager.
  */
 public class VlessProxyService extends Service {
@@ -97,7 +97,7 @@ public class VlessProxyService extends Service {
         }
     }
 
-    /** Trims any supported node link (vless/vmess/trojan/ss/…) to host:port so it is safe to log. */
+    /** Trims any supported node link (vless/trojan/ss/hysteria2/…) to host:port so it is safe to log. */
     private static String safeLinkSummary(String link) {
         if (link == null || link.isEmpty()) {
             return "<empty>";

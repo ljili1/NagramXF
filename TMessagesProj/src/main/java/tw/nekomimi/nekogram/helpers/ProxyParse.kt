@@ -1,18 +1,18 @@
 package tw.nekomimi.nekogram.helpers
 
 import android.util.Base64
-import org.json.JSONObject
 import java.net.URLDecoder
 import java.util.Locale
 
 /**
  * Link parsers for the built-in (sing-box) proxy nodes.
  *
- * Adapted from Nekogram X 9.3.3 (GPL-3.0) `proxy/VmessLoader.kt`,
- * `proxy/ShadowsocksLoader.kt` and `proxy/ShadowsocksRLoader.kt`. The parsing
- * rules intentionally mirror the upstream so pasted links / QR payloads behave
- * the same way, but every `cn.hutool.*` / v2ray-core dependency is removed and
- * replaced with `android.util.Base64` + `org.json.JSONObject`.
+ * Adapted from Nekogram X 9.3.3 (GPL-3.0) `proxy/ShadowsocksLoader.kt` and
+ * `proxy/ShadowsocksRLoader.kt`. The parsing rules intentionally mirror the
+ * upstream so pasted links / QR payloads behave the same way, but every
+ * `cn.hutool.*` / v2ray-core dependency is removed and replaced with plain
+ * `android.util.Base64` decoding. The Hysteria2 half follows the standard URI
+ * grammar shared by v2rayN / subscription providers.
  *
  * Only the parsing half is ported: the sing-box engine (see [VlessConfig])
  * consumes the parsed beans; nothing here starts a sub-process.
@@ -20,22 +20,6 @@ import java.util.Locale
 object ProxyParse {
 
     // --- Beans (lightweight, self-describing) -------------------------------
-
-    /** VMess node. Field names follow the `com.v2ray.ang.dto.AngConfig.VmessBean` DTO. */
-    data class VmessBean(
-        var address: String = "",
-        var port: Int = 0,
-        var id: String = "",
-        var alterId: Int = 0,
-        var security: String = "auto",
-        var network: String = "tcp",
-        var remarks: String = "",
-        var headerType: String = "none",
-        var requestHost: String = "",
-        var path: String = "",
-        var streamSecurity: String = "",
-        var configVersion: Int = 2
-    )
 
     /** Trojan node (the scheme carries the password as userinfo). */
     data class TrojanBean(
@@ -69,184 +53,30 @@ object ProxyParse {
         var remarks: String = ""
     )
 
+    /**
+     * Hysteria2 node (`hysteria2://password@host:port?insecure=1&sni=...&obfs=...&obfs-password=...#name`).
+     * `insecure` / `obfs` / `pinSHA256` are optional; the display name lives in the
+     * `#` fragment.
+     */
+    data class Hysteria2Bean(
+        var server: String = "",
+        var serverPort: Int = 0,
+        var password: String = "",
+        var sni: String = "",
+        var insecure: Boolean = false,
+        var obfs: String = "",
+        var obfsPassword: String = "",
+        var pinSHA256: String = "",
+        var remarks: String = ""
+    )
+
     // --- Scheme constants (kept identical to v2rayNG / Nekogram X) ----------
 
     const val VLESS_PROTOCOL = "vless://"
-    const val VMESS_PROTOCOL = "vmess://"
-    const val VMESS1_PROTOCOL = "vmess1://"
     const val SS_PROTOCOL = "ss://"
     const val SSR_PROTOCOL = "ssr://"
     const val TROJAN_PROTOCOL = "trojan://"
-
-    // --- VMess ---------------------------------------------------------------
-
-    /**
-     * Parse a `vmess://` or `vmess1://` link into a [VmessBean]. Returns null
-     * when the payload cannot be decoded / is not a recognized VMess form.
-     */
-    @JvmStatic
-    fun parseVmess(link: String?): VmessBean? {
-        if (link.isNullOrBlank()) return null
-        return try {
-            when {
-                link.startsWith(VMESS1_PROTOCOL, ignoreCase = true) -> parseVmess1(link)
-                link.startsWith(VMESS_PROTOCOL, ignoreCase = true) -> parseVmessClassic(link)
-                else -> null
-            }
-        } catch (e: Throwable) {
-            null
-        }
-    }
-
-    /**
-     * Classic v2rayN style: `vmess://` + base64(JSON). Some exporters produce a
-     * bare `user@host:port` base64 blob followed by a query string, so that form
-     * is accepted as a fallback too.
-     */
-    private fun parseVmessClassic(link: String): VmessBean? {
-        var body = link.substring(VMESS_PROTOCOL.length)
-        var fragment = ""
-        val hash = body.indexOf('#')
-        if (hash >= 0) {
-            fragment = urlDecode(body.substring(hash + 1))
-            body = body.substring(0, hash)
-        }
-        val queryIndex = body.indexOf('?')
-        if (queryIndex > 0) {
-            val rawBase = body.substring(0, queryIndex)
-            val decoded = decodeBase64ToString(rawBase)
-            if (decoded == null) return null
-            return parseSimpleVmess(decoded, fragment)
-        }
-        val decoded = decodeBase64ToString(body) ?: return null
-        if (decoded.contains("= vmess")) {
-            return parseIosCsvVmess(decoded, fragment)
-        }
-        val json = JSONObject(decoded)
-        if (json.optString("add").isBlank() || json.optString("id").isBlank()) return null
-        val bean = VmessBean(
-            address = json.optString("add", ""),
-            port = json.optInt("port", 0),
-            id = json.optString("id", ""),
-            alterId = json.optInt("aid", 0),
-            security = json.optString("scy", "auto").ifBlank { "auto" },
-            network = json.optString("net", "tcp").ifBlank { "tcp" },
-            remarks = json.optString("ps", "").ifBlank { fragment },
-            headerType = json.optString("type", "none").ifBlank { "none" },
-            requestHost = json.optString("host", ""),
-            path = json.optString("path", ""),
-            streamSecurity = json.optString("tls", ""),
-            configVersion = json.optInt("v", 2)
-        )
-        if (bean.configVersion < 2) {
-            upgradeVmessBean(bean)
-        }
-        return bean
-    }
-
-    /** vmess1://uuid@host:port/path?network=ws&tls=true&header=none#remarks */
-    private fun parseVmess1(link: String): VmessBean? {
-        var body = link.substring(VMESS1_PROTOCOL.length)
-        var fragment = ""
-        val hash = body.indexOf('#')
-        if (hash >= 0) {
-            fragment = urlDecode(body.substring(hash + 1))
-            body = body.substring(0, hash)
-        }
-        val queryIndex = body.indexOf('?')
-        val pathAndAuthority = if (queryIndex >= 0) body.substring(0, queryIndex) else body
-        val query = if (queryIndex >= 0) body.substring(queryIndex + 1) else ""
-        val params = parseQuery(query)
-
-        val pathStart = pathAndAuthority.indexOf('/')
-        val authority = if (pathStart >= 0) pathAndAuthority.substring(0, pathStart) else pathAndAuthority
-        val urlPath = if (pathStart >= 0) pathAndAuthority.substring(pathStart) else ""
-
-        val at = authority.lastIndexOf('@')
-        if (at < 0) return null
-        val id = urlDecode(authority.substring(0, at))
-        val hp = parseHostPort(authority.substring(at + 1)) ?: return null
-
-        val bean = VmessBean(
-            address = hp.first,
-            port = hp.second,
-            id = id,
-            alterId = 0,
-            security = params["security"] ?: "auto",
-            network = params["network"] ?: "tcp",
-            remarks = fragment,
-            headerType = params["header"] ?: params["type"] ?: "none",
-            requestHost = params["host"] ?: params["sni"] ?: "",
-            path = params["path"] ?: "",
-            streamSecurity = if (params["tls"] == "true" || params["security"] == "tls") "tls" else "",
-            configVersion = 2
-        )
-        if (bean.network == "ws" || bean.network == "http" || bean.network == "h2") {
-            if (bean.path.isBlank()) bean.path = urlPath
-        }
-        if (bean.remarks.isBlank() && fragment.isNotBlank()) bean.remarks = fragment
-        return bean
-    }
-
-    /** Legacy v1 JSON used a single `host` field "path;host" for ws/h2. */
-    private fun upgradeVmessBean(bean: VmessBean) {
-        if ((bean.network == "ws" || bean.network == "h2" || bean.network == "http") &&
-            bean.requestHost.contains(';') && bean.path.isBlank()
-        ) {
-            val parts = bean.requestHost.split(';')
-            bean.path = parts[0].trim()
-            if (parts.size > 1) {
-                bean.requestHost = parts[1].trim()
-            }
-        }
-    }
-
-    /** Bare `security:id@host:port` base64 form used by some simple exporters. */
-    private fun parseSimpleVmess(raw: String, fragment: String): VmessBean {
-        val bean = VmessBean(remarks = fragment, network = "tcp", headerType = "none", alterId = 0)
-        val arr = raw.split('@')
-        if (arr.size == 2) {
-            val cred = arr[0].split(':')
-            val hp = arr[1].split(':')
-            if (cred.size == 2 && hp.size == 2) {
-                bean.security = "chacha20-poly1305"
-                bean.id = cred[1]
-                bean.address = hp[0]
-                bean.port = hp[1].toIntOrNull() ?: 0
-            }
-        }
-        return bean
-    }
-
-    /** "= vmess" CSV form emitted by some iOS clients. */
-    private fun parseIosCsvVmess(csv: String, fragment: String): VmessBean? {
-        val args = csv.split(",")
-        if (args.size < 5) return null
-        val bean = VmessBean(
-            address = args[1].trim(),
-            port = args[2].trim().toIntOrNull() ?: 0,
-            security = args[3].trim(),
-            id = args[4].trim().replace("\"", ""),
-            network = "tcp",
-            headerType = "none",
-            remarks = fragment
-        )
-        for (i in 5 until args.size) {
-            val arg = args[i].trim()
-            when {
-                arg == "over-tls=true" -> bean.streamSecurity = "tls"
-                arg.startsWith("tls-host=") -> bean.requestHost = arg.substringAfter("=")
-                arg.startsWith("obfs=") -> bean.network = arg.substringAfter("=")
-                arg.startsWith("obfs-path=") -> {
-                    bean.path = arg.substringAfter("obfs-path=\"").substringBefore("\"")
-                }
-                arg.contains("Host:") -> {
-                    bean.requestHost = arg.substringAfter("Host:").substringBefore("[").trim()
-                }
-            }
-        }
-        return bean
-    }
+    const val HYSTERIA2_PROTOCOL = "hysteria2://"
 
     // --- Trojan --------------------------------------------------------------
 
@@ -287,6 +117,98 @@ object ProxyParse {
         } catch (e: Throwable) {
             null
         }
+    }
+
+    // --- Hysteria2 -----------------------------------------------------------
+
+    /**
+     * Parse a standard `hysteria2://` link into an [Hysteria2Bean]. Returns null
+     * when the payload is not a recognized Hysteria2 form.
+     *
+     * Grammar (v2rayN / subscription providers):
+     * `hysteria2://<password>@<host>:<port>?insecure=1&sni=<sni>&obfs=salamander&obfs-password=<x>&pinSHA256=...#<name>`
+     */
+    @JvmStatic
+    fun parseHysteria2(link: String?): Hysteria2Bean? {
+        if (link.isNullOrBlank()) return null
+        return try {
+            if (!link.startsWith(HYSTERIA2_PROTOCOL, ignoreCase = true)) return null
+            var body = link.substring(HYSTERIA2_PROTOCOL.length)
+            var fragment = ""
+            val hash = body.indexOf('#')
+            if (hash >= 0) {
+                fragment = urlDecode(body.substring(hash + 1))
+                body = body.substring(0, hash)
+            }
+            val queryIndex = body.indexOf('?')
+            val authority = if (queryIndex >= 0) body.substring(0, queryIndex) else body
+            val params = parseQuery(if (queryIndex >= 0) body.substring(queryIndex + 1) else "")
+
+            val at = authority.lastIndexOf('@')
+            if (at < 0) return null
+            val rawUser = authority.substring(0, at)
+            val hp = parseHostPort(authority.substring(at + 1)) ?: return null
+
+            // The whole userinfo is the authentication password; tolerate a
+            // client that left an unencoded ':' inside the password (same
+            // leniency as the trojan parser).
+            var password = urlDecode(rawUser)
+            val colon = rawUser.indexOf(':')
+            if (colon > 0) {
+                val user = urlDecode(rawUser.substring(0, colon))
+                val pass = urlDecode(rawUser.substring(colon + 1))
+                password = if (pass.isNotBlank()) "$user:$pass" else user
+            }
+            val insecureRaw = params["insecure"]
+            val obfs = params["obfs"] ?: ""
+            Hysteria2Bean(
+                server = hp.first,
+                serverPort = hp.second,
+                password = password,
+                sni = params["sni"] ?: "",
+                insecure = insecureRaw == "1" || insecureRaw?.equals("true", ignoreCase = true) == true,
+                obfs = obfs,
+                obfsPassword = params["obfs-password"] ?: params["obfs_password"] ?: "",
+                pinSHA256 = params["pinSHA256"] ?: "",
+                remarks = fragment
+            )
+        } catch (e: Throwable) {
+            null
+        }
+    }
+
+    /** Builds a canonical `hysteria2://` link from an [Hysteria2Bean]. The password
+     * is URL-encoded; every query parameter is emitted only when set. */
+    @JvmStatic
+    fun toHysteria2Link(bean: Hysteria2Bean): String {
+        val sb = StringBuilder()
+        sb.append(HYSTERIA2_PROTOCOL)
+        sb.append(urlEncode(bean.password)).append('@')
+        appendHostPort(sb, bean.server, bean.serverPort)
+
+        val params = StringBuilder()
+        if (bean.insecure) {
+            params.append("insecure=1")
+        }
+        if (bean.sni.isNotBlank()) {
+            appendParam(params, "sni", bean.sni)
+        }
+        if (bean.obfs.isNotBlank() && !bean.obfs.equals("none", ignoreCase = true)) {
+            appendParam(params, "obfs", bean.obfs)
+            if (bean.obfsPassword.isNotBlank()) {
+                appendParam(params, "obfs-password", bean.obfsPassword)
+            }
+        }
+        if (bean.pinSHA256.isNotBlank()) {
+            appendParam(params, "pinSHA256", bean.pinSHA256)
+        }
+        if (params.isNotEmpty()) {
+            sb.append('?').append(params)
+        }
+        if (bean.remarks.isNotBlank()) {
+            sb.append('#').append(urlEncode(bean.remarks))
+        }
+        return sb.toString()
     }
 
     // --- Shadowsocks ---------------------------------------------------------
@@ -449,6 +371,24 @@ object ProxyParse {
         val port = portStr.toIntOrNull() ?: return null
         if (port <= 0 || port > 65535) return null
         return host to port
+    }
+
+    /** Appends `host:port`, bracketing IPv6 hosts. */
+    private fun appendHostPort(sb: StringBuilder, host: String, port: Int) {
+        if (host.contains(':') && !host.startsWith("[")) {
+            sb.append('[').append(host).append(']')
+        } else {
+            sb.append(host)
+        }
+        sb.append(':').append(port)
+    }
+
+    /** Appends `&key=value` (no leading '&' for the first parameter). */
+    private fun appendParam(sb: StringBuilder, key: String, value: String) {
+        if (sb.isNotEmpty()) {
+            sb.append('&')
+        }
+        sb.append(key).append('=').append(urlEncode(value))
     }
 
     private fun decodeBase64ToString(s: String): String? {

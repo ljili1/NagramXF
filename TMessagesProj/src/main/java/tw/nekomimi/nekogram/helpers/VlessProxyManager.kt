@@ -12,8 +12,8 @@ import tw.nekomimi.nekogram.VlessProxyService
  * Manages the built-in sing-box proxy (generalized from the original VLESS-only
  * manager; class name kept to avoid a whole-repo rename).
  *
- * Nodes are plain protocol link strings (`vless://`, `vmess://`, `trojan://`,
- * `ss://`) stored as a JSON array under the canonical NekoConfig keys
+ * Nodes are plain protocol link strings (`vless://`, `trojan://`, `ss://`,
+ * `hysteria2://`) stored as a JSON array under the canonical NekoConfig keys
  * `proxyEnabled` / `proxyActiveLink` / `proxyNodes`. The legacy
  * `vlessEnabled` / `vlessLink` / `vlessNodes` keys are still readable and are
  * migrated (written back once) the first time the manager is used.
@@ -40,7 +40,7 @@ object VlessProxyManager {
     private var migrationAttempted = false
 
     private val schemeRegex = Regex(
-        "(vless|vmess|vmess1|trojan|ss)://",
+        "(vless|trojan|ss|hysteria2)://",
         RegexOption.IGNORE_CASE
     )
 
@@ -177,20 +177,47 @@ object VlessProxyManager {
 
     // --- Node list (generalized NekoX-style management) ---
 
-    /** Saved node links, oldest first. Empty when none have been added. */
+    /** Saved node links, oldest first. Empty when none have been added.
+     *
+     * This is also the load-time cleanup point for unsupported nodes: links the
+     * engine can no longer carry (e.g. legacy `vmess://` entries left by older
+     * builds) are filtered out and persisted once, and the active link is moved
+     * to a surviving node when it pointed at a dropped one.
+     */
     @JvmStatic
     fun getNodes(): ArrayList<String> {
         ensureMigrated()
         val raw = NekoConfig.proxyNodes.String()
         val list = ArrayList<String>()
-        if (raw.isBlank()) return list
-        try {
-            val arr = org.json.JSONArray(raw)
-            for (i in 0 until arr.length()) {
-                arr.optString(i).takeIf { it.isNotBlank() }?.let { list.add(it) }
+        if (raw.isNotBlank()) {
+            try {
+                val arr = org.json.JSONArray(raw)
+                var dropped = false
+                for (i in 0 until arr.length()) {
+                    val s = arr.optString(i)
+                    if (s.isBlank() || !VlessConfig.isSupportedProxy(s)) {
+                        dropped = true
+                        continue
+                    }
+                    list.add(s)
+                }
+                if (dropped) {
+                    // Persist the cleanup so the unsupported nodes never resurface.
+                    saveNodes(list)
+                }
+            } catch (e: Throwable) {
+                FileLog.e(e)
             }
-        } catch (e: Throwable) {
-            FileLog.e(e)
+        }
+        val active = NekoConfig.proxyActiveLink.String()
+        if (active.isNotBlank() && !VlessConfig.isSupportedProxy(active)) {
+            // The active node was dropped (or is unsupported on its own).
+            // Fall back to the first surviving node, or clear the selection.
+            if (list.isNotEmpty()) {
+                setVlessLink(list[0])
+            } else {
+                setVlessLink("")
+            }
         }
         return list
     }

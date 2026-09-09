@@ -2,7 +2,6 @@ package tw.nekomimi.nekogram.helpers
 
 import org.json.JSONArray
 import org.json.JSONObject
-import org.telegram.messenger.FileLog
 
 /**
  * Builds sing-box configuration JSON for the built-in proxy (generalized VLESS).
@@ -12,10 +11,10 @@ import org.telegram.messenger.FileLog
  * proxy link. Telegram is then pointed at the local inbound.
  *
  * The outbound type is recognized from the link scheme:
- * - `vless://`   -> sing-box "vless" (existing logic, unchanged)
- * - `vmess://`   -> sing-box "vmess"  (also accepts the vmess1:// legacy form)
- * - `trojan://`  -> sing-box "trojan"
- * - `ss://`      -> sing-box "shadowsocks"
+ * - `vless://`      -> sing-box "vless"
+ * - `trojan://`     -> sing-box "trojan"
+ * - `ss://`         -> sing-box "shadowsocks"
+ * - `hysteria2://`  -> sing-box "hysteria2"
  *
  * The inbound / route template is identical for every type, so switching a node
  * is a pure hot reload of the outbound.
@@ -24,7 +23,7 @@ object VlessConfig {
 
     /** Prefixes for which an outbound config can be produced. */
     private val SUPPORTED_PREFIXES = arrayOf(
-        "vless://", "vmess://", "vmess1://", "trojan://", "ss://"
+        "vless://", "trojan://", "ss://", "hysteria2://"
     )
 
     /**
@@ -78,10 +77,9 @@ object VlessConfig {
         val trimmed = link.trim()
         return when {
             trimmed.startsWith("vless://", ignoreCase = true) -> parseVless(trimmed)
-            trimmed.startsWith("vmess1://", ignoreCase = true) -> buildVmessOutbound(ProxyParse.parseVmess(trimmed))
-            trimmed.startsWith("vmess://", ignoreCase = true) -> buildVmessOutbound(ProxyParse.parseVmess(trimmed))
             trimmed.startsWith("trojan://", ignoreCase = true) -> buildTrojanOutbound(ProxyParse.parseTrojan(trimmed))
             trimmed.startsWith("ss://", ignoreCase = true) -> buildShadowsocksOutbound(ProxyParse.parseSs(trimmed))
+            trimmed.startsWith("hysteria2://", ignoreCase = true) -> buildHysteria2Outbound(ProxyParse.parseHysteria2(trimmed))
             else -> null
         }
     }
@@ -184,76 +182,6 @@ object VlessConfig {
         }
     }
 
-    /**
-     * Build a sing-box "vmess" outbound from a parsed [ProxyParse.VmessBean].
-     * TLS/WS/GRPC/HTTP transports are mapped; exotic transports (kcp/quic) fall
-     * back to plain TCP so the config always parses. alterId > 0 is emitted but
-     * known to be unusable on sing-box (documented deviation).
-     */
-    @JvmStatic
-    fun buildVmessOutbound(bean: ProxyParse.VmessBean?): JSONObject? {
-        if (bean == null) return null
-        if (bean.address.isBlank() || bean.port <= 0 || bean.id.isBlank()) return null
-        val outbound = JSONObject()
-        outbound.put("type", "vmess")
-        outbound.put("tag", "proxy")
-        outbound.put("server", bean.address)
-        outbound.put("server_port", bean.port)
-        outbound.put("uuid", bean.id)
-        val security = if (bean.security.isBlank()) "auto" else bean.security
-        outbound.put("security", security)
-        if (bean.alterId > 0) {
-            FileLog.d("VlessConfig: vmess alterId=${bean.alterId} >0 is not supported by sing-box")
-            outbound.put("alter_id", bean.alterId)
-        } else {
-            outbound.put("alter_id", 0)
-        }
-
-        val useTls = bean.streamSecurity.equals("tls", ignoreCase = true)
-        if (useTls) {
-            val tls = JSONObject()
-            tls.put("enabled", true)
-            val sni = bean.requestHost.ifBlank { bean.address }
-            tls.put("server_name", sni)
-            outbound.put("tls", tls)
-        }
-
-        val network = bean.network.lowercase()
-        when (network) {
-            "ws" -> {
-                val transport = JSONObject()
-                transport.put("type", "ws")
-                if (bean.path.isNotBlank()) transport.put("path", bean.path)
-                if (bean.requestHost.isNotBlank()) {
-                    transport.put("headers", JSONObject().put("Host", bean.requestHost))
-                }
-                outbound.put("transport", transport)
-            }
-            "grpc" -> {
-                val transport = JSONObject()
-                transport.put("type", "grpc")
-                if (bean.path.isNotBlank()) transport.put("service_name", bean.path)
-                outbound.put("transport", transport)
-            }
-            "http", "h2" -> {
-                val transport = JSONObject()
-                transport.put("type", "http")
-                if (bean.requestHost.isNotBlank()) {
-                    val hosts = JSONArray()
-                    hosts.put(bean.requestHost)
-                    transport.put("host", hosts)
-                }
-                if (bean.path.isNotBlank()) transport.put("path", bean.path)
-                outbound.put("transport", transport)
-            }
-            // "tcp" and unsupported transports (kcp/quic/...) -> plain TCP.
-            else -> {
-            }
-        }
-
-        return outbound
-    }
-
     /** Build a sing-box "trojan" outbound. Trojan always speaks TLS. */
     @JvmStatic
     fun buildTrojanOutbound(bean: ProxyParse.TrojanBean?): JSONObject? {
@@ -284,6 +212,46 @@ object VlessConfig {
         outbound.put("server_port", bean.remotePort)
         outbound.put("method", ProxyParse.normalizeMethod(bean.method))
         outbound.put("password", bean.password)
+        return outbound
+    }
+
+    /**
+     * Build a sing-box "hysteria2" outbound from a parsed [ProxyParse.Hysteria2Bean].
+     *
+     * Hysteria2 always speaks QUIC+TLS: the `sni`/`insecure` options map onto the
+     * tls object (an empty sni lets the engine fall back to the server address).
+     * A salamander obfuscator, when requested, is emitted as the optional `obfs`
+     * object.
+     */
+    @JvmStatic
+    fun buildHysteria2Outbound(bean: ProxyParse.Hysteria2Bean?): JSONObject? {
+        if (bean == null) return null
+        if (bean.server.isBlank() || bean.serverPort <= 0 || bean.password.isBlank()) return null
+        val outbound = JSONObject()
+        outbound.put("type", "hysteria2")
+        outbound.put("tag", "proxy")
+        outbound.put("server", bean.server)
+        outbound.put("server_port", bean.serverPort)
+        outbound.put("password", bean.password)
+
+        val tls = JSONObject()
+        tls.put("enabled", true)
+        if (bean.sni.isNotBlank()) {
+            tls.put("server_name", bean.sni)
+        }
+        if (bean.insecure) {
+            tls.put("insecure", true)
+        }
+        outbound.put("tls", tls)
+
+        if (bean.obfs.isNotBlank() && !bean.obfs.equals("none", ignoreCase = true)) {
+            val obfs = JSONObject()
+            obfs.put("type", bean.obfs.lowercase())
+            if (bean.obfsPassword.isNotBlank()) {
+                obfs.put("password", bean.obfsPassword)
+            }
+            outbound.put("obfs", obfs)
+        }
         return outbound
     }
 

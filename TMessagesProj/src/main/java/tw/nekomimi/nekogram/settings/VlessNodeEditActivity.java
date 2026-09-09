@@ -34,7 +34,7 @@ import java.util.List;
  *
  * This is the form page that pairs with the native proxy list page — the same
  * structure the 8.x front end uses (list page + one field form). It accepts any
- * link the sing-box engine can carry (vless://, vmess://, trojan://, ss://), so
+ * link the sing-box engine can carry (vless://, trojan://, ss://, hysteria2://), so
  * it doubles as the generic fallback editor for protocols whose dedicated form
  * does not exist yet. All bulk operations (multi-select, share, delete,
  * subscription import, ping) live in ProxyListActivity, so there is no second
