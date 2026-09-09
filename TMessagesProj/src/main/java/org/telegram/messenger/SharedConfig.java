@@ -56,7 +56,6 @@ import java.net.InetSocketAddress;
 import java.net.Proxy;
 import java.net.ServerSocket;
 import java.util.Arrays;
-import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.lang.annotation.Retention;
@@ -499,6 +498,11 @@ public class SharedConfig {
                 builder.append(remarks);
             }
             return builder.toString();
+        }
+
+        /** Shareable link / URL for the row (node proxies return their node link). */
+        public String toShareUrl() {
+            return getLink();
         }
 
         public JSONObject toJsonInternal() throws JSONException {
