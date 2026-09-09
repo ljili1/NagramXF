@@ -1780,6 +1780,44 @@ public class SharedConfig {
         return proxy;
     }
 
+    /** Parses [link] into a node proxy object and appends it to the saved list. Returns null when unsupported. */
+    public static ProxyInfo addNodeProxy(String link) {
+        ProxyInfo created = createNodeProxy(link);
+        if (created == null) {
+            return null;
+        }
+        return addProxy(created);
+    }
+
+    /** Replaces the node stored as [oldLink] with a new one built from [newLink]. */
+    public static boolean editNodeProxy(String oldLink, String newLink) {
+        ProxyInfo created = createNodeProxy(newLink);
+        if (created == null) {
+            return false;
+        }
+        loadProxyList();
+        ProxyInfo existing = null;
+        for (ProxyInfo info : proxyList) {
+            if (info instanceof SingProxy && oldLink.equals(((SingProxy) info).link)) {
+                existing = info;
+                break;
+            }
+        }
+        boolean wasCurrent = existing != null && currentProxy == existing;
+        boolean wasEnabled = isProxyEnabledPref();
+        if (existing != null) {
+            deleteProxy(existing);
+        }
+        ProxyInfo added = addProxy(created);
+        if (wasCurrent) {
+            setCurrentProxy(added);
+            if (wasEnabled) {
+                setProxyEnable(true);
+            }
+        }
+        return true;
+    }
+
     /** Starts [proxyInfo] on the background proxy executor; never blocks the caller. */
     public static void startProxyAsync(final ProxyInfo proxyInfo) {
         proxyEngineExecutor.execute(() -> {

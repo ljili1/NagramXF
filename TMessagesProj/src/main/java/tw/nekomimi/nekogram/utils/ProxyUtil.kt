@@ -400,4 +400,50 @@ object ProxyUtil {
         val regV6 = Regex("^([0-9A-Fa-f]{1,4})?(:[0-9A-Fa-f]{1,4})*::([0-9A-Fa-f]{1,4})?(:[0-9A-Fa-f]{1,4})*|([0-9A-Fa-f]{1,4})(:[0-9A-Fa-f]{1,4}){7}$")
         return regV6.matches(addr)
     }
+
+    // --- Proxy-link extraction (ported subset of Nekogram X 9.3.3 ProxyUtil) ---
+    // Adapted from Nekogram X 9.3.3 (GPL-3.0): pulls every standard proxy link
+    // token out of a pasted text / subscription body / QR payload. Native
+    // Telegram proxy links (tg://proxy etc.) are handled by the existing native
+    // import path and intentionally left out of this extractor. vmess:// links
+    // are intentionally not matched anymore — the sing-box engine no longer
+    // carries them and VlessProxyManager.addNode rejects them at import time.
+
+    private val proxySchemeRegex = Regex(
+        "(vless|trojan|ss|hysteria2|ssr|socks|ws|wss)://",
+        RegexOption.IGNORE_CASE
+    )
+
+    /** Extracts every proxy:// link token from [text] (best-effort unique). */
+    @JvmStatic
+    fun parseProxies(text: String): MutableList<String> {
+        val out = mutableListOf<String>()
+        extractProxyLinks(text, out)
+        if (out.isEmpty() && text.isNotBlank()) {
+            // Some subscriptions ship the whole payload as a single base64 blob.
+            runCatching {
+                val decoded = String(Base64.decode(text.trim(), Base64.DEFAULT), Charsets.UTF_8)
+                if (decoded != text) {
+                    extractProxyLinks(decoded, out)
+                }
+            }.onFailure {
+                FileLog.e(it)
+            }
+        }
+        return out
+    }
+
+    private fun extractProxyLinks(text: String, out: MutableList<String>) {
+        for (match in proxySchemeRegex.findAll(text)) {
+            val start = match.range.first
+            var end = start
+            while (end < text.length && text[end] !in charArrayOf(' ', '\t', '\n', '\r')) {
+                end++
+            }
+            val token = text.substring(start, end).trim()
+            if (token.isNotEmpty() && !out.contains(token)) {
+                out.add(token)
+            }
+        }
+    }
 }
