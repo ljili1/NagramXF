@@ -5,27 +5,35 @@
  *
  * Copyright Nikolai Kudashov, 2013-2018.
  *
- * NagramXF: proxy page aligned to the Nekogram X 9.3.3 unified proxy list.
- * Native Telegram proxy entries (SOCKS5 / MTProto, held in SharedConfig.proxyList)
- * and built-in sing-box nodes (vless / vmess / trojan / ss, held in
- * VlessProxyManager) are rendered together in a single "Connections" list. Each
- * built-in row shows "[type] name" as its title and server:port + status in its
- * subtitle; tapping a row enables/selects it and the row edit icon dispatches to
- * the protocol specific editor. There is no separate VLESS section anymore.
+ * NagramXF: proxy page ported to the Nekogram X 9.3.3 blueprint.
+ *
+ * Layout & interactions follow Nekogram X 9.3.3 ProxyListActivity:
+ *   - "Use proxy" master switch on top;
+ *   - a single unified server list under "Connections": official native proxies
+ *     (SharedConfig.proxyList, SOCKS5/MTProto) and built-in sing-box nodes
+ *     (vless/vmess/trojan/ss kept in VlessProxyManager) are rendered in the same
+ *     row style "[ Type ] name-or-address" with a status subtitle;
+ *   - tapping a row selects and enables it (native → native proxy path,
+ *     built-in node → selectNode/engine);
+ *   - the edit icon on the right dispatches to the protocol-specific editor;
+ *   - long-press shows the Nekogram X-style action sheet (edit/share/share QR/
+ *     copy link/delete);
+ *   - "＋" add menu (clipboard / QR / SOCKS5 / MTProto / VMess / Trojan / SS /
+ *     VLESS / subscription), "⋮" tools menu (retest / delete all / delete
+ *     unavailable).
+ *
+ * The sing-box engine, the 127.0.0.1:LOCAL_PORT shadow entry and its filtering,
+ * the VLESS-aware master switch and the cold-start recovery are untouched.
  */
 
 package org.telegram.ui;
 
 import static org.telegram.messenger.LocaleController.getString;
 
-import android.animation.Animator;
-import android.animation.AnimatorListenerAdapter;
-import android.animation.ValueAnimator;
 import android.app.Activity;
 import android.app.Dialog;
 import android.content.ClipboardManager;
 import android.content.Context;
-import android.content.DialogInterface;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.graphics.Bitmap;
@@ -43,29 +51,25 @@ import android.widget.FrameLayout;
 import android.widget.ImageView;
 import android.widget.TextView;
 
-import androidx.annotation.Keep;
 import androidx.annotation.NonNull;
 import androidx.recyclerview.widget.DefaultItemAnimator;
-import androidx.recyclerview.widget.ItemTouchHelper;
 import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
 
 import org.telegram.messenger.AndroidUtilities;
 import org.telegram.messenger.DownloadController;
+import org.telegram.messenger.FileLog;
 import org.telegram.messenger.LocaleController;
 import org.telegram.messenger.MessagesController;
 import org.telegram.messenger.NotificationCenter;
-import org.telegram.messenger.ProxyRotationController;
 import org.telegram.messenger.R;
 import org.telegram.messenger.SharedConfig;
 import org.telegram.messenger.SvgHelper;
-import org.telegram.messenger.Utilities;
 import org.telegram.messenger.browser.Browser;
 import org.telegram.tgnet.ConnectionsManager;
 import org.telegram.ui.ActionBar.ActionBar;
 import org.telegram.ui.ActionBar.ActionBarMenu;
 import org.telegram.ui.ActionBar.ActionBarMenuItem;
-import org.telegram.ui.ActionBar.AlertDialog;
 import org.telegram.ui.ActionBar.BackDrawable;
 import org.telegram.ui.ActionBar.BaseFragment;
 import org.telegram.ui.ActionBar.Theme;
@@ -74,16 +78,12 @@ import org.telegram.ui.Cells.HeaderCell;
 import org.telegram.ui.Cells.ShadowSectionCell;
 import org.telegram.ui.Cells.TextCheckCell;
 import org.telegram.ui.Cells.TextInfoPrivacyCell;
-import org.telegram.ui.Components.CheckBox2;
-import org.telegram.ui.Components.CubicBezierInterpolator;
 import org.telegram.ui.Components.LayoutHelper;
-import org.telegram.ui.Components.NumberTextView;
 import org.telegram.ui.Components.QRCodeBottomSheet;
 import org.telegram.ui.Components.RecyclerListView;
-import org.telegram.ui.Components.SlideChooseView;
 
 import java.util.ArrayList;
-import java.util.Collections;
+import java.util.Comparator;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
@@ -93,14 +93,12 @@ import java.util.concurrent.Executors;
 import tw.nekomimi.nekogram.helpers.ProxyTypes;
 import tw.nekomimi.nekogram.helpers.VlessProxyManager;
 import tw.nekomimi.nekogram.helpers.WebSocketHelper;
+import tw.nekomimi.nekogram.ui.BottomBuilder;
 import tw.nekomimi.nekogram.utils.AlertUtil;
 import tw.nekomimi.nekogram.utils.ProxyUtil;
 import tw.nekomimi.nekogram.utils.VlessImportHelper;
 
 public class ProxyListActivity extends BaseFragment implements NotificationCenter.NotificationCenterDelegate {
-    private final static boolean IS_PROXY_ROTATION_AVAILABLE = true;
-    private static final int MENU_DELETE = 0;
-    private static final int MENU_SHARE = 1;
 
     private ListAdapter listAdapter;
     private RecyclerListView listView;
@@ -113,66 +111,108 @@ public class ProxyListActivity extends BaseFragment implements NotificationCente
     private boolean useProxyForCalls;
 
     private int rowCount;
-    @Keep
     private int useProxyRow;
     private int useProxyShadowRow;
     private int connectionsHeaderRow;
-    // Native Telegram proxy rows (SharedConfig.proxyList, shadow 127.0.0.1:6357 hidden).
     private int proxyStartRow;
     private int proxyEndRow;
-    // Built-in sing-box node rows (vless/vmess/trojan/ss), appended to the same
-    // "Connections" list right below the native rows — no extra header section.
-    private int nodeStartRow;
-    private int nodeEndRow;
     private int proxyShadowRow;
-    @Keep
     private int callsRow;
-    private int rotationRow;
-    private int rotationTimeoutRow;
-    private int rotationTimeoutInfoRow;
     private int callsDetailRow;
 
-    // Built-in sing-box nodes (generalized from the legacy VLESS-only list; still
-    // managed through the unchanged VlessProxyManager node API).
-    private final List<String> nodeLinks = new ArrayList<>();
+    // Unified display list: every visible row is one ProxyRow wrapper over either
+    // a native SharedConfig.ProxyInfo or a built-in node link.
+    private final List<ProxyRow> proxyRows = new ArrayList<>();
+    private final List<SharedConfig.ProxyInfo> proxyList = new ArrayList<>();
 
-    private ItemTouchHelper itemTouchHelper;
-    private NumberTextView selectedCountTextView;
-    private ActionBarMenuItem shareMenuItem;
-    private ActionBarMenuItem deleteMenuItem;
-
-    private List<SharedConfig.ProxyInfo> selectedItems = new ArrayList<>();
-    // Built-in node links selected in the same action mode as native proxies.
-    private List<String> selectedNodes = new ArrayList<>();
-    private List<SharedConfig.ProxyInfo> proxyList = new ArrayList<>();
-    private boolean wasCheckedAllList;
-
-    // Node latency checks that already ran for this page instance (only missing
-    // nodes are pinged automatically; RetestPing re-pings everything).
+    // Node latency checks that already ran for this page instance.
     private final Set<String> pingedLinks = new HashSet<>();
     private final ExecutorService nodePingExecutor = Executors.newCachedThreadPool();
 
     // na: action bar menu
     private ActionBarMenuItem otherItem;
 
+    /**
+     * One displayed server row. Mirrors the information Nekogram X 9.3.3 exposes
+     * through its ProxyInfo rows (type / remarks / server / ping state) but wraps
+     * either a native ProxyInfo or a built-in node link kept by the sing-box
+     * manager, so native proxies and nodes share a single row model & renderer.
+     */
+    private class ProxyRow {
+        final SharedConfig.ProxyInfo nativeInfo;
+        final String nodeLink;
+        final String title;
+        final String address;
+        final boolean isWsRow;
+
+        ProxyRow(SharedConfig.ProxyInfo nativeInfo, String nodeLink, String title, String address, boolean isWsRow) {
+            this.nativeInfo = nativeInfo;
+            this.nodeLink = nodeLink;
+            this.title = title;
+            this.address = address;
+            this.isWsRow = isWsRow;
+        }
+
+        boolean isNode() {
+            return nodeLink != null;
+        }
+
+        boolean isActiveProxy() {
+            if (isNode()) {
+                return VlessProxyManager.isActiveNode(nodeLink);
+            }
+            return useProxySettings && SharedConfig.currentProxy == nativeInfo;
+        }
+
+        boolean isChecking() {
+            if (isNode()) {
+                return false;
+            }
+            return nativeInfo.checking;
+        }
+
+        boolean isAvailable() {
+            if (isNode()) {
+                return VlessProxyManager.getPing(nodeLink) >= 0;
+            }
+            return nativeInfo.available;
+        }
+
+        /** Ping to show in the row subtitle; 0 means "no measured ping yet". */
+        long getPingMs() {
+            if (isNode()) {
+                long ping = VlessProxyManager.getPing(nodeLink);
+                return ping > 0 ? ping : 0;
+            }
+            return nativeInfo.ping;
+        }
+
+        /** Shareable link for this row. */
+        String getLink() {
+            if (isNode()) {
+                return nodeLink;
+            }
+            return nativeInfo.getLink();
+        }
+
+        void openEditor() {
+            if (isNode()) {
+                presentNodeEditor(nodeLink);
+            } else if (isWsRow) {
+                presentFragment(new tw.nekomimi.nekogram.settings.WsSettingsActivity(nativeInfo));
+            } else {
+                presentFragment(new ProxySettingsActivity(nativeInfo));
+            }
+        }
+    }
+
     public class TextDetailProxyCell extends FrameLayout {
 
         private TextView textView;
         private TextView valueTextView;
-        private ImageView shareImageView;
         private ImageView checkImageView;
-        private SharedConfig.ProxyInfo currentInfo;
+        private ProxyRow currentRow;
         private Drawable checkDrawable;
-
-        // Built-in node row mode: when nodeLink != null this cell renders one saved
-        // protocol link (vless://vmess://trojan://ss://) instead of a native row.
-        private String nodeLink;
-        private boolean isNodeRow;
-
-        private CheckBox2 checkBox;
-        private boolean isSelected;
-        private boolean isSelectionEnabled;
-
         private int color;
 
         public TextDetailProxyCell(Context context) {
@@ -201,34 +241,6 @@ public class ProxyListActivity extends BaseFragment implements NotificationCente
             valueTextView.setPadding(0, 0, 0, 0);
             addView(valueTextView, LayoutHelper.createFrame(LayoutHelper.WRAP_CONTENT, LayoutHelper.WRAP_CONTENT, (LocaleController.isRTL ? Gravity.RIGHT : Gravity.LEFT) | Gravity.TOP, textLeftMargin, 35, textRightMargin, 0));
 
-            shareImageView = new ImageView(context);
-            shareImageView.setImageResource(R.drawable.msg_share);
-            shareImageView.setColorFilter(new PorterDuffColorFilter(Theme.getColor(Theme.key_windowBackgroundWhiteGrayText3), PorterDuff.Mode.MULTIPLY));
-            shareImageView.setScaleType(ImageView.ScaleType.CENTER);
-            shareImageView.setContentDescription(LocaleController.getString(R.string.ShareFile));
-            addView(shareImageView, LayoutHelper.createFrame(
-                48,
-                48,
-                (LocaleController.isRTL ? Gravity.LEFT : Gravity.RIGHT) | Gravity.TOP,
-                LocaleController.isRTL ? 56 : 8,
-                8,
-                LocaleController.isRTL ? 8 : 56,
-                0
-            ));
-            shareImageView.setOnClickListener(v -> {
-                if (nodeLink != null) {
-                    Intent shareIntent = new Intent(Intent.ACTION_SEND);
-                    shareIntent.setType("text/plain");
-                    shareIntent.putExtra(Intent.EXTRA_TEXT, nodeLink);
-                    Context ctx = getParentActivity();
-                    if (ctx != null) {
-                        ctx.startActivity(Intent.createChooser(shareIntent, getString(R.string.ShareFile)));
-                    }
-                } else {
-                    showProxyQrCode(context, currentInfo);
-                }
-            });
-
             checkImageView = new ImageView(context);
             checkImageView.setImageResource(R.drawable.msg_info);
             checkImageView.setColorFilter(new PorterDuffColorFilter(Theme.getColor(Theme.key_windowBackgroundWhiteGrayText3), PorterDuff.Mode.MULTIPLY));
@@ -236,20 +248,11 @@ public class ProxyListActivity extends BaseFragment implements NotificationCente
             checkImageView.setContentDescription(getString(R.string.Edit));
             addView(checkImageView, LayoutHelper.createFrame(48, 48, (LocaleController.isRTL ? Gravity.LEFT : Gravity.RIGHT) | Gravity.TOP, 8, 8, 8, 0));
             checkImageView.setOnClickListener(v -> {
-                if (nodeLink != null) {
-                    presentNodeEditor(nodeLink);
-                } else if (WebSocketHelper.proxyServer.equals(currentInfo.address)) {
-                    presentFragment(new tw.nekomimi.nekogram.settings.WsSettingsActivity(currentInfo));
-                } else {
-                    presentFragment(new ProxySettingsActivity(currentInfo));
+                ProxyRow row = currentRow;
+                if (row != null) {
+                    row.openEditor();
                 }
             });
-
-            checkBox = new CheckBox2(context, 21);
-            checkBox.setColor(Theme.key_checkbox, Theme.key_radioBackground, Theme.key_checkboxCheck);
-            checkBox.setDrawBackgroundAsArc(14);
-            checkBox.setVisibility(GONE);
-            addView(checkBox, LayoutHelper.createFrame(24, 24, (LocaleController.isRTL ? Gravity.RIGHT : Gravity.LEFT) | Gravity.CENTER_VERTICAL, 16, 0, 8, 0));
 
             setWillNotDraw(false);
         }
@@ -259,85 +262,41 @@ public class ProxyListActivity extends BaseFragment implements NotificationCente
             super.onMeasure(MeasureSpec.makeMeasureSpec(MeasureSpec.getSize(widthMeasureSpec), MeasureSpec.EXACTLY), MeasureSpec.makeMeasureSpec(AndroidUtilities.dp(64) + 1, MeasureSpec.EXACTLY));
         }
 
-        public void setProxy(SharedConfig.ProxyInfo proxyInfo) {
-            isNodeRow = false;
-            nodeLink = null;
-            if (WebSocketHelper.proxyServer.equals(proxyInfo.address)) {
-                textView.setText(LocaleController.getString(R.string.PublicProxy));
-            } else if (TextUtils.isEmpty(proxyInfo.address) || proxyInfo.port <= 0) {
-                textView.setText(LocaleController.getString(R.string.ProxyInvalid));
-            } else {
-                textView.setText(proxyInfo.address + ":" + proxyInfo.port);
-            }
-            currentInfo = proxyInfo;
-        }
-
-        /** Binds this cell to a saved built-in node instead of a native proxy. */
-        public void setNode(String link) {
-            isNodeRow = true;
-            nodeLink = link;
-            currentInfo = null;
-            // Row title shows the protocol tag like "[vmess] name"; unnamed nodes
-            // fall back to the server:port so the title is never empty.
-            textView.setText(ProxyTypes.taggedTitle(link));
-            updateStatus();
+        public void setProxyRow(ProxyRow row) {
+            currentRow = row;
+            textView.setText(row.title);
         }
 
         public void updateStatus() {
-            if (isNodeRow) {
-                boolean active = VlessProxyManager.isActiveNode(nodeLink);
-                long ping = VlessProxyManager.getPing(nodeLink);
-                String pingText = ping >= 0 ? LocaleController.formatString("Ping", R.string.Ping, ping) : null;
-                int colorKey;
-                String status;
-                if (active) {
-                    if (currentConnectionState == ConnectionsManager.ConnectionStateConnected || currentConnectionState == ConnectionsManager.ConnectionStateUpdating) {
-                        colorKey = Theme.key_windowBackgroundWhiteBlueText6;
-                        status = pingText != null ? getString(R.string.Connected) + ", " + pingText : getString(R.string.Connected);
-                    } else {
-                        colorKey = Theme.key_windowBackgroundWhiteGrayText2;
-                        status = pingText != null ? getString(R.string.Connecting) + ", " + pingText : getString(R.string.Connecting);
-                    }
-                } else if (pingText != null) {
-                    colorKey = Theme.key_windowBackgroundWhiteGreenText;
-                    status = pingText;
-                } else {
-                    colorKey = Theme.key_windowBackgroundWhiteGrayText2;
-                    status = ProxyTypes.nodeServerPort(nodeLink);
-                }
-                color = Theme.getColor(colorKey);
-                valueTextView.setText(status);
-                valueTextView.setTag(colorKey);
-                valueTextView.setTextColor(color);
-                if (checkDrawable != null) {
-                    checkDrawable.setColorFilter(new PorterDuffColorFilter(color, PorterDuff.Mode.MULTIPLY));
-                }
-                setChecked(active);
+            ProxyRow row = currentRow;
+            if (row == null) {
                 return;
             }
             int colorKey;
-            if (SharedConfig.currentProxy == currentInfo && useProxySettings) {
+            if (row.isActiveProxy()) {
                 if (currentConnectionState == ConnectionsManager.ConnectionStateConnected || currentConnectionState == ConnectionsManager.ConnectionStateUpdating) {
                     colorKey = Theme.key_windowBackgroundWhiteBlueText6;
-                    if (currentInfo.ping != 0) {
-                        valueTextView.setText(getString(R.string.Connected) + ", " + LocaleController.formatString("Ping", R.string.Ping, currentInfo.ping));
+                    long ping = row.getPingMs();
+                    if (ping != 0) {
+                        valueTextView.setText(getString(R.string.Connected) + ", " + LocaleController.formatString("Ping", R.string.Ping, ping));
                     } else {
                         valueTextView.setText(getString(R.string.Connected));
                     }
-                    if (!currentInfo.checking && !currentInfo.available) {
-                        currentInfo.availableCheckTime = 0;
+                    if (!row.isNode() && !row.nativeInfo.checking && !row.nativeInfo.available) {
+                        row.nativeInfo.availableCheckTime = 0;
                     }
                 } else {
                     colorKey = Theme.key_windowBackgroundWhiteGrayText2;
                     valueTextView.setText(getString(R.string.Connecting));
                 }
             } else {
-                if (currentInfo.checking) {
+                if (row.isChecking()) {
                     valueTextView.setText(getString(R.string.Checking));
                     colorKey = Theme.key_windowBackgroundWhiteGrayText2;
-                } else if (currentInfo.available) {
-                    if (currentInfo.ping != 0) {
-                        valueTextView.setText(getString(R.string.Available) + ", " + LocaleController.formatString("Ping", R.string.Ping, currentInfo.ping));
+                } else if (row.isAvailable()) {
+                    long ping = row.getPingMs();
+                    if (ping != 0) {
+                        valueTextView.setText(getString(R.string.Available) + ", " + LocaleController.formatString("Ping", R.string.Ping, ping));
                     } else {
                         valueTextView.setText(getString(R.string.Available));
                     }
@@ -353,93 +312,6 @@ public class ProxyListActivity extends BaseFragment implements NotificationCente
             if (checkDrawable != null) {
                 checkDrawable.setColorFilter(new PorterDuffColorFilter(color, PorterDuff.Mode.MULTIPLY));
             }
-        }
-
-        public void setSelectionEnabled(boolean enabled, boolean animated) {
-            if (isSelectionEnabled == enabled && animated) {
-                return;
-            }
-            isSelectionEnabled = enabled;
-
-            float fromX = 0, toX = LocaleController.isRTL ? -AndroidUtilities.dp(32) : AndroidUtilities.dp(32);
-            if (!animated) {
-                float x = enabled ? toX : fromX;
-                textView.setTranslationX(x);
-                valueTextView.setTranslationX(x);
-                shareImageView.setTranslationX(x);
-                checkImageView.setTranslationX(x);
-                checkBox.setTranslationX((LocaleController.isRTL ? AndroidUtilities.dp(32) : -AndroidUtilities.dp(32)) + x);
-                shareImageView.setVisibility(enabled ? GONE : VISIBLE);
-                shareImageView.setAlpha(1f);
-                shareImageView.setScaleX(1f);
-                shareImageView.setScaleY(1f);
-                checkImageView.setVisibility(enabled ? GONE : VISIBLE);
-                checkImageView.setAlpha(1f);
-                checkImageView.setScaleX(1f);
-                checkImageView.setScaleY(1f);
-                checkBox.setVisibility(enabled ? VISIBLE : GONE);
-                checkBox.setAlpha(1f);
-                checkBox.setScaleX(1f);
-                checkBox.setScaleY(1f);
-            } else {
-                ValueAnimator animator = ValueAnimator.ofFloat(enabled ? 0 : 1, enabled ? 1 : 0).setDuration(200);
-                animator.setInterpolator(CubicBezierInterpolator.DEFAULT);
-                animator.addUpdateListener(animation -> {
-                    float val = (float) animation.getAnimatedValue();
-                    float x = AndroidUtilities.lerp(fromX, toX, val);
-                    textView.setTranslationX(x);
-                    valueTextView.setTranslationX(x);
-                    shareImageView.setTranslationX(x);
-                    checkImageView.setTranslationX(x);
-                    checkBox.setTranslationX((LocaleController.isRTL ? AndroidUtilities.dp(32) : -AndroidUtilities.dp(32)) + x);
-
-                    float scale = 0.5f + val * 0.5f;
-                    checkBox.setScaleX(scale);
-                    checkBox.setScaleY(scale);
-                    checkBox.setAlpha(val);
-
-                    scale = 0.5f + (1f - val) * 0.5f;
-                    shareImageView.setScaleX(scale);
-                    shareImageView.setScaleY(scale);
-                    shareImageView.setAlpha(1f - val);
-                    checkImageView.setScaleX(scale);
-                    checkImageView.setScaleY(scale);
-                    checkImageView.setAlpha(1f - val);
-                });
-                animator.addListener(new AnimatorListenerAdapter() {
-                    @Override
-                    public void onAnimationStart(Animator animation) {
-                        if (enabled) {
-                            checkBox.setAlpha(0f);
-                            checkBox.setVisibility(VISIBLE);
-                        } else {
-                            shareImageView.setAlpha(0f);
-                            shareImageView.setVisibility(VISIBLE);
-                            checkImageView.setAlpha(0f);
-                            checkImageView.setVisibility(VISIBLE);
-                        }
-                    }
-
-                    @Override
-                    public void onAnimationEnd(Animator animation) {
-                        if (enabled) {
-                            shareImageView.setVisibility(GONE);
-                            checkImageView.setVisibility(GONE);
-                        } else {
-                            checkBox.setVisibility(GONE);
-                        }
-                    }
-                });
-                animator.start();
-            }
-        }
-
-        public void setItemSelected(boolean selected, boolean animated) {
-            if (selected == isSelected && animated) {
-                return;
-            }
-            isSelected = selected;
-            checkBox.setChecked(selected, animated);
         }
 
         public void setChecked(boolean checked) {
@@ -476,12 +348,8 @@ public class ProxyListActivity extends BaseFragment implements NotificationCente
         }
     }
 
-    private void showProxyQrCode(Context context, SharedConfig.ProxyInfo proxyInfo) {
-        if (context == null || proxyInfo == null) {
-            return;
-        }
-        String link = proxyInfo.getLink();
-        if (TextUtils.isEmpty(link)) {
+    private void showProxyQrCode(Context context, String link) {
+        if (context == null || TextUtils.isEmpty(link)) {
             return;
         }
         QRCodeBottomSheet alert = new QRCodeBottomSheet(context, LocaleController.getString(R.string.ShareQrCode), link, LocaleController.getString(R.string.QRCodeLinkHelpProxy), true);
@@ -524,20 +392,20 @@ public class ProxyListActivity extends BaseFragment implements NotificationCente
         NotificationCenter.getInstance(currentAccount).removeObserver(this, NotificationCenter.didUpdateConnectionState);
     }
 
-    private final static int na_menu_other = 1001;
-    private final static int na_menu_add_input_telegram = 1002;
-    private final static int na_menu_add_import_from_clipboard = 1003;
-    private final static int na_menu_retest_ping = 1004;
-    private final static int na_menu_delete_all = 1005;
-    private final static int na_menu_delete_unavailable = 1006;
-    private final static int na_menu_add = 1010;
-    private final static int na_menu_add_scan_qr = 1011;
-    private final static int na_menu_add_input_socks = 1012;
-    private final static int na_menu_add_input_vmess = 1013;
-    private final static int na_menu_add_input_trojan = 1014;
-    private final static int na_menu_add_input_ss = 1015;
-    private final static int na_menu_add_input_vless = 1016;
-    private final static int na_menu_add_subscription = 1017;
+    private final static int menu_add = 1010;
+    private final static int menu_add_import_from_clipboard = 1003;
+    private final static int menu_add_scan_qr = 1011;
+    private final static int menu_add_input_socks = 1012;
+    private final static int menu_add_input_telegram = 1002;
+    private final static int menu_add_input_vmess = 1013;
+    private final static int menu_add_input_trojan = 1014;
+    private final static int menu_add_input_ss = 1015;
+    private final static int menu_add_input_vless = 1016;
+    private final static int menu_add_subscription = 1017;
+    private final static int menu_other = 1001;
+    private final static int menu_retest_ping = 1004;
+    private final static int menu_delete_all = 1005;
+    private final static int menu_delete_unavailable = 1006;
 
     @Override
     public View createView(Context context) {
@@ -557,90 +425,29 @@ public class ProxyListActivity extends BaseFragment implements NotificationCente
             }
         });
 
-        // na: action bar menu — "＋" add menu + "⋮" tools menu. The add menu mirrors
-        // Nekogram X 9.3.3 (clipboard / QR / SOCKS5 / MTProto / VMess / Trojan / SS),
-        // plus our fork's VLESS node type and subscription-import entry moved here so
-        // there is a single add surface instead of a second node section.
+        // "＋" add menu, ordered as in Nekogram X 9.3.3 for the protocols this
+        // backend supports, then our VLESS node type and the subscription-import
+        // entry — a single add surface.
         ActionBarMenu menu = actionBar.createMenu();
-        ActionBarMenuItem addItem = menu.addItem(na_menu_add, R.drawable.add);
+        ActionBarMenuItem addItem = menu.addItem(menu_add, R.drawable.add);
         addItem.setContentDescription(LocaleController.getString("AddProxy", R.string.AddProxy));
-        addItem.addSubItem(na_menu_add_import_from_clipboard, LocaleController.getString("ImportProxyFromClipboard", R.string.ImportProxyFromClipboard)).setOnClickListener((v) -> importFromClipboardMenu());
-        addItem.addSubItem(na_menu_add_scan_qr, LocaleController.getString("ScanQRCode", R.string.ScanQRCode)).setOnClickListener((v) -> scanQrCodeMenu());
-        addItem.addSubItem(na_menu_add_input_socks, LocaleController.getString("AddProxySocks5", R.string.AddProxySocks5)).setOnClickListener((v) -> presentFragment(new ProxySettingsActivity()));
-        addItem.addSubItem(na_menu_add_input_telegram, LocaleController.getString("AddProxyTelegram", R.string.AddProxyTelegram)).setOnClickListener((v) -> presentFragment(new ProxySettingsActivity()));
-        addItem.addSubItem(na_menu_add_input_vmess, LocaleController.getString("AddProxyVmess", R.string.AddProxyVmess)).setOnClickListener((v) -> presentFragment(new tw.nekomimi.nekogram.settings.VmessNodeEditActivity()));
-        addItem.addSubItem(na_menu_add_input_trojan, LocaleController.getString("AddProxyTrojan", R.string.AddProxyTrojan)).setOnClickListener((v) -> presentFragment(new tw.nekomimi.nekogram.settings.TrojanNodeEditActivity()));
-        addItem.addSubItem(na_menu_add_input_ss, LocaleController.getString("AddProxySS", R.string.AddProxySS)).setOnClickListener((v) -> presentFragment(new tw.nekomimi.nekogram.settings.ShadowsocksNodeEditActivity()));
-        addItem.addSubItem(na_menu_add_input_vless, LocaleController.getString(R.string.VlessAddNode)).setOnClickListener((v) -> presentFragment(new tw.nekomimi.nekogram.settings.VlessNodeEditActivity()));
-        addItem.addSubItem(na_menu_add_subscription, LocaleController.getString(R.string.VlessImportSubscription)).setOnClickListener((v) ->
+        addItem.addSubItem(menu_add_import_from_clipboard, LocaleController.getString("ImportProxyFromClipboard", R.string.ImportProxyFromClipboard)).setOnClickListener((v) -> importFromClipboardMenu());
+        addItem.addSubItem(menu_add_scan_qr, LocaleController.getString("ScanQRCode", R.string.ScanQRCode)).setOnClickListener((v) -> scanQrCodeMenu());
+        addItem.addSubItem(menu_add_input_socks, LocaleController.getString("AddProxySocks5", R.string.AddProxySocks5)).setOnClickListener((v) -> presentFragment(new ProxySettingsActivity()));
+        addItem.addSubItem(menu_add_input_telegram, LocaleController.getString("AddProxyTelegram", R.string.AddProxyTelegram)).setOnClickListener((v) -> presentFragment(new ProxySettingsActivity()));
+        addItem.addSubItem(menu_add_input_vmess, LocaleController.getString("AddProxyVmess", R.string.AddProxyVmess)).setOnClickListener((v) -> presentFragment(new tw.nekomimi.nekogram.settings.VmessNodeEditActivity()));
+        addItem.addSubItem(menu_add_input_trojan, LocaleController.getString("AddProxyTrojan", R.string.AddProxyTrojan)).setOnClickListener((v) -> presentFragment(new tw.nekomimi.nekogram.settings.TrojanNodeEditActivity()));
+        addItem.addSubItem(menu_add_input_ss, LocaleController.getString("AddProxySS", R.string.AddProxySS)).setOnClickListener((v) -> presentFragment(new tw.nekomimi.nekogram.settings.ShadowsocksNodeEditActivity()));
+        addItem.addSubItem(menu_add_input_vless, LocaleController.getString(R.string.VlessAddNode)).setOnClickListener((v) -> presentFragment(new tw.nekomimi.nekogram.settings.VlessNodeEditActivity()));
+        addItem.addSubItem(menu_add_subscription, LocaleController.getString(R.string.VlessImportSubscription)).setOnClickListener((v) ->
                 VlessImportHelper.showSubscriptionDialog(ProxyListActivity.this, () -> updateRows(true)));
 
-        otherItem = menu.addItem(na_menu_other, R.drawable.ic_ab_other);
+        // "⋮" tools menu (Nekogram X 9.3.3 subset supported by this backend).
+        otherItem = menu.addItem(menu_other, R.drawable.ic_ab_other);
         otherItem.setContentDescription(LocaleController.getString("AccDescrMoreOptions", R.string.AccDescrMoreOptions));
-        otherItem.addSubItem(na_menu_retest_ping, LocaleController.getString("RetestPing", R.string.RetestPing)).setOnClickListener((v) -> retestPing());
-        otherItem.addSubItem(na_menu_delete_all, LocaleController.getString("DeleteAllServer", R.string.DeleteAllServer)).setOnClickListener((v) -> AlertUtil.showConfirm(getParentActivity(),
-                LocaleController.getString("DeleteAllServer", R.string.DeleteAllServer),
-                R.drawable.msg_delete, LocaleController.getString("Delete", R.string.Delete),
-                true, () -> {
-                    // Deleting every visible server must not leave the proxy engine
-                    // running against a deleted shadow entry.
-                    if (VlessProxyManager.isEnabled()) {
-                        VlessProxyManager.setEnabled(false);
-                    }
-                    // Remove all saved built-in nodes, then all native servers.
-                    for (String link : new ArrayList<>(VlessProxyManager.getNodes())) {
-                        VlessProxyManager.removeNode(link);
-                    }
-                    // Note: deleteAllProxy() also clears the internal 127.0.0.1:6357
-                    // shadow row along with all native servers. That is fine: the
-                    // engine was stopped above, and the shadow row is re-created by
-                    // VlessProxyManager.applyLocalProxy() the next time the built-in
-                    // proxy is enabled — no functional break.
-                    SharedConfig.deleteAllProxy();
-                    if (SharedConfig.currentProxy == null) {
-                        useProxySettings = false;
-                        useProxyForCalls = false;
-                    }
-                    if (listAdapter != null) {
-                        listAdapter.clearSelected();
-                    }
-                    updateRows(true);
-                })
-        );
-        otherItem.addSubItem(na_menu_delete_unavailable, LocaleController.getString("DeleteUnavailableServer", R.string.DeleteUnavailableServer)).setOnClickListener((v) -> {
-            AlertUtil.showConfirm(getParentActivity(),
-                    LocaleController.getString("DeleteUnavailableServer", R.string.DeleteUnavailableServer),
-                    R.drawable.msg_delete, LocaleController.getString("Delete", R.string.Delete),
-                    true, () -> {
-                        for (SharedConfig.ProxyInfo info : SharedConfig.getProxyList()) {
-                            if (info.checking) {
-                                continue;
-                            }
-                            // Never remove the internal 127.0.0.1 shadow entry.
-                            if ("127.0.0.1".equals(info.address) && info.port == VlessProxyManager.LOCAL_PORT) {
-                                continue;
-                            }
-                            if (!info.available) {
-                                SharedConfig.deleteProxy(info);
-                            }
-                        }
-                        if (SharedConfig.currentProxy == null) {
-                            useProxyForCalls = false;
-                            useProxySettings = false;
-                        }
-                        NotificationCenter.getGlobalInstance().removeObserver(ProxyListActivity.this, NotificationCenter.proxySettingsChanged);
-                        NotificationCenter.getGlobalInstance().postNotificationName(NotificationCenter.proxySettingsChanged);
-                        NotificationCenter.getGlobalInstance().addObserver(ProxyListActivity.this, NotificationCenter.proxySettingsChanged);
-                        updateRows(true);
-                        if (listAdapter != null) {
-                            if (SharedConfig.currentProxy == null) {
-                                listAdapter.notifyItemChanged(useProxyRow, ListAdapter.PAYLOAD_CHECKED_CHANGED);
-                                listAdapter.notifyItemChanged(callsRow, ListAdapter.PAYLOAD_CHECKED_CHANGED);
-                            }
-                            listAdapter.clearSelected();
-                        }
-                    });
-        });
+        otherItem.addSubItem(menu_retest_ping, LocaleController.getString("RetestPing", R.string.RetestPing)).setOnClickListener((v) -> retestPing());
+        otherItem.addSubItem(menu_delete_all, LocaleController.getString("DeleteAllServer", R.string.DeleteAllServer)).setOnClickListener((v) -> confirmDeleteAll());
+        otherItem.addSubItem(menu_delete_unavailable, LocaleController.getString("DeleteUnavailableServer", R.string.DeleteUnavailableServer)).setOnClickListener((v) -> confirmDeleteUnavailable());
 
         listAdapter = new ListAdapter(context);
 
@@ -652,107 +459,13 @@ public class ProxyListActivity extends BaseFragment implements NotificationCente
         listView.setSections();
         actionBar.setAdaptiveBackground(listView);
         ((DefaultItemAnimator) listView.getItemAnimator()).setDelayAnimations(false);
-        ((DefaultItemAnimator) listView.getItemAnimator()).setTranslationInterpolator(CubicBezierInterpolator.DEFAULT);
         listView.setVerticalScrollBarEnabled(false);
         listView.setLayoutManager(layoutManager = new LinearLayoutManager(context, LinearLayoutManager.VERTICAL, false));
         frameLayout.addView(listView, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT, Gravity.TOP | Gravity.LEFT));
         listView.setAdapter(listAdapter);
         listView.setOnItemClickListener((view, position) -> {
             if (position == useProxyRow) {
-                // VLESS-aware master switch. The switch controls whichever proxy
-                // scheme is active: the built-in node engine when it is running,
-                // otherwise a saved native proxy.
-                if (VlessProxyManager.isEnabled()) {
-                    // Turning the built-in engine off.
-                    VlessProxyManager.setEnabled(false);
-                    useProxySettings = false;
-                    useProxyForCalls = false;
-                    TextCheckCell vlessSwitch = (TextCheckCell) view;
-                    vlessSwitch.setChecked(false);
-                    updateRows(true);
-                    NotificationCenter.getGlobalInstance().removeObserver(ProxyListActivity.this, NotificationCenter.proxySettingsChanged);
-                    NotificationCenter.getGlobalInstance().postNotificationName(NotificationCenter.proxySettingsChanged);
-                    NotificationCenter.getGlobalInstance().addObserver(ProxyListActivity.this, NotificationCenter.proxySettingsChanged);
-                    return;
-                }
-                if (!useProxySettings && VlessProxyManager.hasConfig()) {
-                    // Turning on: a built-in node is configured, so boot the engine
-                    // (never auto-enable the stopped 127.0.0.1 shadow entry).
-                    VlessProxyManager.selectNode(VlessProxyManager.getVlessLink());
-                    useProxySettings = true;
-                    useProxyForCalls = false;
-                    TextCheckCell vlessSwitch = (TextCheckCell) view;
-                    vlessSwitch.setChecked(true);
-                    updateRows(false);
-                    NotificationCenter.getGlobalInstance().removeObserver(ProxyListActivity.this, NotificationCenter.proxySettingsChanged);
-                    NotificationCenter.getGlobalInstance().postNotificationName(NotificationCenter.proxySettingsChanged);
-                    NotificationCenter.getGlobalInstance().addObserver(ProxyListActivity.this, NotificationCenter.proxySettingsChanged);
-                    for (int a = nodeStartRow; a < nodeEndRow; a++) {
-                        RecyclerListView.Holder h = (RecyclerListView.Holder) listView.findViewHolderForAdapterPosition(a);
-                        if (h != null) {
-                            ((TextDetailProxyCell) h.itemView).updateStatus();
-                        }
-                    }
-                    return;
-                }
-                if (SharedConfig.currentProxy == null) {
-                    if (!proxyList.isEmpty()) {
-                        SharedConfig.currentProxy = proxyList.get(0);
-
-                        if (!useProxySettings) {
-                            SharedPreferences preferences = MessagesController.getGlobalMainSettings();
-                            SharedPreferences.Editor editor = MessagesController.getGlobalMainSettings().edit();
-                            editor.putString("proxy_ip", SharedConfig.currentProxy.address);
-                            editor.putString("proxy_pass", SharedConfig.currentProxy.password);
-                            editor.putString("proxy_user", SharedConfig.currentProxy.username);
-                            editor.putInt("proxy_port", SharedConfig.currentProxy.port);
-                            editor.putString("proxy_secret", SharedConfig.currentProxy.secret);
-                            editor.commit();
-                        }
-                    } else {
-                        presentFragment(new ProxySettingsActivity());
-                        return;
-                    }
-                }
-                useProxySettings = !useProxySettings;
-                updateRows(true);
-
-                SharedPreferences preferences = MessagesController.getGlobalMainSettings();
-
-                TextCheckCell textCheckCell = (TextCheckCell) view;
-                textCheckCell.setChecked(useProxySettings);
-                if (!useProxySettings) {
-                    RecyclerListView.Holder holder = (RecyclerListView.Holder) listView.findViewHolderForAdapterPosition(callsRow);
-                    if (holder != null) {
-                        textCheckCell = (TextCheckCell) holder.itemView;
-                        textCheckCell.setChecked(false);
-                    }
-                    useProxyForCalls = false;
-                }
-
-                SharedPreferences.Editor editor = MessagesController.getGlobalMainSettings().edit();
-                editor.putBoolean("proxy_enabled", useProxySettings);
-                editor.commit();
-
-                ConnectionsManager.setProxySettings(useProxySettings, SharedConfig.currentProxy.address, SharedConfig.currentProxy.port, SharedConfig.currentProxy.username, SharedConfig.currentProxy.password, SharedConfig.currentProxy.secret);
-                NotificationCenter.getGlobalInstance().removeObserver(ProxyListActivity.this, NotificationCenter.proxySettingsChanged);
-                NotificationCenter.getGlobalInstance().postNotificationName(NotificationCenter.proxySettingsChanged);
-                NotificationCenter.getGlobalInstance().addObserver(ProxyListActivity.this, NotificationCenter.proxySettingsChanged);
-
-                for (int a = proxyStartRow; a < proxyEndRow; a++) {
-                    RecyclerListView.Holder holder = (RecyclerListView.Holder) listView.findViewHolderForAdapterPosition(a);
-                    if (holder != null) {
-                        TextDetailProxyCell cell = (TextDetailProxyCell) holder.itemView;
-                        cell.updateStatus();
-                    }
-                }
-            } else if (position == rotationRow) {
-                SharedConfig.proxyRotationEnabled = !SharedConfig.proxyRotationEnabled;
-                TextCheckCell textCheckCell = (TextCheckCell) view;
-                textCheckCell.setChecked(SharedConfig.proxyRotationEnabled);
-                SharedConfig.saveConfig();
-
-                updateRows(true);
+                toggleUseProxy();
             } else if (position == callsRow) {
                 useProxyForCalls = !useProxyForCalls;
                 TextCheckCell textCheckCell = (TextCheckCell) view;
@@ -761,301 +474,417 @@ public class ProxyListActivity extends BaseFragment implements NotificationCente
                 editor.putBoolean("proxy_enabled_calls", useProxyForCalls);
                 editor.commit();
             } else if (position >= proxyStartRow && position < proxyEndRow) {
-                if (!selectedItems.isEmpty() || !selectedNodes.isEmpty()) {
-                    listAdapter.toggleSelected(position);
-                    return;
-                }
-                // Native proxy takes over: stop the built-in engine if it was running.
-                if (VlessProxyManager.isEnabled()) {
-                    VlessProxyManager.setEnabled(false);
-                }
-                SharedConfig.ProxyInfo info = proxyList.get(position - proxyStartRow);
-                useProxySettings = true;
-                SharedPreferences.Editor editor = MessagesController.getGlobalMainSettings().edit();
-                editor.putString("proxy_ip", info.address);
-                editor.putString("proxy_pass", info.password);
-                editor.putString("proxy_user", info.username);
-                editor.putInt("proxy_port", info.port);
-                editor.putString("proxy_secret", info.secret);
-                editor.putBoolean("proxy_enabled", useProxySettings);
-                if (!info.secret.isEmpty()) {
-                    useProxyForCalls = false;
-                    editor.putBoolean("proxy_enabled_calls", false);
-                }
-                editor.commit();
-                SharedConfig.currentProxy = info;
-                for (int a = proxyStartRow; a < proxyEndRow; a++) {
-                    RecyclerListView.Holder holder = (RecyclerListView.Holder) listView.findViewHolderForAdapterPosition(a);
-                    if (holder != null) {
-                        TextDetailProxyCell cell = (TextDetailProxyCell) holder.itemView;
-                        cell.setChecked(cell.currentInfo == info);
-                        cell.updateStatus();
-                    }
-                }
-                for (int a = nodeStartRow; a < nodeEndRow; a++) {
-                    RecyclerListView.Holder h = (RecyclerListView.Holder) listView.findViewHolderForAdapterPosition(a);
-                    if (h != null) {
-                        ((TextDetailProxyCell) h.itemView).updateStatus();
-                    }
-                }
-                updateRows(false);
-                RecyclerListView.Holder holder = (RecyclerListView.Holder) listView.findViewHolderForAdapterPosition(useProxyRow);
-                if (holder != null) {
-                    TextCheckCell textCheckCell = (TextCheckCell) holder.itemView;
-                    textCheckCell.setChecked(true);
-                }
-                ConnectionsManager.setProxySettings(useProxySettings, SharedConfig.currentProxy.address, SharedConfig.currentProxy.port, SharedConfig.currentProxy.username, SharedConfig.currentProxy.password, SharedConfig.currentProxy.secret);
-            } else if (position >= nodeStartRow && position < nodeEndRow) {
-                if (!selectedItems.isEmpty() || !selectedNodes.isEmpty()) {
-                    listAdapter.toggleSelected(position);
-                    return;
-                }
-                String link = nodeLinks.get(position - nodeStartRow);
-                // Starts the engine with this node (or re-runs it) and, when the
-                // proxy was off, points Telegram at 127.0.0.1:LOCAL_PORT.
-                VlessProxyManager.selectNode(link);
-                useProxySettings = true;
-                updateRows(false);
-                RecyclerListView.Holder holder = (RecyclerListView.Holder) listView.findViewHolderForAdapterPosition(useProxyRow);
-                if (holder != null) {
-                    TextCheckCell textCheckCell = (TextCheckCell) holder.itemView;
-                    textCheckCell.setChecked(true);
-                }
-                for (int a = proxyStartRow; a < proxyEndRow; a++) {
-                    RecyclerListView.Holder h = (RecyclerListView.Holder) listView.findViewHolderForAdapterPosition(a);
-                    if (h != null) {
-                        TextDetailProxyCell cell = (TextDetailProxyCell) h.itemView;
-                        cell.setChecked(false);
-                        cell.updateStatus();
-                    }
-                }
-                for (int a = nodeStartRow; a < nodeEndRow; a++) {
-                    RecyclerListView.Holder h = (RecyclerListView.Holder) listView.findViewHolderForAdapterPosition(a);
-                    if (h != null) {
-                        ((TextDetailProxyCell) h.itemView).updateStatus();
+                ProxyRow row = proxyRows.get(position - proxyStartRow);
+                if (row != null) {
+                    if (row.isNode()) {
+                        selectNode(row);
+                    } else {
+                        selectNativeProxy(row);
                     }
                 }
             }
         });
         listView.setOnItemLongClickListener((view, position) -> {
-            if (position >= proxyStartRow && position < proxyEndRow || position >= nodeStartRow && position < nodeEndRow) {
-                listAdapter.toggleSelected(position);
-                return true;
-            }
-            return false;
-        });
-
-        ActionBarMenu actionMode = actionBar.createActionMode();
-        selectedCountTextView = new NumberTextView(actionMode.getContext());
-        selectedCountTextView.setTextSize(18);
-        selectedCountTextView.setTypeface(AndroidUtilities.bold());
-        selectedCountTextView.setTextColor(Theme.getColor(Theme.key_actionBarActionModeDefaultIcon));
-        actionMode.addView(selectedCountTextView, LayoutHelper.createLinear(0, LayoutHelper.MATCH_PARENT, 1.0f, 72, 0, 0, 0));
-        selectedCountTextView.setOnTouchListener((v, event) -> true);
-
-        shareMenuItem = actionMode.addItemWithWidth(MENU_SHARE, R.drawable.msg_share, AndroidUtilities.dp(54));
-        shareMenuItem.setContentDescription(getString(R.string.StickersShare));
-        deleteMenuItem = actionMode.addItemWithWidth(MENU_DELETE, R.drawable.msg_delete, AndroidUtilities.dp(54));
-        deleteMenuItem.setContentDescription(getString(R.string.Delete));
-
-        actionBar.setActionBarMenuOnItemClick(new ActionBar.ActionBarMenuOnItemClick() {
-            @Override
-            public void onItemClick(int id) {
-                switch (id) {
-                    case -1:
-                        if (selectedItems.isEmpty() && selectedNodes.isEmpty()) {
-                            finishFragment();
-                        } else {
-                            listAdapter.clearSelected();
-                        }
-                        break;
-                    case MENU_DELETE:
-                        int deleteCount = selectedItems.size() + selectedNodes.size();
-                        AlertDialog.Builder builder = new AlertDialog.Builder(getParentActivity());
-                        builder.setMessage(getString(deleteCount > 1 ? R.string.DeleteProxyMultiConfirm : R.string.DeleteProxyConfirm));
-                        builder.setNegativeButton(getString(R.string.Cancel), null);
-                        builder.setTitle(getString(R.string.DeleteProxyTitle));
-                        builder.setPositiveButton(getString(R.string.Delete), (dialog, which) -> {
-                            for (SharedConfig.ProxyInfo info : selectedItems) {
-                                SharedConfig.deleteProxy(info);
-                            }
-                            for (String link : selectedNodes) {
-                                VlessProxyManager.removeNode(link);
-                            }
-                            if (!VlessProxyManager.isEnabled() && SharedConfig.currentProxy == null) {
-                                useProxyForCalls = false;
-                                useProxySettings = false;
-                            }
-                            NotificationCenter.getGlobalInstance().removeObserver(ProxyListActivity.this, NotificationCenter.proxySettingsChanged);
-                            NotificationCenter.getGlobalInstance().postNotificationName(NotificationCenter.proxySettingsChanged);
-                            NotificationCenter.getGlobalInstance().addObserver(ProxyListActivity.this, NotificationCenter.proxySettingsChanged);
-                            updateRows(true);
-                            if (listAdapter != null) {
-                                if (SharedConfig.currentProxy == null) {
-                                    listAdapter.notifyItemChanged(useProxyRow, ListAdapter.PAYLOAD_CHECKED_CHANGED);
-                                    listAdapter.notifyItemChanged(callsRow, ListAdapter.PAYLOAD_CHECKED_CHANGED);
-                                }
-                                listAdapter.clearSelected();
-                            }
-                        });
-                        AlertDialog dialog = builder.create();
-                        showDialog(dialog);
-                        TextView button = (TextView) dialog.getButton(DialogInterface.BUTTON_POSITIVE);
-                        if (button != null) {
-                            button.setTextColor(Theme.getColor(Theme.key_text_RedBold));
-                        }
-                        break;
-                    case MENU_SHARE:
-                        StringBuilder links = new StringBuilder();
-                        for (SharedConfig.ProxyInfo info : selectedItems) {
-                            if (links.length() > 0) {
-                                links.append("\n\n");
-                            }
-                            links.append(info.getLink());
-                        }
-                        for (String link : selectedNodes) {
-                            if (links.length() > 0) {
-                                links.append("\n\n");
-                            }
-                            links.append(link);
-                        }
-
-                        Intent shareIntent = new Intent(Intent.ACTION_SEND);
-                        shareIntent.setType("text/plain");
-                        shareIntent.putExtra(Intent.EXTRA_TEXT, links.toString());
-                        int shareCount = selectedItems.size() + selectedNodes.size();
-                        Intent chooserIntent = Intent.createChooser(shareIntent, getString(shareCount > 1 ? R.string.ShareLinks : R.string.ShareLink));
-                        chooserIntent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-                        context.startActivity(chooserIntent);
-
-                        if (listAdapter != null) {
-                            listAdapter.clearSelected();
-                        }
-                        break;
+            if (position >= proxyStartRow && position < proxyEndRow) {
+                ProxyRow row = proxyRows.get(position - proxyStartRow);
+                if (row != null) {
+                    showProxyActions(row);
+                    return true;
                 }
             }
+            return false;
         });
 
         return fragmentView;
     }
 
+    /** "Use proxy" master switch, VLESS-aware: it controls the built-in node
+     * engine when one is configured, otherwise the native proxy path. */
+    private void toggleUseProxy() {
+        if (VlessProxyManager.isEnabled()) {
+            // Turning the built-in engine off.
+            VlessProxyManager.setEnabled(false);
+            useProxySettings = false;
+            useProxyForCalls = false;
+            notifyProxySettingsChanged();
+            updateRows(true);
+            return;
+        }
+        if (!useProxySettings && VlessProxyManager.hasConfig()) {
+            // Turning on: boot the engine on the last selected node.
+            VlessProxyManager.selectNode(VlessProxyManager.getVlessLink());
+            useProxySettings = true;
+            useProxyForCalls = false;
+            notifyProxySettingsChanged();
+            updateRows(true);
+            return;
+        }
+        if (SharedConfig.currentProxy == null) {
+            SharedConfig.ProxyInfo fallback = null;
+            for (ProxyRow row : proxyRows) {
+                if (!row.isNode() && SharedConfig.proxyList.contains(row.nativeInfo)) {
+                    fallback = row.nativeInfo;
+                    break;
+                }
+            }
+            if (fallback != null) {
+                SharedConfig.currentProxy = fallback;
+            } else {
+                showAddProxySheet();
+                return;
+            }
+            if (!useProxySettings) {
+                SharedPreferences.Editor editor = MessagesController.getGlobalMainSettings().edit();
+                editor.putString("proxy_ip", SharedConfig.currentProxy.address);
+                editor.putString("proxy_pass", SharedConfig.currentProxy.password);
+                editor.putString("proxy_user", SharedConfig.currentProxy.username);
+                editor.putInt("proxy_port", SharedConfig.currentProxy.port);
+                editor.putString("proxy_secret", SharedConfig.currentProxy.secret);
+                editor.commit();
+            }
+        }
+        useProxySettings = !useProxySettings;
+        if (!useProxySettings) {
+            useProxyForCalls = false;
+            SharedPreferences.Editor editor = MessagesController.getGlobalMainSettings().edit();
+            editor.putBoolean("proxy_enabled", false);
+            editor.putBoolean("proxy_enabled_calls", false);
+            editor.commit();
+            ConnectionsManager.setProxySettings(false, null, 0, null, null, null);
+            notifyProxySettingsChanged();
+            updateRows(true);
+            return;
+        }
+        SharedPreferences.Editor editor = MessagesController.getGlobalMainSettings().edit();
+        editor.putBoolean("proxy_enabled", true);
+        editor.commit();
+        if (SharedConfig.currentProxy != null) {
+            SharedConfig.ProxyInfo info = SharedConfig.currentProxy;
+            ConnectionsManager.setProxySettings(true, info.address, info.port, info.username, info.password, info.secret);
+        }
+        notifyProxySettingsChanged();
+        updateRows(true);
+    }
+
+    /** Row tap: native proxy row. Stops the engine if needed and enables the row. */
+    private void selectNativeProxy(ProxyRow row) {
+        SharedConfig.ProxyInfo info = row.nativeInfo;
+        if (info == null) {
+            return;
+        }
+        // A native proxy takes over: stop the built-in engine if it is running.
+        if (VlessProxyManager.isEnabled()) {
+            VlessProxyManager.setEnabled(false);
+        }
+        useProxySettings = true;
+        SharedConfig.currentProxy = info;
+        SharedPreferences.Editor editor = MessagesController.getGlobalMainSettings().edit();
+        editor.putString("proxy_ip", info.address);
+        editor.putString("proxy_pass", info.password);
+        editor.putString("proxy_user", info.username);
+        editor.putInt("proxy_port", info.port);
+        editor.putString("proxy_secret", info.secret);
+        editor.putBoolean("proxy_enabled", true);
+        if (!info.secret.isEmpty()) {
+            useProxyForCalls = false;
+            editor.putBoolean("proxy_enabled_calls", false);
+        }
+        editor.commit();
+        ConnectionsManager.setProxySettings(true, info.address, info.port, info.username, info.password, info.secret);
+        notifyProxySettingsChanged();
+        updateRows(true);
+    }
+
+    /** Row tap: built-in node row. Selects the node and starts/hot-swaps the engine. */
+    private void selectNode(ProxyRow row) {
+        String link = row.nodeLink;
+        if (link == null) {
+            return;
+        }
+        try {
+            VlessProxyManager.selectNode(link);
+        } catch (Throwable e) {
+            FileLog.e(e);
+            return;
+        }
+        useProxySettings = true;
+        notifyProxySettingsChanged();
+        updateRows(true);
+    }
+
+    private void notifyProxySettingsChanged() {
+        NotificationCenter.getGlobalInstance().removeObserver(ProxyListActivity.this, NotificationCenter.proxySettingsChanged);
+        NotificationCenter.getGlobalInstance().postNotificationName(NotificationCenter.proxySettingsChanged);
+        NotificationCenter.getGlobalInstance().addObserver(ProxyListActivity.this, NotificationCenter.proxySettingsChanged);
+    }
+
+    /** "＋" add sheet shown when the user enables the master switch with no rows. */
+    private void showAddProxySheet() {
+        Activity activity = getParentActivity();
+        if (activity == null) {
+            return;
+        }
+        BottomBuilder builder = new BottomBuilder(activity);
+        builder.addItems(new String[]{
+                LocaleController.getString("AddProxySocks5", R.string.AddProxySocks5),
+                LocaleController.getString("AddProxyTelegram", R.string.AddProxyTelegram),
+                LocaleController.getString("AddProxyVmess", R.string.AddProxyVmess),
+                LocaleController.getString("AddProxyTrojan", R.string.AddProxyTrojan),
+                LocaleController.getString("AddProxySS", R.string.AddProxySS),
+                LocaleController.getString(R.string.VlessAddNode),
+                LocaleController.getString("ImportProxyFromClipboard", R.string.ImportProxyFromClipboard),
+                LocaleController.getString("ScanQRCode", R.string.ScanQRCode)
+        }, null, (i, t, c) -> {
+            dispatchAddAction(i);
+            return kotlin.Unit.INSTANCE;
+        });
+        builder.show();
+    }
+
+    private void dispatchAddAction(int index) {
+        switch (index) {
+            case 0:
+            case 1:
+                presentFragment(new ProxySettingsActivity());
+                break;
+            case 2:
+                presentFragment(new tw.nekomimi.nekogram.settings.VmessNodeEditActivity());
+                break;
+            case 3:
+                presentFragment(new tw.nekomimi.nekogram.settings.TrojanNodeEditActivity());
+                break;
+            case 4:
+                presentFragment(new tw.nekomimi.nekogram.settings.ShadowsocksNodeEditActivity());
+                break;
+            case 5:
+                presentFragment(new tw.nekomimi.nekogram.settings.VlessNodeEditActivity());
+                break;
+            case 6:
+                importFromClipboardMenu();
+                break;
+            case 7:
+                scanQrCodeMenu();
+                break;
+            default:
+                break;
+        }
+    }
+
+    /** Long-press row action sheet (Nekogram X 9.3.3 style). */
+    private void showProxyActions(ProxyRow row) {
+        Activity activity = getParentActivity();
+        if (activity == null) {
+            return;
+        }
+        String link;
+        try {
+            link = row.getLink();
+        } catch (Throwable e) {
+            FileLog.e(e);
+            link = null;
+        }
+        final String shareText = link;
+        BottomBuilder builder = new BottomBuilder(activity);
+        builder.addItems(new String[]{
+                LocaleController.getString("EditProxy", R.string.EditProxy),
+                LocaleController.getString("ShareProxy", R.string.ShareProxy),
+                LocaleController.getString("ShareQRCode", R.string.ShareQRCode),
+                LocaleController.getString("CopyLink", R.string.CopyLink),
+                LocaleController.getString("ProxyDelete", R.string.ProxyDelete),
+                LocaleController.getString("Cancel", R.string.Cancel)
+        }, new int[]{
+                R.drawable.group_edit,
+                R.drawable.msg_share,
+                R.drawable.msg_qrcode,
+                R.drawable.msg_copy,
+                R.drawable.msg_delete,
+                R.drawable.msg_cancel
+        }, (i, text, cell) -> {
+            switch (i) {
+                case 0:
+                    row.openEditor();
+                    break;
+                case 1:
+                    shareProxyLink(shareText);
+                    break;
+                case 2:
+                    showProxyQrCode(activity, shareText);
+                    break;
+                case 3:
+                    if (shareText != null) {
+                        AndroidUtilities.addToClipboard(shareText);
+                        AlertUtil.showToast(LocaleController.getString(R.string.LinkCopied));
+                    }
+                    break;
+                case 4:
+                    confirmDeleteProxy(row);
+                    break;
+                default:
+                    break;
+            }
+            return kotlin.Unit.INSTANCE;
+        });
+        builder.show();
+    }
+
+    private void shareProxyLink(String link) {
+        Activity activity = getParentActivity();
+        if (activity == null || TextUtils.isEmpty(link)) {
+            return;
+        }
+        Intent shareIntent = new Intent(Intent.ACTION_SEND);
+        shareIntent.setType("text/plain");
+        shareIntent.putExtra(Intent.EXTRA_TEXT, link);
+        Intent chooserIntent = Intent.createChooser(shareIntent, getString(R.string.ShareLink));
+        chooserIntent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+        activity.startActivity(chooserIntent);
+    }
+
+    private void confirmDeleteProxy(ProxyRow row) {
+        AlertUtil.showConfirm(getParentActivity(),
+                LocaleController.getString("DeleteProxy", R.string.DeleteProxy),
+                R.drawable.msg_delete, LocaleController.getString("Delete", R.string.Delete),
+                true, () -> {
+                    if (row.isNode()) {
+                        VlessProxyManager.removeNode(row.nodeLink);
+                    } else {
+                        SharedConfig.deleteProxy(row.nativeInfo);
+                    }
+                    if (!VlessProxyManager.isEnabled() && SharedConfig.currentProxy == null) {
+                        useProxyForCalls = false;
+                        useProxySettings = false;
+                    }
+                    notifyProxySettingsChanged();
+                    updateRows(true);
+                });
+    }
+
+    private void confirmDeleteAll() {
+        AlertUtil.showConfirm(getParentActivity(),
+                LocaleController.getString("DeleteAllServer", R.string.DeleteAllServer),
+                R.drawable.msg_delete, LocaleController.getString("Delete", R.string.Delete),
+                true, () -> {
+                    // Deleting every visible server must not leave the engine
+                    // running against a deleted shadow entry.
+                    if (VlessProxyManager.isEnabled()) {
+                        VlessProxyManager.setEnabled(false);
+                    }
+                    for (String link : new ArrayList<>(VlessProxyManager.getNodes())) {
+                        VlessProxyManager.removeNode(link);
+                    }
+                    // deleteAllProxy() also clears the internal 127.0.0.1:6357
+                    // shadow row; it is re-created by applyLocalProxy() the next
+                    // time the built-in proxy is enabled.
+                    SharedConfig.deleteAllProxy();
+                    if (SharedConfig.currentProxy == null) {
+                        useProxySettings = false;
+                        useProxyForCalls = false;
+                    }
+                    notifyProxySettingsChanged();
+                    updateRows(true);
+                });
+    }
+
+    private void confirmDeleteUnavailable() {
+        AlertUtil.showConfirm(getParentActivity(),
+                LocaleController.getString("DeleteUnavailableServer", R.string.DeleteUnavailableServer),
+                R.drawable.msg_delete, LocaleController.getString("Delete", R.string.Delete),
+                true, () -> {
+                    for (SharedConfig.ProxyInfo info : SharedConfig.getProxyList()) {
+                        if (info.checking) {
+                            continue;
+                        }
+                        // Never remove the internal 127.0.0.1 shadow entry.
+                        if ("127.0.0.1".equals(info.address) && info.port == VlessProxyManager.LOCAL_PORT) {
+                            continue;
+                        }
+                        if (!info.available) {
+                            SharedConfig.deleteProxy(info);
+                        }
+                    }
+                    if (SharedConfig.currentProxy == null) {
+                        useProxyForCalls = false;
+                        useProxySettings = false;
+                    }
+                    notifyProxySettingsChanged();
+                    updateRows(true);
+                });
+    }
+
     @Override
     public boolean onBackPressed(boolean invoked) {
-        if (!selectedItems.isEmpty() || !selectedNodes.isEmpty()) {
-            if (invoked) listAdapter.clearSelected();
-            return false;
-        }
         return super.onBackPressed(invoked);
     }
 
     private void updateRows(boolean notify) {
-        rowCount = 0;
-        useProxyRow = rowCount++;
-
-        if (useProxySettings && SharedConfig.currentProxy != null && SharedConfig.proxyList.size() > 1 && IS_PROXY_ROTATION_AVAILABLE) {
-            rotationRow = rowCount++;
-            if (SharedConfig.proxyRotationEnabled) {
-                rotationTimeoutRow = rowCount++;
-                rotationTimeoutInfoRow = rowCount++;
-            } else {
-                rotationTimeoutRow = -1;
-                rotationTimeoutInfoRow = -1;
-            }
-        } else {
-            rotationRow = -1;
-            rotationTimeoutRow = -1;
-            rotationTimeoutInfoRow = -1;
-        }
-
         if (notify) {
-            // Built-in nodes, active node first (so the enabled server sits on top,
-            // mirroring the current-proxy-first ordering of the native rows).
-            nodeLinks.clear();
-            nodeLinks.addAll(VlessProxyManager.getNodes());
-            String activeLink = VlessProxyManager.getVlessLink();
-            if (!TextUtils.isEmpty(activeLink) && nodeLinks.remove(activeLink)) {
-                nodeLinks.add(0, activeLink);
-            }
-
             proxyList.clear();
             for (SharedConfig.ProxyInfo info : SharedConfig.proxyList) {
-                // The local engine entry (127.0.0.1:LOCAL_PORT) is not shown as a
-                // native row; its engine node is listed in the node rows above.
                 if ("127.0.0.1".equals(info.address) && info.port == VlessProxyManager.LOCAL_PORT) {
                     continue;
                 }
                 proxyList.add(info);
             }
 
-            boolean checking = false;
-            if (!wasCheckedAllList) {
-                for (SharedConfig.ProxyInfo info : proxyList) {
-                    if (info.checking || info.availableCheckTime == 0) {
-                        checking = true;
-                        break;
-                    }
-                }
-                if (!checking) {
-                    wasCheckedAllList = true;
-                }
+            proxyRows.clear();
+            for (SharedConfig.ProxyInfo info : proxyList) {
+                proxyRows.add(makeNativeRow(info));
+            }
+            ArrayList<String> nodeLinks = VlessProxyManager.getNodes();
+            String activeLink = VlessProxyManager.getVlessLink();
+            if (!TextUtils.isEmpty(activeLink) && nodeLinks.remove(activeLink)) {
+                nodeLinks.add(0, activeLink);
+            }
+            for (String link : nodeLinks) {
+                proxyRows.add(makeNodeRow(link));
             }
 
-            boolean isChecking = checking;
-            Collections.sort(proxyList, (o1, o2) -> {
-                long bias1 = SharedConfig.currentProxy == o1 ? -200000 : 0;
-                if (!o1.available) {
-                    bias1 += 100000;
+            // Sort like Nekogram X 9.3.3: active proxy first, then available
+            // servers by ping (unmeasured/unavailable at the bottom).
+            proxyRows.sort(new Comparator<ProxyRow>() {
+                @Override
+                public int compare(ProxyRow o1, ProxyRow o2) {
+                    boolean a1 = o1.isActiveProxy();
+                    boolean a2 = o2.isActiveProxy();
+                    if (a1 != a2) {
+                        return a1 ? -1 : 1;
+                    }
+                    boolean av1 = o1.isAvailable();
+                    boolean av2 = o2.isAvailable();
+                    if (av1 != av2) {
+                        return av1 ? -1 : 1;
+                    }
+                    long p1 = o1.getPingMs();
+                    long p2 = o2.getPingMs();
+                    if (p1 != p2) {
+                        return Long.compare(p1, p2);
+                    }
+                    return 0;
                 }
-                long bias2 = SharedConfig.currentProxy == o2 ? -200000 : 0;
-                if (!o2.available) {
-                    bias2 += 100000;
-                }
-                return Long.compare(isChecking && o1 != SharedConfig.currentProxy ? SharedConfig.proxyList.indexOf(o1) * 10000L : o1.ping + bias1,
-                        isChecking && o2 != SharedConfig.currentProxy ? SharedConfig.proxyList.indexOf(o2) * 10000L : o2.ping + bias2);
             });
         }
 
-        boolean hasServers = !proxyList.isEmpty() || !nodeLinks.isEmpty();
-        if (rotationTimeoutInfoRow == -1) {
-            if (hasServers) {
-                useProxyShadowRow = rowCount++;
-            } else {
-                useProxyShadowRow = -1;
-            }
+        rowCount = 0;
+        useProxyRow = rowCount++;
+        boolean hasServers = !proxyRows.isEmpty();
+        if (hasServers) {
+            useProxyShadowRow = rowCount++;
+            connectionsHeaderRow = rowCount++;
+            proxyStartRow = rowCount;
+            rowCount += proxyRows.size();
+            proxyEndRow = rowCount;
         } else {
             useProxyShadowRow = -1;
-        }
-        if (hasServers) {
-            connectionsHeaderRow = rowCount++;
-            if (!proxyList.isEmpty()) {
-                proxyStartRow = rowCount;
-                rowCount += proxyList.size();
-                proxyEndRow = rowCount;
-            } else {
-                proxyStartRow = -1;
-                proxyEndRow = -1;
-            }
-            if (!nodeLinks.isEmpty()) {
-                nodeStartRow = rowCount;
-                rowCount += nodeLinks.size();
-                nodeEndRow = rowCount;
-            } else {
-                nodeStartRow = -1;
-                nodeEndRow = -1;
-            }
-        } else {
             connectionsHeaderRow = -1;
             proxyStartRow = -1;
             proxyEndRow = -1;
-            nodeStartRow = -1;
-            nodeEndRow = -1;
         }
         proxyShadowRow = rowCount++;
         if (SharedConfig.currentProxy == null || SharedConfig.currentProxy.secret.isEmpty()) {
             boolean change = callsRow == -1;
             callsRow = rowCount++;
             callsDetailRow = rowCount++;
-            if (!notify && change) {
+            if (!notify && change && listAdapter != null) {
                 listAdapter.notifyItemChanged(proxyShadowRow);
                 listAdapter.notifyItemRangeInserted(proxyShadowRow + 1, 2);
             }
@@ -1063,18 +892,63 @@ public class ProxyListActivity extends BaseFragment implements NotificationCente
             boolean change = callsRow != -1;
             callsRow = -1;
             callsDetailRow = -1;
-            if (!notify && change) {
+            if (!notify && change && listAdapter != null) {
                 listAdapter.notifyItemChanged(proxyShadowRow);
                 listAdapter.notifyItemRangeRemoved(proxyShadowRow + 1, 2);
             }
         }
+
         checkProxyList();
         if (notify && listAdapter != null) {
             listAdapter.notifyDataSetChanged();
         }
-        if (notify && !nodeLinks.isEmpty()) {
-            pingNodes(true);
+        if (notify && !proxyRows.isEmpty()) {
+            pingMissingNodes();
         }
+    }
+
+    private ProxyRow makeNativeRow(SharedConfig.ProxyInfo info) {
+        boolean ws = WebSocketHelper.proxyServer.equals(info.address);
+        String type = (info.secret == null || info.secret.isEmpty()) ? "Socks5" : "MTProto";
+        String address = info.address + ":" + info.port;
+        String title = ws
+                ? getString(R.string.PublicProxy)
+                : "[ " + type + " ] " + address;
+        return new ProxyRow(info, null, title, address, ws);
+    }
+
+    private ProxyRow makeNodeRow(String link) {
+        String type;
+        String kind = ProxyTypes.kind(link);
+        switch (kind) {
+            case "vless":
+                type = "Vless";
+                break;
+            case "vmess":
+                type = "Vmess";
+                break;
+            case "trojan":
+                type = "Trojan";
+                break;
+            case "ss":
+                type = "Shadowsocks";
+                break;
+            default:
+                type = TextUtils.isEmpty(kind) ? "Proxy" : kind;
+                break;
+        }
+        String remarks = "";
+        String address = link;
+        try {
+            remarks = ProxyTypes.nodeName(link);
+        } catch (Throwable ignore) {
+        }
+        try {
+            address = ProxyTypes.nodeServerPort(link);
+        } catch (Throwable ignore) {
+        }
+        String title = "[ " + type + " ] " + (TextUtils.isEmpty(remarks) ? address : remarks);
+        return new ProxyRow(null, link, title, address, false);
     }
 
     /**
@@ -1103,6 +977,7 @@ public class ProxyListActivity extends BaseFragment implements NotificationCente
         String text = readClipboardText(activity);
         if (text != null && containsTgProxyLink(text)) {
             ProxyUtil.importFromClipboard(activity);
+            updateRows(true);
             return;
         }
         VlessImportHelper.importFromClipboard(ProxyListActivity.this, () -> updateRows(true));
@@ -1123,9 +998,12 @@ public class ProxyListActivity extends BaseFragment implements NotificationCente
             return;
         }
         String trimmed = text.trim();
-        if (!ProxyUtil.parseProxies(trimmed).isEmpty()) {
-            VlessImportHelper.importText(ProxyListActivity.this, trimmed, () -> updateRows(true));
-            return;
+        try {
+            if (!ProxyUtil.parseProxies(trimmed).isEmpty()) {
+                VlessImportHelper.importText(ProxyListActivity.this, trimmed, () -> updateRows(true));
+                return;
+            }
+        } catch (Throwable ignore) {
         }
         if (Browser.isInternalUrl(trimmed, new boolean[]{false})) {
             Browser.openUrl(getParentActivity(), trimmed);
@@ -1150,29 +1028,28 @@ public class ProxyListActivity extends BaseFragment implements NotificationCente
                 text.contains("https://t.me/proxy") || text.contains("https://t.me/socks");
     }
 
-    /** Re-tests every visible row: native proxies through the native checker and
-     * built-in nodes through their TCP ping, updating each row in place. */
+    /** Re-tests every visible row (native proxies through the native checker,
+     * built-in nodes through their TCP ping) and refreshes the rows. */
     private void retestPing() {
         checkProxyList(true);
-        for (int a = proxyStartRow; a < proxyEndRow; a++) {
-            RecyclerListView.Holder holder = (RecyclerListView.Holder) listView.findViewHolderForAdapterPosition(a);
-            if (holder != null) {
-                TextDetailProxyCell cell = (TextDetailProxyCell) holder.itemView;
-                cell.updateStatus();
-            }
-        }
         pingNodes(false);
+        updateRows(true);
     }
 
-    /**
-     * Measures TCP latency for every built-in node and writes the result into the
-     * ping cache so the unified proxy rows can show it. When [onlyMissing] is set,
-     * a node that was already measured for this page instance is skipped (used on
-     * list refreshes); [onlyMissing] == false is the explicit "RetestPing".
-     */
+    private void pingMissingNodes() {
+        pingNodes(true);
+    }
+
+    /** Pings every built-in node. When [onlyMissing] is true a node measured for
+     * this page instance is skipped (used on list refreshes). */
     private void pingNodes(boolean onlyMissing) {
-        ArrayList<String> links = new ArrayList<>(nodeLinks);
-        for (String link : links) {
+        ArrayList<String> links = new ArrayList<>();
+        for (ProxyRow row : proxyRows) {
+            if (row.isNode() && !links.contains(row.nodeLink)) {
+                links.add(row.nodeLink);
+            }
+        }
+        for (final String link : links) {
             if (onlyMissing && !pingedLinks.add(link)) {
                 continue;
             }
@@ -1183,16 +1060,26 @@ public class ProxyListActivity extends BaseFragment implements NotificationCente
                         return;
                     }
                     VlessProxyManager.setPing(link, ping);
-                    if (listAdapter == null || nodeStartRow < 0) {
+                    if (listAdapter == null || proxyStartRow < 0) {
                         return;
                     }
-                    int idx = nodeLinks.indexOf(link);
+                    int idx = indexOfNodeLink(link);
                     if (idx >= 0) {
-                        listAdapter.notifyItemChanged(nodeStartRow + idx);
+                        listAdapter.notifyItemChanged(proxyStartRow + idx);
                     }
                 });
             });
         }
+    }
+
+    private int indexOfNodeLink(String link) {
+        for (int i = 0, count = proxyRows.size(); i < count; i++) {
+            ProxyRow row = proxyRows.get(i);
+            if (row.isNode() && link.equals(row.nodeLink)) {
+                return i;
+            }
+        }
+        return -1;
     }
 
     private void checkProxyList() {
@@ -1236,161 +1123,52 @@ public class ProxyListActivity extends BaseFragment implements NotificationCente
 
     @Override
     public void didReceivedNotification(int id, int account, Object... args) {
-        if (id == NotificationCenter.proxyChangedByRotation) {
-            listView.forAllChild(view -> {
-                RecyclerView.ViewHolder holder = listView.getChildViewHolder(view);
-                if (holder.itemView instanceof TextDetailProxyCell) {
-                    TextDetailProxyCell cell = (TextDetailProxyCell) holder.itemView;
-                    if (cell.nodeLink != null) {
-                        cell.updateStatus();
-                    } else {
-                        cell.setChecked(cell.currentInfo == SharedConfig.currentProxy);
-                        cell.updateStatus();
-                    }
-                }
-            });
-
-            updateRows(false);
-        } else if (id == NotificationCenter.proxySettingsChanged) {
+        if (id == NotificationCenter.proxyChangedByRotation || id == NotificationCenter.proxySettingsChanged) {
             updateRows(true);
         } else if (id == NotificationCenter.didUpdateConnectionState) {
             int state = ConnectionsManager.getInstance(account).getConnectionState();
             if (currentConnectionState != state) {
                 currentConnectionState = state;
-                if (listView != null) {
-                    // Node rows track connection state even when the active proxy is
-                    // the local 127.0.0.1 entry (not in proxyList).
-                    listView.forAllChild(view -> {
-                        RecyclerView.ViewHolder holder = listView.getChildViewHolder(view);
-                        if (holder.itemView instanceof TextDetailProxyCell && ((TextDetailProxyCell) holder.itemView).nodeLink != null) {
-                            ((TextDetailProxyCell) holder.itemView).updateStatus();
-                        }
-                    });
-                }
-                if (listView != null && SharedConfig.currentProxy != null) {
-                    int idx = proxyList.indexOf(SharedConfig.currentProxy);
-                    if (idx >= 0) {
-                        RecyclerListView.Holder holder = (RecyclerListView.Holder) listView.findViewHolderForAdapterPosition(idx + proxyStartRow);
-                        if (holder != null) {
-                            TextDetailProxyCell cell = (TextDetailProxyCell) holder.itemView;
-                            cell.updateStatus();
-                        }
-                    }
-
-                    if (currentConnectionState == ConnectionsManager.ConnectionStateConnected) {
-                        updateRows(true);
-                    }
+                refreshVisibleStatuses();
+                if (currentConnectionState == ConnectionsManager.ConnectionStateConnected) {
+                    updateRows(true);
                 }
             }
         } else if (id == NotificationCenter.proxyCheckDone) {
-            if (listView != null) {
-                SharedConfig.ProxyInfo proxyInfo = (SharedConfig.ProxyInfo) args[0];
-                int idx = proxyList.indexOf(proxyInfo);
-                if (idx >= 0) {
-                    RecyclerListView.Holder holder = (RecyclerListView.Holder) listView.findViewHolderForAdapterPosition(idx + proxyStartRow);
-                    if (holder != null) {
-                        TextDetailProxyCell cell = (TextDetailProxyCell) holder.itemView;
-                        cell.updateStatus();
-                    }
-                }
+            if (listView != null && args.length > 0 && args[0] instanceof SharedConfig.ProxyInfo) {
+                refreshVisibleStatuses();
+            }
+        }
+    }
 
-                boolean checking = false;
-                if (!wasCheckedAllList) {
-                    for (SharedConfig.ProxyInfo info : proxyList) {
-                        if (info.checking || info.availableCheckTime == 0) {
-                            checking = true;
-                            break;
-                        }
-                    }
-                    if (!checking) {
-                        wasCheckedAllList = true;
-                    }
-                }
-                if (!checking) {
-                    updateRows(true);
-                }
+    private void refreshVisibleStatuses() {
+        if (listView == null) {
+            return;
+        }
+        for (int i = 0, count = listView.getChildCount(); i < count; i++) {
+            View child = listView.getChildAt(i);
+            if (child == null) {
+                continue;
+            }
+            RecyclerView.ViewHolder holder = listView.getChildViewHolder(child);
+            if (holder != null && holder.itemView instanceof TextDetailProxyCell) {
+                ((TextDetailProxyCell) holder.itemView).updateStatus();
             }
         }
     }
 
     private class ListAdapter extends RecyclerListView.SelectionAdapter {
-        private final static int VIEW_TYPE_SHADOW = 0,
-                VIEW_TYPE_HEADER = 1,
-                VIEW_TYPE_TEXT_CHECK = 2,
-                VIEW_TYPE_INFO = 3,
-                VIEW_TYPE_PROXY_DETAIL = 4,
-                VIEW_TYPE_SLIDE_CHOOSER = 5;
+        private final static int VIEW_TYPE_SHADOW = 0;
+        private final static int VIEW_TYPE_HEADER = 1;
+        private final static int VIEW_TYPE_TEXT_CHECK = 2;
+        private final static int VIEW_TYPE_INFO = 3;
+        private final static int VIEW_TYPE_PROXY_DETAIL = 4;
 
-        public static final int PAYLOAD_CHECKED_CHANGED = 0;
-        public static final int PAYLOAD_SELECTION_CHANGED = 1;
-        public static final int PAYLOAD_SELECTION_MODE_CHANGED = 2;
-
-        private Context mContext;
+        private final Context mContext;
 
         public ListAdapter(Context context) {
             mContext = context;
-
             setHasStableIds(true);
-        }
-
-        public void toggleSelected(int position) {
-            if (position >= proxyStartRow && position < proxyEndRow) {
-                SharedConfig.ProxyInfo info = proxyList.get(position - proxyStartRow);
-                if (selectedItems.contains(info)) {
-                    selectedItems.remove(info);
-                } else {
-                    selectedItems.add(info);
-                }
-                notifyItemChanged(position, PAYLOAD_SELECTION_CHANGED);
-            } else if (position >= nodeStartRow && position < nodeEndRow) {
-                String link = nodeLinks.get(position - nodeStartRow);
-                if (selectedNodes.contains(link)) {
-                    selectedNodes.remove(link);
-                } else {
-                    selectedNodes.add(link);
-                }
-                notifyItemChanged(position, PAYLOAD_SELECTION_CHANGED);
-            } else {
-                return;
-            }
-            checkActionMode();
-        }
-
-        public void clearSelected() {
-            selectedItems.clear();
-            selectedNodes.clear();
-            if (proxyStartRow >= 0) {
-                notifyItemRangeChanged(proxyStartRow, proxyEndRow - proxyStartRow, PAYLOAD_SELECTION_CHANGED);
-            }
-            if (nodeStartRow >= 0) {
-                notifyItemRangeChanged(nodeStartRow, nodeEndRow - nodeStartRow, PAYLOAD_SELECTION_CHANGED);
-            }
-            checkActionMode();
-        }
-
-        private void checkActionMode() {
-            int selectedCount = selectedItems.size() + selectedNodes.size();
-            boolean actionModeShowed = actionBar.isActionModeShowed();
-            if (selectedCount > 0) {
-                selectedCountTextView.setNumber(selectedCount, actionModeShowed);
-                if (!actionModeShowed) {
-                    actionBar.showActionMode();
-                    if (proxyStartRow >= 0) {
-                        notifyItemRangeChanged(proxyStartRow, proxyEndRow - proxyStartRow, PAYLOAD_SELECTION_MODE_CHANGED);
-                    }
-                    if (nodeStartRow >= 0) {
-                        notifyItemRangeChanged(nodeStartRow, nodeEndRow - nodeStartRow, PAYLOAD_SELECTION_MODE_CHANGED);
-                    }
-                }
-            } else if (actionModeShowed) {
-                actionBar.hideActionMode();
-                if (proxyStartRow >= 0) {
-                    notifyItemRangeChanged(proxyStartRow, proxyEndRow - proxyStartRow, PAYLOAD_SELECTION_MODE_CHANGED);
-                }
-                if (nodeStartRow >= 0) {
-                    notifyItemRangeChanged(nodeStartRow, nodeEndRow - nodeStartRow, PAYLOAD_SELECTION_MODE_CHANGED);
-                }
-            }
         }
 
         @Override
@@ -1401,9 +1179,8 @@ public class ProxyListActivity extends BaseFragment implements NotificationCente
         @Override
         public void onBindViewHolder(RecyclerView.ViewHolder holder, int position) {
             switch (holder.getItemViewType()) {
-                case VIEW_TYPE_SHADOW: {
+                case VIEW_TYPE_SHADOW:
                     break;
-                }
                 case VIEW_TYPE_HEADER: {
                     HeaderCell headerCell = (HeaderCell) holder.itemView;
                     if (position == connectionsHeaderRow) {
@@ -1414,11 +1191,9 @@ public class ProxyListActivity extends BaseFragment implements NotificationCente
                 case VIEW_TYPE_TEXT_CHECK: {
                     TextCheckCell checkCell = (TextCheckCell) holder.itemView;
                     if (position == useProxyRow) {
-                        checkCell.setTextAndCheck(getString(R.string.UseProxySettings), useProxySettings, rotationRow != -1);
+                        checkCell.setTextAndCheck(getString(R.string.UseProxySettings), useProxySettings, false);
                     } else if (position == callsRow) {
                         checkCell.setTextAndCheck(getString(R.string.UseProxyForCalls), useProxyForCalls, false);
-                    } else if (position == rotationRow) {
-                        checkCell.setTextAndCheck(getString(R.string.UseProxyRotation), SharedConfig.proxyRotationEnabled, true);
                     }
                     break;
                 }
@@ -1426,78 +1201,17 @@ public class ProxyListActivity extends BaseFragment implements NotificationCente
                     TextInfoPrivacyCell cell = (TextInfoPrivacyCell) holder.itemView;
                     if (position == callsDetailRow) {
                         cell.setText(getString(R.string.UseProxyForCallsInfo));
-                    } else if (position == rotationTimeoutInfoRow) {
-                        cell.setText(getString(R.string.ProxyRotationTimeoutInfo));
                     }
                     break;
                 }
                 case VIEW_TYPE_PROXY_DETAIL: {
                     TextDetailProxyCell cell = (TextDetailProxyCell) holder.itemView;
-                    if (position >= nodeStartRow && position < nodeEndRow) {
-                        String link = nodeLinks.get(position - nodeStartRow);
-                        cell.setNode(link);
-                        cell.setItemSelected(selectedNodes.contains(link), false);
-                        cell.setSelectionEnabled(!selectedItems.isEmpty() || !selectedNodes.isEmpty(), false);
-                    } else {
-                        SharedConfig.ProxyInfo info = proxyList.get(position - proxyStartRow);
-                        cell.setProxy(info);
-                        cell.setChecked(SharedConfig.currentProxy == info);
-                        cell.setItemSelected(selectedItems.contains(info), false);
-                        cell.setSelectionEnabled(!selectedItems.isEmpty() || !selectedNodes.isEmpty(), false);
-                    }
-                    break;
-                }
-                case VIEW_TYPE_SLIDE_CHOOSER: {
-                    if (position == rotationTimeoutRow) {
-                        SlideChooseView chooseView = (SlideChooseView) holder.itemView;
-                        ArrayList<Integer> options = new ArrayList<>(ProxyRotationController.ROTATION_TIMEOUTS);
-                        String[] values = new String[options.size()];
-                        for (int i = 0; i < options.size(); i++) {
-                            values[i] = LocaleController.formatString(R.string.ProxyRotationTimeoutSeconds, options.get(i));
-                        }
-                        chooseView.setCallback(i -> {
-                            SharedConfig.proxyRotationTimeout = i;
-                            SharedConfig.saveConfig();
-                        });
-                        chooseView.setOptions(SharedConfig.proxyRotationTimeout, values);
-                    }
-                    break;
-                }
-            }
-        }
-
-        @SuppressWarnings("unchecked")
-        @Override
-        public void onBindViewHolder(@NonNull RecyclerView.ViewHolder holder, int position, @NonNull List payloads) {
-            if (holder.getItemViewType() == VIEW_TYPE_PROXY_DETAIL && !payloads.isEmpty()) {
-                TextDetailProxyCell cell = (TextDetailProxyCell) holder.itemView;
-                if (position >= nodeStartRow && position < nodeEndRow) {
-                    if (payloads.contains(PAYLOAD_SELECTION_CHANGED)) {
-                        cell.setItemSelected(selectedNodes.contains(nodeLinks.get(position - nodeStartRow)), true);
-                    }
-                    if (payloads.contains(PAYLOAD_SELECTION_MODE_CHANGED)) {
-                        cell.setSelectionEnabled(!selectedItems.isEmpty() || !selectedNodes.isEmpty(), true);
-                    }
+                    ProxyRow row = proxyRows.get(position - proxyStartRow);
+                    cell.setProxyRow(row);
                     cell.updateStatus();
-                } else {
-                    if (payloads.contains(PAYLOAD_SELECTION_CHANGED)) {
-                        cell.setItemSelected(selectedItems.contains(proxyList.get(position - proxyStartRow)), true);
-                    }
-                    if (payloads.contains(PAYLOAD_SELECTION_MODE_CHANGED)) {
-                        cell.setSelectionEnabled(!selectedItems.isEmpty() || !selectedNodes.isEmpty(), true);
-                    }
+                    cell.setChecked(row.isActiveProxy());
+                    break;
                 }
-            } else if (holder.getItemViewType() == VIEW_TYPE_TEXT_CHECK && payloads.contains(PAYLOAD_CHECKED_CHANGED)) {
-                TextCheckCell checkCell = (TextCheckCell) holder.itemView;
-                if (position == useProxyRow) {
-                    checkCell.setChecked(useProxySettings);
-                } else if (position == callsRow) {
-                    checkCell.setChecked(useProxyForCalls);
-                } else if (position == rotationRow) {
-                    checkCell.setChecked(SharedConfig.proxyRotationEnabled);
-                }
-            } else {
-                super.onBindViewHolder(holder, position, payloads);
             }
         }
 
@@ -1511,8 +1225,6 @@ public class ProxyListActivity extends BaseFragment implements NotificationCente
                     checkCell.setChecked(useProxySettings);
                 } else if (position == callsRow) {
                     checkCell.setChecked(useProxyForCalls);
-                } else if (position == rotationRow) {
-                    checkCell.setChecked(SharedConfig.proxyRotationEnabled);
                 }
             }
         }
@@ -1520,7 +1232,7 @@ public class ProxyListActivity extends BaseFragment implements NotificationCente
         @Override
         public boolean isEnabled(RecyclerView.ViewHolder holder) {
             int position = holder.getAdapterPosition();
-            return position == useProxyRow || position == rotationRow || position == callsRow || position >= proxyStartRow && position < proxyEndRow || position >= nodeStartRow && position < nodeEndRow;
+            return position == useProxyRow || position == callsRow || position >= proxyStartRow && position < proxyEndRow;
         }
 
         @Override
@@ -1541,10 +1253,6 @@ public class ProxyListActivity extends BaseFragment implements NotificationCente
                 case VIEW_TYPE_INFO:
                     view = new TextInfoPrivacyCell(mContext);
                     break;
-                case VIEW_TYPE_SLIDE_CHOOSER:
-                    view = new SlideChooseView(mContext);
-                    view.setBackgroundColor(Theme.getColor(Theme.key_windowBackgroundWhite));
-                    break;
                 case VIEW_TYPE_PROXY_DETAIL:
                 default:
                     view = new TextDetailProxyCell(mContext);
@@ -1557,7 +1265,6 @@ public class ProxyListActivity extends BaseFragment implements NotificationCente
 
         @Override
         public long getItemId(int position) {
-            // Random stable ids, could be anything non-repeating
             if (position == useProxyShadowRow) {
                 return -1;
             } else if (position == proxyShadowRow) {
@@ -1568,16 +1275,12 @@ public class ProxyListActivity extends BaseFragment implements NotificationCente
                 return -5;
             } else if (position == connectionsHeaderRow) {
                 return -6;
-            } else if (position == rotationRow) {
-                return -9;
-            } else if (position == rotationTimeoutRow) {
-                return -10;
-            } else if (position == rotationTimeoutInfoRow) {
-                return -11;
             } else if (position >= proxyStartRow && position < proxyEndRow) {
-                return proxyList.get(position - proxyStartRow).hashCode();
-            } else if (position >= nodeStartRow && position < nodeEndRow) {
-                return nodeLinks.get(position - nodeStartRow).hashCode();
+                ProxyRow row = proxyRows.get(position - proxyStartRow);
+                if (row.isNode()) {
+                    return ("node://" + row.nodeLink).hashCode();
+                }
+                return row.nativeInfo.hashCode();
             } else {
                 return -7;
             }
@@ -1587,15 +1290,11 @@ public class ProxyListActivity extends BaseFragment implements NotificationCente
         public int getItemViewType(int position) {
             if (position == useProxyShadowRow || position == proxyShadowRow) {
                 return VIEW_TYPE_SHADOW;
-            } else if (position == useProxyRow || position == rotationRow || position == callsRow) {
+            } else if (position == useProxyRow || position == callsRow) {
                 return VIEW_TYPE_TEXT_CHECK;
             } else if (position == connectionsHeaderRow) {
                 return VIEW_TYPE_HEADER;
-            } else if (position == rotationTimeoutRow) {
-                return VIEW_TYPE_SLIDE_CHOOSER;
             } else if (position >= proxyStartRow && position < proxyEndRow) {
-                return VIEW_TYPE_PROXY_DETAIL;
-            } else if (position >= nodeStartRow && position < nodeEndRow) {
                 return VIEW_TYPE_PROXY_DETAIL;
             } else {
                 return VIEW_TYPE_INFO;
@@ -1610,7 +1309,6 @@ public class ProxyListActivity extends BaseFragment implements NotificationCente
         themeDescriptions.add(new ThemeDescription(listView, ThemeDescription.FLAG_CELLBACKGROUNDCOLOR, new Class[]{TextCheckCell.class, HeaderCell.class, TextDetailProxyCell.class}, null, null, null, Theme.key_windowBackgroundWhite));
         themeDescriptions.add(new ThemeDescription(fragmentView, ThemeDescription.FLAG_BACKGROUND, null, null, null, null, Theme.key_windowBackgroundGray));
 
-//        themeDescriptions.add(new ThemeDescription(actionBar, ThemeDescription.FLAG_BACKGROUND, null, null, null, null, Theme.key_actionBarDefault));
         themeDescriptions.add(new ThemeDescription(listView, ThemeDescription.FLAG_LISTGLOWCOLOR, null, null, null, null, Theme.key_actionBarDefault));
         themeDescriptions.add(new ThemeDescription(actionBar, ThemeDescription.FLAG_AB_ITEMSCOLOR, null, null, null, null, Theme.key_actionBarDefaultIcon));
         themeDescriptions.add(new ThemeDescription(actionBar, ThemeDescription.FLAG_AB_TITLECOLOR, null, null, null, null, Theme.key_actionBarDefaultTitle));
@@ -1625,7 +1323,6 @@ public class ProxyListActivity extends BaseFragment implements NotificationCente
         themeDescriptions.add(new ThemeDescription(listView, ThemeDescription.FLAG_TEXTCOLOR | ThemeDescription.FLAG_CHECKTAG | ThemeDescription.FLAG_IMAGECOLOR, new Class[]{TextDetailProxyCell.class}, new String[]{"valueTextView"}, null, null, null, Theme.key_windowBackgroundWhiteGrayText2));
         themeDescriptions.add(new ThemeDescription(listView, ThemeDescription.FLAG_TEXTCOLOR | ThemeDescription.FLAG_CHECKTAG | ThemeDescription.FLAG_IMAGECOLOR, new Class[]{TextDetailProxyCell.class}, new String[]{"valueTextView"}, null, null, null, Theme.key_windowBackgroundWhiteGreenText));
         themeDescriptions.add(new ThemeDescription(listView, ThemeDescription.FLAG_TEXTCOLOR | ThemeDescription.FLAG_CHECKTAG | ThemeDescription.FLAG_IMAGECOLOR, new Class[]{TextDetailProxyCell.class}, new String[]{"valueTextView"}, null, null, null, Theme.key_text_RedRegular));
-        themeDescriptions.add(new ThemeDescription(listView, ThemeDescription.FLAG_IMAGECOLOR, new Class[]{TextDetailProxyCell.class}, new String[]{"shareImageView"}, null, null, null, Theme.key_windowBackgroundWhiteGrayText3));
         themeDescriptions.add(new ThemeDescription(listView, ThemeDescription.FLAG_IMAGECOLOR, new Class[]{TextDetailProxyCell.class}, new String[]{"checkImageView"}, null, null, null, Theme.key_windowBackgroundWhiteGrayText3));
 
         themeDescriptions.add(new ThemeDescription(listView, 0, new Class[]{HeaderCell.class}, new String[]{"textView"}, null, null, null, Theme.key_windowBackgroundWhiteBlueHeader));

@@ -217,6 +217,9 @@
     <string name="ImportProxyFromClipboard">Import From Clipboard</string>
     <string name="BrokenLink">Unknown / Broken Link</string>
     <string name="ShareQRCode">QR Code</string>
+    <string name="EditProxy">Edit Proxy</string>
+    <string name="ShareProxy">Share Proxy</string>
+    <string name="ProxyDelete">Delete Proxy</string>
     <string name="ScanQRCode">Scan QR Code</string>
     <string name="NoQrFound">No QR Code found</string>
     <string name="DeveloperSettings">Developer Settings</string>
