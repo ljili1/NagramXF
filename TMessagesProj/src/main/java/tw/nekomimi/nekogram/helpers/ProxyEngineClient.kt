@@ -81,14 +81,15 @@ object ProxyEngineClient {
 
     private val connection = object : ServiceConnection {
         override fun onServiceConnected(name: ComponentName?, service: IBinder?) {
-            messenger = Messenger(service)
+            val connected = Messenger(service)
+            messenger = connected
             val toSend = synchronized(this@ProxyEngineClient) {
                 val pending = pendingSend.toList()
                 pendingSend.clear()
                 pending
             }
             for (send in toSend) {
-                send(messenger)
+                send(connected)
             }
         }
 
@@ -159,7 +160,7 @@ object ProxyEngineClient {
         return messenger != null
     }
 
-    private fun dispatch(context: Context, message: Message) {
+    private fun dispatch(context: Context?, message: Message) {
         val current = messenger
         if (current != null) {
             sendSafe(current, message)
@@ -171,8 +172,8 @@ object ProxyEngineClient {
         bind(context)
     }
 
-    private fun bind(context: Context) {
-        if (bound) {
+    private fun bind(context: Context?) {
+        if (bound || context == null) {
             return
         }
         bound = true

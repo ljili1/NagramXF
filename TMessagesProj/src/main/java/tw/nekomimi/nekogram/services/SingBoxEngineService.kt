@@ -106,13 +106,13 @@ class SingBoxEngineService : Service() {
     }
 
     private fun handleStatus(msg: Message) {
-        val (running, port) = synchronized(stateLock) {
-            currentServer != null to currentPort
+        val state = synchronized(stateLock) {
+            (currentServer != null) to currentPort
         }
         reply(
             msg.replyTo, EngineProtocol.REPLY_OK,
-            EngineProtocol.KEY_RUNNING to running,
-            EngineProtocol.KEY_PORT to port
+            EngineProtocol.KEY_RUNNING to state.first,
+            EngineProtocol.KEY_PORT to state.second
         )
     }
 
