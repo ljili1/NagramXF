@@ -475,8 +475,15 @@ dependencies {
         chaquopyTargetJni "com.chaquo.python:target:${chaquopyTargetVersion}:${abi}@zip"
     }
 
-    // WebSocket proxy (Cloudflare)
+    // WebSocket (Cloudflare) built-in proxy — restored
     implementation project(':libs:tcp2ws')
 
-    compileOnly fileTree('libs')
+    // VLESS proxy (sing-box libbox).
+    // Any AAR dropped into TMessagesProj/libs/ is picked up — the same pattern other
+    // Telegram forks (e.g. Momogram with libv2ray.aar / ss-rust-release.aar) use to
+    // wire in a proxy kernel. CI fetches libbox.aar there (pinned to v1.13.21, see
+    // .github/workflows/build_arm64.yml).
+    // Note: this replaces the previous `compileOnly fileTree('libs')`, which would
+    // otherwise pull the same AAR onto the compile-only classpath as well.
+    implementation fileTree("libs")
 }

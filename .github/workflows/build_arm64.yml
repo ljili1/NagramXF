@@ -30,6 +30,9 @@ jobs:
     runs-on: ubuntu-latest
     env:
       NATIVE_TARGET: "arm64-v8a"
+      # sing-box libbox AAR version. PINNED: PlatformInterface/CommandServer
+      # signatures change across releases — LibboxEngine targets v1.13.21.
+      LIBBOX_VERSION: "v1.13.21"
       # If you use the repo's test keystore, set these in GitHub Secrets instead of hardcoding.
       # The values below match the placeholder keystore that ships with this fork.
       KEYSTORE_PASS: ${{ secrets.KEYSTORE_PASS || 'android' }}
@@ -80,6 +83,35 @@ jobs:
       - name: Compute build timestamp
         id: timestamp
         run: echo "value=$(date +%s)" >> "$GITHUB_OUTPUT"
+
+      - name: Cache sing-box libbox AAR
+        id: cache_libbox
+        uses: actions/cache@v4
+        with:
+          path: TMessagesProj/libs/libbox.aar
+          key: libbox-aar-${{ env.LIBBOX_VERSION }}
+
+      - name: Fetch sing-box libbox AAR
+        if: steps.cache_libbox.outputs.cache-hit != 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          mkdir -p TMessagesProj/libs
+          rm -rf /tmp/libbox && mkdir -p /tmp/libbox
+          echo "Fetching libbox ${LIBBOX_VERSION} from proother/sing-box-lib"
+          gh release download "${LIBBOX_VERSION}" \
+            --repo proother/sing-box-lib \
+            --pattern 'libbox-android.aar.zip' \
+            --dir /tmp/libbox
+          unzip -o -j /tmp/libbox/libbox-android.aar.zip -d /tmp/libbox
+          AAR=$(find /tmp/libbox -type f -name '*.aar' | head -n 1)
+          if [ -z "${AAR:-}" ]; then
+            echo "::error::libbox.aar not found inside libbox-android.aar.zip"
+            exit 1
+          fi
+          cp "$AAR" TMessagesProj/libs/libbox.aar
+          ls -lh TMessagesProj/libs/libbox.aar
 
       - name: Build APK
         env:
