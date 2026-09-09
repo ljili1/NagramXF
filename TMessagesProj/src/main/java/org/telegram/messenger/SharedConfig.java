@@ -31,7 +31,9 @@ import androidx.annotation.IntDef;
 import androidx.annotation.RequiresApi;
 import androidx.core.content.pm.ShortcutManagerCompat;
 
+import org.json.JSONArray;
 import org.json.JSONObject;
+import org.json.JSONException;
 import org.telegram.tgnet.ConnectionsManager;
 import org.telegram.tgnet.SerializedData;
 import org.telegram.tgnet.TLRPC;
@@ -42,11 +44,21 @@ import org.telegram.ui.Components.SwipeGestureSettingsView;
 import org.telegram.tgnet.TLRPC;
 import org.telegram.ui.LaunchActivity;
 
+import io.nekohasekai.libbox.CommandServer;
+import tw.nekomimi.nekogram.helpers.LibboxEngine;
+import tw.nekomimi.nekogram.helpers.ProxyTypes;
+import tw.nekomimi.nekogram.helpers.VlessConfig;
+
 import java.io.File;
 import java.io.RandomAccessFile;
+import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.net.Proxy;
+import java.net.ServerSocket;
 import java.util.Arrays;
+import java.util.List;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;
 import java.io.UnsupportedEncodingException;
@@ -72,7 +84,8 @@ public class SharedConfig {
      * V2: Ping and check time serialized
      */
     private final static int PROXY_SCHEMA_V2 = 2;
-    private final static int PROXY_CURRENT_SCHEMA_VERSION = PROXY_SCHEMA_V2;
+    private final static int PROXY_SCHEMA_V3 = 3;
+    private final static int PROXY_CURRENT_SCHEMA_VERSION = PROXY_SCHEMA_V3;
 
     public final static int PASSCODE_TYPE_PIN = 0,
             PASSCODE_TYPE_PASSWORD = 1;
@@ -448,6 +461,281 @@ public class SharedConfig {
                     lnk.getQueryParameter("pass"),
                     lnk.getQueryParameter("secret")
             );
+        }
+
+        public String remarks;
+
+        public String getRemarks() {
+            return remarks;
+        }
+
+        public void setRemarks(String value) {
+            remarks = (value == null || TextUtils.isEmpty(value.trim())) ? null : value.trim();
+        }
+
+        /** Protocol family tag used for row titles, e.g. Socks5 / MTProto / Vless. */
+        public String getType() {
+            return !TextUtils.isEmpty(secret) ? "MTProto" : "Socks5";
+        }
+
+        /** Server endpoint shown by the row. External node proxies override this. */
+        public String getAddressLine() {
+            return address + ":" + port;
+        }
+
+        /** True for sing-box powered node proxies (Nekogram X 9.3.3 external-proxy model). */
+        public boolean isExternal() {
+            return false;
+        }
+
+        /** Row title in the 9.3.3 `[ Type ] remarks-or-server` style. */
+        public String getTitle() {
+            StringBuilder builder = new StringBuilder("[ ");
+            builder.append(getType());
+            builder.append(" ] ");
+            if (TextUtils.isEmpty(remarks)) {
+                builder.append(getAddressLine());
+            } else {
+                builder.append(remarks);
+            }
+            return builder.toString();
+        }
+
+        public JSONObject toJsonInternal() throws JSONException {
+            JSONObject obj = new JSONObject();
+            obj.put("type", TextUtils.isEmpty(secret) ? "socks5" : "mtproto");
+            obj.put("address", address);
+            obj.put("port", port);
+            if (!TextUtils.isEmpty(username)) {
+                obj.put("username", username);
+            }
+            if (!TextUtils.isEmpty(password)) {
+                obj.put("password", password);
+            }
+            if (!TextUtils.isEmpty(secret)) {
+                obj.put("secret", secret);
+            }
+            if (!TextUtils.isEmpty(remarks)) {
+                obj.put("remarks", remarks);
+            }
+            obj.put("ping", ping);
+            obj.put("availableCheckTime", availableCheckTime);
+            return obj;
+        }
+
+        @Override
+        public int hashCode() {
+            return (address + port + username + password + secret).hashCode();
+        }
+
+        @Override
+        public boolean equals(@Nullable Object obj) {
+            if (obj instanceof ProxyInfo && getClass() == obj.getClass()) {
+                return hashCode() == obj.hashCode();
+            }
+            return false;
+        }
+    }
+
+    /**
+     * sing-box powered node proxy (Nekogram X 9.3.3 `ExternalSocks5Proxy`
+     * model): every instance owns its own libbox engine, binds its own local
+     * mixed inbound and is started/stopped independently.
+     */
+    public abstract static class SingProxy extends ProxyInfo {
+
+        /** Full self-describing link (`vless://`…). */
+        public final String link;
+
+        /** Engine handle; null while the node is stopped. */
+        public volatile CommandServer server;
+
+        public SingProxy(String link) {
+            super("127.0.0.1", 0, "", "", "");
+            this.link = link == null ? "" : link.trim();
+        }
+
+        /** Display tag, e.g. Vless / Trojan / Shadowsocks / Hysteria2. */
+        public abstract String getSchemaDisplayType();
+
+        /** JSON persistence tag, e.g. vless / trojan / shadowsocks / hysteria2. */
+        public abstract String getSchemaType();
+
+        @Override
+        public String getType() {
+            return getSchemaDisplayType();
+        }
+
+        @Override
+        public String getAddressLine() {
+            String server = ProxyTypes.nodeServerPort(link);
+            return server == null || server.isEmpty() ? link : server;
+        }
+
+        @Override
+        public boolean isExternal() {
+            return true;
+        }
+
+        @Override
+        public String toShareUrl() {
+            return link;
+        }
+
+        @Override
+        public int hashCode() {
+            return link.hashCode();
+        }
+
+        @Override
+        public boolean equals(@Nullable Object obj) {
+            return obj instanceof SingProxy && getClass() == obj.getClass() && link.equals(((SingProxy) obj).link);
+        }
+
+        /**
+         * Starts this node's engine. Blocking (seconds) — callers MUST run on
+         * the background proxy executor, never on the UI thread. When this node
+         * is the enabled current proxy the local inbound is also applied to
+         * Telegram, exactly like the 9.3.3 `VmessProxy.start()`.
+         */
+        public synchronized void start() throws Exception {
+            if (server != null) {
+                return;
+            }
+            int localPort = pickPort();
+            String config = VlessConfig.buildConfig(link, localPort);
+            if (config == null) {
+                throw new IllegalStateException("Unsupported or invalid proxy link");
+            }
+            CommandServer started = LibboxEngine.start(ApplicationLoader.applicationContext, config);
+            address = "127.0.0.1";
+            port = localPort;
+            server = started;
+            if (isProxyEnabledPref() && currentProxy == this) {
+                // Persist the local inbound exactly like a tapped native proxy row,
+                // so ConnectionsManager.init() can restore it after a restart.
+                MessagesController.getGlobalMainSettings().edit()
+                        .putString("proxy_ip", address)
+                        .putInt("proxy_port", port)
+                        .putString("proxy_user", "")
+                        .putString("proxy_pass", "")
+                        .putString("proxy_secret", "")
+                        .putBoolean("proxy_enabled", true)
+                        .apply();
+                ConnectionsManager.setProxySettings(true, address, port, username, password, secret);
+            }
+        }
+
+        /** Stops this node's engine. Never throws. Safe to call when stopped. */
+        public synchronized void stop() {
+            CommandServer running = server;
+            server = null;
+            LibboxEngine.stop(running);
+        }
+
+        public boolean isStarted() {
+            return server != null;
+        }
+
+        @Override
+        public JSONObject toJsonInternal() throws JSONException {
+            JSONObject obj = new JSONObject();
+            obj.put("type", getSchemaType());
+            obj.put("link", link);
+            if (!TextUtils.isEmpty(remarks)) {
+                obj.put("remarks", remarks);
+            }
+            obj.put("port", port);
+            obj.put("ping", ping);
+            obj.put("availableCheckTime", availableCheckTime);
+            return obj;
+        }
+
+        private int pickPort() {
+            int base = port > 0 ? port : 31000 + Math.abs(link.hashCode() % 18000);
+            for (int i = 0; i < 400; i++) {
+                int candidate = base + i;
+                if (candidate > 65535) {
+                    candidate = 1024 + (candidate - 65535);
+                }
+                if (isLocalPortFree(candidate)) {
+                    return candidate;
+                }
+            }
+            return base;
+        }
+
+        private static boolean isLocalPortFree(int candidate) {
+            try (ServerSocket socket = new ServerSocket()) {
+                socket.bind(new InetSocketAddress(InetAddress.getByName("127.0.0.1"), candidate));
+                return true;
+            } catch (Throwable e) {
+                return false;
+            }
+        }
+    }
+
+    public static class VlessProxy extends SingProxy {
+        public VlessProxy(String link) {
+            super(link);
+        }
+
+        @Override
+        public String getSchemaDisplayType() {
+            return "Vless";
+        }
+
+        @Override
+        public String getSchemaType() {
+            return "vless";
+        }
+    }
+
+    public static class TrojanProxy extends SingProxy {
+        public TrojanProxy(String link) {
+            super(link);
+        }
+
+        @Override
+        public String getSchemaDisplayType() {
+            return "Trojan";
+        }
+
+        @Override
+        public String getSchemaType() {
+            return "trojan";
+        }
+    }
+
+    public static class ShadowsocksProxy extends SingProxy {
+        public ShadowsocksProxy(String link) {
+            super(link);
+        }
+
+        @Override
+        public String getSchemaDisplayType() {
+            return "Shadowsocks";
+        }
+
+        @Override
+        public String getSchemaType() {
+            return "shadowsocks";
+        }
+    }
+
+    public static class Hysteria2Proxy extends SingProxy {
+        public Hysteria2Proxy(String link) {
+            super(link);
+        }
+
+        @Override
+        public String getSchemaDisplayType() {
+            return "Hysteria2";
+        }
+
+        @Override
+        public String getSchemaType() {
+            return "hysteria2";
         }
     }
 
@@ -1451,36 +1739,151 @@ public class SharedConfig {
         LocaleController.resetImperialSystemType();
     }
 
+    /** Single background thread that serializes every engine start/stop. */
+    private static final ExecutorService proxyEngineExecutor = Executors.newSingleThreadExecutor(r -> {
+        Thread thread = new Thread(r, "singbox-node");
+        thread.setDaemon(true);
+        return thread;
+    });
+
+    private static boolean isProxyEnabledPref() {
+        return MessagesController.getGlobalMainSettings().getBoolean("proxy_enabled", false);
+    }
+
+    private static void notifyProxyChanged() {
+        AndroidUtilities.runOnUIThread(() -> NotificationCenter.getGlobalInstance().postNotificationName(NotificationCenter.proxySettingsChanged));
+    }
+
+    /** Creates a node proxy object for [link]; null when the link scheme is unsupported. */
+    public static ProxyInfo createNodeProxy(String link) {
+        String kind = ProxyTypes.kind(link);
+        ProxyInfo proxy;
+        if ("vless".equals(kind)) {
+            proxy = new VlessProxy(link);
+        } else if ("trojan".equals(kind)) {
+            proxy = new TrojanProxy(link);
+        } else if ("ss".equals(kind)) {
+            proxy = new ShadowsocksProxy(link);
+        } else if ("hysteria2".equals(kind)) {
+            proxy = new Hysteria2Proxy(link);
+        } else {
+            return null;
+        }
+        String name = ProxyTypes.nodeName(link);
+        if (!TextUtils.isEmpty(name)) {
+            proxy.setRemarks(name);
+        }
+        return proxy;
+    }
+
+    /** Starts [proxyInfo] on the background proxy executor; never blocks the caller. */
+    public static void startProxyAsync(final ProxyInfo proxyInfo) {
+        proxyEngineExecutor.execute(() -> {
+            try {
+                if (proxyInfo instanceof SingProxy) {
+                    SingProxy sing = (SingProxy) proxyInfo;
+                    if (!sing.isStarted()) {
+                        sing.start();
+                    }
+                }
+            } catch (Throwable e) {
+                FileLog.e(e);
+            } finally {
+                notifyProxyChanged();
+            }
+        });
+    }
+
+    /** Stops [proxyInfo] on the background proxy executor; never blocks the caller. */
+    public static void stopProxyAsync(final ProxyInfo proxyInfo) {
+        proxyEngineExecutor.execute(() -> {
+            try {
+                if (proxyInfo instanceof SingProxy) {
+                    ((SingProxy) proxyInfo).stop();
+                }
+            } catch (Throwable e) {
+                FileLog.e(e);
+            } finally {
+                notifyProxyChanged();
+            }
+        });
+    }
+
+    /**
+     * Cold-start hook: when the persisted proxy is a sing-box node that is not
+     * running yet (process restart), brings its engine back up so Telegram's
+     * restored connection to the local inbound actually has a listener.
+     * Runs on the background executor; never throws.
+     */
+    public static void ensureCurrentExternalStarted() {
+        try {
+            loadProxyList();
+            if (!isProxyEnabledPref()) {
+                return;
+            }
+            ProxyInfo info = currentProxy;
+            if (info instanceof SingProxy && !((SingProxy) info).isStarted()) {
+                startProxyAsync(info);
+            }
+        } catch (Throwable e) {
+            FileLog.e(e);
+        }
+    }
+
     public static void setProxyEnable(boolean enable) {
         if (enable && currentProxy == null) {
             enable = false;
         }
-
         SharedPreferences preferences = MessagesController.getGlobalMainSettings();
         preferences.edit().putBoolean("proxy_enabled", enable).apply();
+        ProxyInfo info = currentProxy;
+        if (enable) {
+            if (info instanceof SingProxy) {
+                // The local inbound must be listening before Telegram can use it;
+                // SingProxy.start() applies setProxySettings once the engine is up.
+                startProxyAsync(info);
+            } else {
+                applyNativeProxy(info);
+            }
+        } else {
+            if (info instanceof SingProxy) {
+                stopProxyAsync(info);
+            }
+            applyNativeProxy(null);
+        }
+    }
 
-        ProxyInfo finalInfo = currentProxy;
-        boolean finalEnable = enable;
+    private static void applyNativeProxy(@Nullable ProxyInfo info) {
+        ProxyInfo finalInfo = info;
         Utilities.globalQueue.postRunnable(() -> {
-            if (finalEnable) {
+            if (finalInfo != null) {
                 ConnectionsManager.setProxySettings(true, finalInfo.address, finalInfo.port, finalInfo.username, finalInfo.password, finalInfo.secret);
             } else {
                 ConnectionsManager.setProxySettings(false, "", 0, "", "", "");
             }
-            AndroidUtilities.runOnUIThread(() -> NotificationCenter.getGlobalInstance().postNotificationName(NotificationCenter.proxySettingsChanged));
-
+            notifyProxyChanged();
         });
-
     }
 
     public static void setCurrentProxy(@Nullable ProxyInfo info) {
+        ProxyInfo previous = currentProxy;
         currentProxy = info;
         MessagesController.getGlobalMainSettings().edit()
                 .putInt("current_proxy", info == null ? 0 : info.hashCode())
                 .apply();
-
-        setProxyEnable(info != null);
-
+        boolean enabled = isProxyEnabledPref();
+        if (previous instanceof SingProxy && previous != info && ((SingProxy) previous).isStarted()) {
+            stopProxyAsync(previous);
+        }
+        if (enabled) {
+            if (info instanceof SingProxy) {
+                startProxyAsync(info);
+            } else if (info != null) {
+                applyNativeProxy(info);
+            } else {
+                applyNativeProxy(null);
+            }
+        }
     }
 
     public static void loadProxyList() {
@@ -1523,11 +1926,18 @@ public class SharedConfig {
                             continue;
                         }
                         proxyList.add(0, info);
-                        if (currentProxy == null && !TextUtils.isEmpty(proxyAddress)) {
-                            if (proxyAddress.equals(info.address) && proxyPort == info.port && proxyUsername.equals(info.username) && proxyPassword.equals(info.password)) {
-                                currentProxy = info;
+                    }
+                } else if (version == PROXY_SCHEMA_V3) {
+                    try {
+                        JSONArray array = new JSONArray(data.readString(false));
+                        for (int i = array.length() - 1; i >= 0; i--) {
+                            ProxyInfo info = proxyFromJson(array.getJSONObject(i));
+                            if (info != null) {
+                                proxyList.add(0, info);
                             }
                         }
+                    } catch (Exception e) {
+                        FileLog.e("Failed to parse proxy list V3: " + e);
                     }
                 } else {
                     FileLog.e("Unknown proxy schema version: " + version);
@@ -1544,22 +1954,79 @@ public class SharedConfig {
                         continue;
                     }
                     proxyList.add(0, info);
-                    if (currentProxy == null && !TextUtils.isEmpty(proxyAddress)) {
-                        if (proxyAddress.equals(info.address) && proxyPort == info.port && proxyUsername.equals(info.username) && proxyPassword.equals(info.password)) {
-                            currentProxy = info;
-                        }
-                    }
                 }
             }
             data.cleanup();
+        }
+        if (!WebSocketHelper.proxyServer.equals(proxyAddress)) {
+            ProxyInfo info = new ProxyInfo(WebSocketHelper.proxyServer, 6356, "", "", "");
+            proxyList.add(0, info);
+        }
+        if (currentProxy == null) {
+            int currentHash = preferences.getInt("current_proxy", 0);
+            if (currentHash != 0) {
+                for (ProxyInfo info : proxyList) {
+                    if (info.hashCode() == currentHash) {
+                        currentProxy = info;
+                        break;
+                    }
+                }
+            }
+        }
+        if (currentProxy == null && !TextUtils.isEmpty(proxyAddress)) {
+            for (ProxyInfo info : proxyList) {
+                if (proxyAddress.equals(info.address) && proxyPort == info.port && proxyUsername.equals(info.username) && proxyPassword.equals(info.password)) {
+                    currentProxy = info;
+                    break;
+                }
+            }
         }
         if (currentProxy == null && !TextUtils.isEmpty(proxyAddress) && proxyPort > 0) {
             ProxyInfo info = currentProxy = new ProxyInfo(proxyAddress, proxyPort, proxyUsername, proxyPassword, proxySecret);
             proxyList.add(0, info);
         }
-        if (!WebSocketHelper.proxyServer.equals(proxyAddress)) {
-            ProxyInfo info = new ProxyInfo(WebSocketHelper.proxyServer, 6356, "", "", "");
-            proxyList.add(0, info);
+    }
+
+    /** Decodes one typed proxy entry (V3). Returns null for invalid entries. */
+    private static ProxyInfo proxyFromJson(JSONObject obj) {
+        try {
+            String type = obj.optString("type", "socks5");
+            ProxyInfo info;
+            if ("socks5".equals(type)) {
+                info = new ProxyInfo(obj.optString("address", ""), obj.optInt("port", 443), obj.optString("username", ""), obj.optString("password", ""), "");
+                if (TextUtils.isEmpty(info.address) || info.port <= 0) {
+                    return null;
+                }
+            } else if ("mtproto".equals(type)) {
+                info = new ProxyInfo(obj.optString("address", ""), obj.optInt("port", 443), "", "", obj.optString("secret", ""));
+                if (TextUtils.isEmpty(info.address) || info.port <= 0) {
+                    return null;
+                }
+            } else {
+                String link = obj.optString("link", "");
+                if ("vless".equals(type)) {
+                    info = new VlessProxy(link);
+                } else if ("trojan".equals(type)) {
+                    info = new TrojanProxy(link);
+                } else if ("shadowsocks".equals(type)) {
+                    info = new ShadowsocksProxy(link);
+                } else if ("hysteria2".equals(type)) {
+                    info = new Hysteria2Proxy(link);
+                } else {
+                    return null;
+                }
+                info.port = obj.optInt("port", 0);
+            }
+            String remarks = obj.optString("remarks", "");
+            if (!TextUtils.isEmpty(remarks)) {
+                info.remarks = remarks;
+            }
+            info.ping = obj.optLong("ping", 0);
+            info.availableCheckTime = obj.optLong("availableCheckTime", 0);
+            return info;
+        } catch (Throwable e) {
+            FileLog.e(e);
+            return null;
         }
     }
 
@@ -1576,28 +2043,26 @@ public class SharedConfig {
             }
             return Long.compare(o1.ping + bias1, o2.ping + bias2);
         });
-        SerializedData serializedData = new SerializedData();
-        serializedData.writeInt32(-1);
-        serializedData.writeByte(PROXY_CURRENT_SCHEMA_VERSION);
-        int count = infoToSerialize.size();
-        serializedData.writeInt32(count);
-        for (int a = count - 1; a >= 0; a--) {
-            ProxyInfo info = infoToSerialize.get(a);
-            if (WebSocketHelper.proxyServer.equals(info.address)) {
-                continue;
+        JSONArray array = new JSONArray();
+        try {
+            int count = infoToSerialize.size();
+            for (int a = count - 1; a >= 0; a--) {
+                ProxyInfo info = infoToSerialize.get(a);
+                if (WebSocketHelper.proxyServer.equals(info.address)) {
+                    continue;
+                }
+                array.put(info.toJsonInternal());
             }
-            serializedData.writeString(info.address != null ? info.address : "");
-            serializedData.writeInt32(info.port);
-            serializedData.writeString(info.username != null ? info.username : "");
-            serializedData.writeString(info.password != null ? info.password : "");
-            serializedData.writeString(info.secret != null ? info.secret : "");
-
-            serializedData.writeInt64(info.ping);
-            serializedData.writeInt64(info.availableCheckTime);
+            SerializedData serializedData = new SerializedData();
+            serializedData.writeInt32(-1);
+            serializedData.writeByte(PROXY_CURRENT_SCHEMA_VERSION);
+            serializedData.writeString(array.toString());
+            SharedPreferences preferences = ApplicationLoader.applicationContext.getSharedPreferences("mainconfig", Activity.MODE_PRIVATE);
+            preferences.edit().putString("proxy_list", Base64.encodeToString(serializedData.toByteArray(), Base64.NO_WRAP)).apply();
+            serializedData.cleanup();
+        } catch (Exception e) {
+            FileLog.e(e);
         }
-        SharedPreferences preferences = ApplicationLoader.applicationContext.getSharedPreferences("mainconfig", Activity.MODE_PRIVATE);
-        preferences.edit().putString("proxy_list", Base64.encodeToString(serializedData.toByteArray(), Base64.NO_WRAP)).apply();
-        serializedData.cleanup();
     }
 
     public static ProxyInfo addProxy(ProxyInfo proxyInfo) {
@@ -1605,7 +2070,7 @@ public class SharedConfig {
         int count = proxyList.size();
         for (int a = 0; a < count; a++) {
             ProxyInfo info = proxyList.get(a);
-            if (proxyInfo.address.equals(info.address) && proxyInfo.port == info.port && proxyInfo.username.equals(info.username) && proxyInfo.password.equals(info.password) && proxyInfo.secret.equals(info.secret)) {
+            if (proxyInfo.equals(info)) {
                 return info;
             }
         }
@@ -1620,6 +2085,9 @@ public class SharedConfig {
     }
 
     public static void deleteProxy(ProxyInfo proxyInfo) {
+        if (proxyInfo instanceof SingProxy && ((SingProxy) proxyInfo).isStarted()) {
+            stopProxyAsync(proxyInfo);
+        }
         if (currentProxy == proxyInfo) {
             currentProxy = null;
             SharedPreferences preferences = MessagesController.getGlobalMainSettings();
