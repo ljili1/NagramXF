@@ -76,6 +76,10 @@ import java.util.Collections;
 import java.util.List;
 
 import tw.nekomimi.nekogram.helpers.WebSocketHelper;
+import tw.nekomimi.nekogram.settings.Hysteria2NodeEditActivity;
+import tw.nekomimi.nekogram.settings.ShadowsocksNodeEditActivity;
+import tw.nekomimi.nekogram.settings.TrojanNodeEditActivity;
+import tw.nekomimi.nekogram.settings.VlessNodeEditActivity;
 import tw.nekomimi.nekogram.utils.AlertUtil;
 import tw.nekomimi.nekogram.utils.ProxyUtil;
 
@@ -187,13 +191,7 @@ public class ProxyListActivity extends BaseFragment implements NotificationCente
             checkImageView.setScaleType(ImageView.ScaleType.CENTER);
             checkImageView.setContentDescription(getString(R.string.Edit));
             addView(checkImageView, LayoutHelper.createFrame(48, 48, (LocaleController.isRTL ? Gravity.LEFT : Gravity.RIGHT) | Gravity.TOP, 8, 8, 8, 0));
-            checkImageView.setOnClickListener(v -> {
-                if (WebSocketHelper.proxyServer.equals(currentInfo.address)) {
-                    presentFragment(new tw.nekomimi.nekogram.settings.WsSettingsActivity(currentInfo));
-                } else {
-                    presentFragment(new ProxySettingsActivity(currentInfo));
-                }
-            });
+            checkImageView.setOnClickListener(v -> openProxyEditor(currentInfo));
 
             checkBox = new CheckBox2(context, 21);
             checkBox.setColor(Theme.key_checkbox, Theme.key_radioBackground, Theme.key_checkboxCheck);
@@ -212,6 +210,8 @@ public class ProxyListActivity extends BaseFragment implements NotificationCente
         public void setProxy(SharedConfig.ProxyInfo proxyInfo) {
             if (WebSocketHelper.proxyServer.equals(proxyInfo.address)) {
                 textView.setText(LocaleController.getString(R.string.PublicProxy));
+            } else if (proxyInfo.isExternal()) {
+                textView.setText(proxyInfo.getTitle());
             } else if (TextUtils.isEmpty(proxyInfo.address) || proxyInfo.port <= 0) {
                 textView.setText(LocaleController.getString(R.string.ProxyInvalid));
             } else {
@@ -386,7 +386,7 @@ public class ProxyListActivity extends BaseFragment implements NotificationCente
         if (context == null || proxyInfo == null) {
             return;
         }
-        String link = proxyInfo.getLink();
+        String link = proxyInfo.toShareUrl();
         if (TextUtils.isEmpty(link)) {
             return;
         }
@@ -394,6 +394,26 @@ public class ProxyListActivity extends BaseFragment implements NotificationCente
         Bitmap icon = SvgHelper.getBitmap(AndroidUtilities.readRes(R.raw.qr_dog), AndroidUtilities.dp(60), AndroidUtilities.dp(60), false);
         alert.setCenterImage(icon);
         showDialog(alert);
+    }
+
+    /** Opens the matching editor for a row: per-protocol forms for sing nodes, ws/native otherwise. */
+    private void openProxyEditor(SharedConfig.ProxyInfo info) {
+        if (info == null || isFinished) {
+            return;
+        }
+        if (WebSocketHelper.proxyServer.equals(info.address)) {
+            presentFragment(new tw.nekomimi.nekogram.settings.WsSettingsActivity(info));
+        } else if (info instanceof SharedConfig.VlessProxy) {
+            presentFragment(new VlessNodeEditActivity(info.toShareUrl()));
+        } else if (info instanceof SharedConfig.TrojanProxy) {
+            presentFragment(new TrojanNodeEditActivity(info.toShareUrl()));
+        } else if (info instanceof SharedConfig.ShadowsocksProxy) {
+            presentFragment(new ShadowsocksNodeEditActivity(info.toShareUrl()));
+        } else if (info instanceof SharedConfig.Hysteria2Proxy) {
+            presentFragment(new Hysteria2NodeEditActivity(info.toShareUrl()));
+        } else {
+            presentFragment(new ProxySettingsActivity(info));
+        }
     }
 
     @Override
@@ -432,6 +452,10 @@ public class ProxyListActivity extends BaseFragment implements NotificationCente
     private final static int na_menu_retest_ping = 1004;
     private final static int na_menu_delete_all = 1005;
     private final static int na_menu_delete_unavailable = 1006;
+    private final static int na_menu_add_input_vless = 1007;
+    private final static int na_menu_add_input_trojan = 1008;
+    private final static int na_menu_add_input_ss = 1009;
+    private final static int na_menu_add_input_hysteria2 = 1010;
 
     @Override
     public View createView(Context context) {
@@ -456,6 +480,10 @@ public class ProxyListActivity extends BaseFragment implements NotificationCente
         otherItem = menu.addItem(na_menu_other, R.drawable.ic_ab_other);
         otherItem.setContentDescription(LocaleController.getString("AccDescrMoreOptions", R.string.AccDescrMoreOptions));
         otherItem.addSubItem(na_menu_add_input_telegram, LocaleController.getString("AddProxyTelegram", R.string.AddProxyTelegram)).setOnClickListener((v) -> presentFragment(new ProxySettingsActivity()));
+        otherItem.addSubItem(na_menu_add_input_vless, LocaleController.getString(R.string.VlessAddNode)).setOnClickListener((v) -> presentFragment(new VlessNodeEditActivity()));
+        otherItem.addSubItem(na_menu_add_input_trojan, LocaleController.getString("AddProxyTrojan", R.string.AddProxyTrojan)).setOnClickListener((v) -> presentFragment(new TrojanNodeEditActivity()));
+        otherItem.addSubItem(na_menu_add_input_ss, LocaleController.getString("AddProxySS", R.string.AddProxySS)).setOnClickListener((v) -> presentFragment(new ShadowsocksNodeEditActivity()));
+        otherItem.addSubItem(na_menu_add_input_hysteria2, LocaleController.getString("AddProxyHysteria2", R.string.AddProxyHysteria2)).setOnClickListener((v) -> presentFragment(new Hysteria2NodeEditActivity()));
         otherItem.addSubItem(na_menu_add_import_from_clipboard, LocaleController.getString("ImportProxyFromClipboard", R.string.ImportProxyFromClipboard)).setOnClickListener((v) -> ProxyUtil.importFromClipboard(getParentActivity()));
         otherItem.addSubItem(na_menu_retest_ping, LocaleController.getString("RetestPing", R.string.RetestPing)).setOnClickListener((v) -> {
             checkProxyList(true);
@@ -481,7 +509,7 @@ public class ProxyListActivity extends BaseFragment implements NotificationCente
                     R.drawable.msg_delete, LocaleController.getString("Delete", R.string.Delete),
                     true, () -> {
                         for (SharedConfig.ProxyInfo info : SharedConfig.getProxyList()) {
-                            if (info.checking) {
+                            if (info.isExternal() || info.checking) {
                                 continue;
                             }
                             if (!info.available) {
@@ -525,18 +553,7 @@ public class ProxyListActivity extends BaseFragment implements NotificationCente
             if (position == useProxyRow) {
                 if (SharedConfig.currentProxy == null) {
                     if (!proxyList.isEmpty()) {
-                        SharedConfig.currentProxy = proxyList.get(0);
-
-                        if (!useProxySettings) {
-                            SharedPreferences preferences = MessagesController.getGlobalMainSettings();
-                            SharedPreferences.Editor editor = MessagesController.getGlobalMainSettings().edit();
-                            editor.putString("proxy_ip", SharedConfig.currentProxy.address);
-                            editor.putString("proxy_pass", SharedConfig.currentProxy.password);
-                            editor.putString("proxy_user", SharedConfig.currentProxy.username);
-                            editor.putInt("proxy_port", SharedConfig.currentProxy.port);
-                            editor.putString("proxy_secret", SharedConfig.currentProxy.secret);
-                            editor.commit();
-                        }
+                        SharedConfig.setCurrentProxy(proxyList.get(0));
                     } else {
                         presentFragment(new ProxySettingsActivity());
                         return;
@@ -558,14 +575,19 @@ public class ProxyListActivity extends BaseFragment implements NotificationCente
                     useProxyForCalls = false;
                 }
 
-                SharedPreferences.Editor editor = MessagesController.getGlobalMainSettings().edit();
-                editor.putBoolean("proxy_enabled", useProxySettings);
-                editor.commit();
+                if (SharedConfig.currentProxy != null && SharedConfig.currentProxy.isExternal()) {
+                    // sing-box nodes: engine start/stop + local-inbound apply are owned by SharedConfig.
+                    SharedConfig.setProxyEnable(useProxySettings);
+                } else {
+                    SharedPreferences.Editor editor = MessagesController.getGlobalMainSettings().edit();
+                    editor.putBoolean("proxy_enabled", useProxySettings);
+                    editor.commit();
 
-                ConnectionsManager.setProxySettings(useProxySettings, SharedConfig.currentProxy.address, SharedConfig.currentProxy.port, SharedConfig.currentProxy.username, SharedConfig.currentProxy.password, SharedConfig.currentProxy.secret);
-                NotificationCenter.getGlobalInstance().removeObserver(ProxyListActivity.this, NotificationCenter.proxySettingsChanged);
-                NotificationCenter.getGlobalInstance().postNotificationName(NotificationCenter.proxySettingsChanged);
-                NotificationCenter.getGlobalInstance().addObserver(ProxyListActivity.this, NotificationCenter.proxySettingsChanged);
+                    ConnectionsManager.setProxySettings(useProxySettings, SharedConfig.currentProxy.address, SharedConfig.currentProxy.port, SharedConfig.currentProxy.username, SharedConfig.currentProxy.password, SharedConfig.currentProxy.secret);
+                    NotificationCenter.getGlobalInstance().removeObserver(ProxyListActivity.this, NotificationCenter.proxySettingsChanged);
+                    NotificationCenter.getGlobalInstance().postNotificationName(NotificationCenter.proxySettingsChanged);
+                    NotificationCenter.getGlobalInstance().addObserver(ProxyListActivity.this, NotificationCenter.proxySettingsChanged);
+                }
 
                 for (int a = proxyStartRow; a < proxyEndRow; a++) {
                     RecyclerListView.Holder holder = (RecyclerListView.Holder) listView.findViewHolderForAdapterPosition(a);
@@ -595,19 +617,26 @@ public class ProxyListActivity extends BaseFragment implements NotificationCente
                 }
                 SharedConfig.ProxyInfo info = proxyList.get(position - proxyStartRow);
                 useProxySettings = true;
-                SharedPreferences.Editor editor = MessagesController.getGlobalMainSettings().edit();
-                editor.putString("proxy_ip", info.address);
-                editor.putString("proxy_pass", info.password);
-                editor.putString("proxy_user", info.username);
-                editor.putInt("proxy_port", info.port);
-                editor.putString("proxy_secret", info.secret);
-                editor.putBoolean("proxy_enabled", useProxySettings);
-                if (!info.secret.isEmpty()) {
-                    useProxyForCalls = false;
-                    editor.putBoolean("proxy_enabled_calls", false);
+                if (info.isExternal()) {
+                    // sing-box node: selection + engine start + local-inbound apply are owned by SharedConfig.
+                    SharedConfig.setCurrentProxy(info);
+                    SharedConfig.setProxyEnable(true);
+                } else {
+                    SharedPreferences.Editor editor = MessagesController.getGlobalMainSettings().edit();
+                    editor.putString("proxy_ip", info.address);
+                    editor.putString("proxy_pass", info.password);
+                    editor.putString("proxy_user", info.username);
+                    editor.putInt("proxy_port", info.port);
+                    editor.putString("proxy_secret", info.secret);
+                    editor.putBoolean("proxy_enabled", useProxySettings);
+                    if (!info.secret.isEmpty()) {
+                        useProxyForCalls = false;
+                        editor.putBoolean("proxy_enabled_calls", false);
+                    }
+                    editor.commit();
+                    SharedConfig.currentProxy = info;
+                    ConnectionsManager.setProxySettings(true, info.address, info.port, info.username, info.password, info.secret);
                 }
-                editor.commit();
-                SharedConfig.currentProxy = info;
                 for (int a = proxyStartRow; a < proxyEndRow; a++) {
                     RecyclerListView.Holder holder = (RecyclerListView.Holder) listView.findViewHolderForAdapterPosition(a);
                     if (holder != null) {
@@ -622,7 +651,6 @@ public class ProxyListActivity extends BaseFragment implements NotificationCente
                     TextCheckCell textCheckCell = (TextCheckCell) holder.itemView;
                     textCheckCell.setChecked(true);
                 }
-                ConnectionsManager.setProxySettings(useProxySettings, SharedConfig.currentProxy.address, SharedConfig.currentProxy.port, SharedConfig.currentProxy.username, SharedConfig.currentProxy.password, SharedConfig.currentProxy.secret);
             } else if (position == proxyAddRow) {
                 presentFragment(new ProxySettingsActivity());
             } else if (position == deleteAllRow) {
@@ -724,7 +752,7 @@ public class ProxyListActivity extends BaseFragment implements NotificationCente
                             if (links.length() > 0) {
                                 links.append("\n\n");
                             }
-                            links.append(info.getLink());
+                            links.append(info.toShareUrl());
                         }
 
                         Intent shareIntent = new Intent(Intent.ACTION_SEND);
@@ -855,6 +883,13 @@ public class ProxyListActivity extends BaseFragment implements NotificationCente
     private void checkProxyList(boolean force) {
         for (int a = 0, count = proxyList.size(); a < count; a++) {
             final SharedConfig.ProxyInfo proxyInfo = proxyList.get(a);
+            if (proxyInfo.isExternal()) {
+                // sing-box nodes: only a running engine can answer a TG proxy probe
+                // (its local mixed inbound). Stopped nodes keep their last state.
+                if (!(proxyInfo instanceof SharedConfig.SingProxy) || !((SharedConfig.SingProxy) proxyInfo).isStarted() || proxyInfo != SharedConfig.currentProxy) {
+                    continue;
+                }
+            }
             if (proxyInfo.checking || SystemClock.elapsedRealtime() - proxyInfo.availableCheckTime < (proxyInfo.available ? 20 : 5) * 1000 && !force) {
                 continue;
             }
