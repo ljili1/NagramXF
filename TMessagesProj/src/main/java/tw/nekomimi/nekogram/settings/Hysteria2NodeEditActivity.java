@@ -122,7 +122,7 @@ public class Hysteria2NodeEditActivity extends BaseFragment {
 
         insecureCell = new TextCheckCell(context);
         insecureCell.setBackground(Theme.getSelectorDrawable(false));
-        boolean insecure = bean != null && bean.isInsecure();
+        boolean insecure = bean != null && bean.getInsecure();
         insecureCell.setTextAndCheck(LocaleController.getString(R.string.Hysteria2Insecure), insecure, false);
         FrameLayout insecureContainer = new FrameLayout(context);
         insecureContainer.addView(insecureCell, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT, Gravity.LEFT | Gravity.TOP, 0, 0, 0, 0));
