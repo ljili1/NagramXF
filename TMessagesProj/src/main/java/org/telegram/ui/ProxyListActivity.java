@@ -484,7 +484,18 @@ public class ProxyListActivity extends BaseFragment implements NotificationCente
         otherItem.addSubItem(na_menu_add_input_trojan, LocaleController.getString("AddProxyTrojan", R.string.AddProxyTrojan)).setOnClickListener((v) -> presentFragment(new TrojanNodeEditActivity()));
         otherItem.addSubItem(na_menu_add_input_ss, LocaleController.getString("AddProxySS", R.string.AddProxySS)).setOnClickListener((v) -> presentFragment(new ShadowsocksNodeEditActivity()));
         otherItem.addSubItem(na_menu_add_input_hysteria2, LocaleController.getString("AddProxyHysteria2", R.string.AddProxyHysteria2)).setOnClickListener((v) -> presentFragment(new Hysteria2NodeEditActivity()));
-        otherItem.addSubItem(na_menu_add_import_from_clipboard, LocaleController.getString("ImportProxyFromClipboard", R.string.ImportProxyFromClipboard)).setOnClickListener((v) -> ProxyUtil.importFromClipboard(getParentActivity()));
+        otherItem.addSubItem(na_menu_add_import_from_clipboard, LocaleController.getString("ImportProxyFromClipboard", R.string.ImportProxyFromClipboard)).setOnClickListener((v) -> {
+            String text = ProxyUtil.clipboardText(getParentActivity());
+            int singAdded = ProxyUtil.importSingProxies(text);
+            if (singAdded > 0) {
+                if (getParentActivity() != null) {
+                    android.widget.Toast.makeText(getParentActivity(), LocaleController.formatString("VlessNodesAdded", R.string.VlessNodesAdded, singAdded), android.widget.Toast.LENGTH_SHORT).show();
+                }
+            } else {
+                // No sing links: keep the native Telegram-proxy import path.
+                ProxyUtil.importFromClipboard(getParentActivity());
+            }
+        });
         otherItem.addSubItem(na_menu_retest_ping, LocaleController.getString("RetestPing", R.string.RetestPing)).setOnClickListener((v) -> {
             checkProxyList(true);
             for (int a = proxyStartRow; a < proxyEndRow; a++) {

@@ -391,6 +391,47 @@ object ProxyUtil {
     }
 
     @JvmStatic
+    fun clipboardText(context: Context?): String? {
+        if (context == null) {
+            return null
+        }
+        return runCatching {
+            val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+            cm.primaryClip?.getItemAt(0)?.coerceToText(context)?.toString()
+        }.getOrNull()
+    }
+
+    /**
+     * Imports every supported sing-box node link (vless/trojan/ss/hysteria2)
+     * found in [text] as a SharedConfig node proxy object.
+     * @return number of nodes newly added
+     */
+    @JvmStatic
+    fun importSingProxies(text: String?): Int {
+        if (text.isNullOrBlank()) {
+            return 0
+        }
+        var added = 0
+        runCatching {
+            for (link in parseProxies(text)) {
+                val created = SharedConfig.createNodeProxy(link) ?: continue
+                if (SharedConfig.proxyList.none { it == created }) {
+                    SharedConfig.addProxy(created)
+                    added++
+                }
+            }
+        }.onFailure {
+            FileLog.e(it)
+        }
+        if (added > 0) {
+            AndroidUtilities.runOnUIThread {
+                NotificationCenter.getGlobalInstance().postNotificationName(NotificationCenter.proxySettingsChanged)
+            }
+        }
+        return added
+    }
+
+    @JvmStatic
     fun isIpv6Address(value: String): Boolean {
         var addr = value
         if (addr.indexOf("[") == 0 && addr.lastIndexOf("]") > 0) {
