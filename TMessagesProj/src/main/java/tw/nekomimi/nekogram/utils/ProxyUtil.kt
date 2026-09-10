@@ -316,8 +316,9 @@ object ProxyUtil {
         for (p in parsed) {
             when (p) {
                 is ProxyLinkParser.Parsed.NodeLink -> {
-                    if (!ProxyTypes.isSupported(p.link)) continue
-                    val obj = SharedConfig.createNodeProxy(p.link) ?: continue
+                    val link = ProxyLinkParser.normalizeScheme(p.link)
+                    if (!ProxyTypes.isSupported(link)) continue
+                    val obj = SharedConfig.createNodeProxy(link) ?: continue
                     if (SharedConfig.proxyList.none { it == obj }) {
                         SharedConfig.addProxy(obj)
                         singAdded.add(obj.getAddressLine())
@@ -379,8 +380,9 @@ object ProxyUtil {
         runCatching {
             for (p in ProxyLinkParser.parse(text)) {
                 if (p !is ProxyLinkParser.Parsed.NodeLink) continue
-                if (!ProxyTypes.isSupported(p.link)) continue
-                val created = SharedConfig.createNodeProxy(p.link) ?: continue
+                val link = ProxyLinkParser.normalizeScheme(p.link)
+                if (!ProxyTypes.isSupported(link)) continue
+                val created = SharedConfig.createNodeProxy(link) ?: continue
                 if (SharedConfig.proxyList.none { it == created }) {
                     SharedConfig.addProxy(created)
                     added++

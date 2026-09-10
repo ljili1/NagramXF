@@ -35,15 +35,28 @@ object ProxyLinkParser {
         ) : Parsed()
     }
 
-    private val NODE_SCHEME_REGEX = Regex("(?i)\\b(vless|trojan|ss|hysteria2)://\\S+")
+    private val NODE_SCHEME_REGEX = Regex("(?i)\\b(vless|hy2|hysteria2|trojan|ss)://\\S+")
+    private val SOCKS_SCHEME_REGEX = Regex("(?i)\\b(socks5|socks)://[^\\s\\r\\n;]*")
     private val TG_SOCKS_REGEX = Regex("(?i)\\btg://socks\\?[^\\s\\r\\n;]*")
     private val TG_PROXY_REGEX = Regex("(?i)\\btg://proxy\\?[^\\s\\r\\n;]*")
     private val TME_SOCKS_REGEX = Regex("(?i)https?://t\\.me/socks\\?[^\\s\\r\\n;]*")
     private val TME_PROXY_REGEX = Regex("(?i)https?://t\\.me/proxy\\?[^\\s\\r\\n;]*")
     // host(IPv4/dns or bracketed IPv6) : port [: user : pass] at end of line
+    private val BASE64_LINE_REGEX = Regex("^[-A-Za-z0-9+/=_]+$")
     private val BARE_HOST_REGEX = Regex(
         "^(?<host>(?:\\[[^\\]]+\\])|(?:[^:\\s\\[]+))(?::(?<port>\\d{1,5}))(?:(?::(?<u>[^:\\s]+))?(?::(?<p>[^:\\s]+))?)?$"
     )
+
+    /** Normalizes common alias schemes to the canonical sing-box link form (hy2:// → hysteria2://). */
+    @JvmStatic
+    fun normalizeScheme(link: String?): String {
+        if (link.isNullOrBlank()) return link ?: ""
+        return if (link.startsWith("hy2://", ignoreCase = true)) {
+            "hysteria2://" + link.substring("hy2://".length)
+        } else {
+            link
+        }
+    }
 
     @JvmStatic
     fun parse(text: String?): List<Parsed> {
@@ -80,6 +93,10 @@ object ProxyLinkParser {
             val kind = token.substringBefore("://", "").lowercase()
             sink.put("node:" + token, Parsed.NodeLink(kind, token))
         }
+        for (m in SOCKS_SCHEME_REGEX.findAll(chunk)) {
+            val token = tokenAt(chunk, m.range.first)
+            parseSocksUri(token)?.let { sink.put("native:" + token, it) }
+        }
         for (m in TG_SOCKS_REGEX.findAll(chunk)) {
             val token = tokenAt(chunk, m.range.first)
             parseTgSocks(token)?.let { sink.put("native:" + token, it) }
@@ -103,7 +120,40 @@ object ProxyLinkParser {
         while (end < text.length && text[end] != ' ' && text[end] != '\t' && text[end] != '\n' && text[end] != '\r' && text[end] != ';') {
             end++
         }
-        return text.substring(start, end).trim()
+        var token = text.substring(start, end).trim()
+        // Strip common trailing punctuation that pasted text/subscription
+        // bodies often carry (commas, semicolons, quotes, brackets).
+        while (token.isNotEmpty() && token.last() in ",;)]}>\"'、，。；）】") {
+            token = token.substring(0, token.length - 1).trimEnd()
+        }
+        return token
+    }
+
+    /** `socks5://user:pass@host:port` / `socks://host:port` → native SOCKS5 row. */
+    private fun parseSocksUri(token: String): Parsed? {
+        val body = token.substringAfter("://")
+        val authority = body.substringBefore('/').substringBefore('?').substringBefore('#')
+        val at = authority.lastIndexOf('@')
+        var user = ""
+        var pass = ""
+        var hostPort = authority
+        if (at >= 0) {
+            val userInfo = authority.substring(0, at)
+            hostPort = authority.substring(at + 1)
+            val colon = userInfo.indexOf(':')
+            if (colon >= 0) {
+                user = safeDecode(userInfo.substring(0, colon))
+                pass = safeDecode(userInfo.substring(colon + 1))
+            } else {
+                user = safeDecode(userInfo)
+            }
+        }
+        val colon = hostPort.lastIndexOf(':')
+        if (colon < 0) return null
+        val host = hostPort.substring(0, colon).trim('[', ']')
+        val port = hostPort.substring(colon + 1).toIntOrNull() ?: return null
+        if (host.isBlank() || port !in 1..65535) return null
+        return Parsed.NativeConfig("socks5", host, port, user, pass, "")
     }
 
     private fun parseTgSocks(token: String): Parsed? {

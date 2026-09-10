@@ -91,23 +91,16 @@ public class VlessNodeEditActivity extends BaseFragment {
         linkEdit = new EditTextBoldCursor(context);
         linkEdit.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 15);
         linkEdit.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlackText, getResourceProvider()));
-        linkEdit.setHintText(LocaleController.getString(R.string.VlessLinkHint));
-        linkEdit.setHeaderHintColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlueHeader, getResourceProvider()));
-        // vless:// URIs have no whitespace to wrap on, but the user expects the
-        // whole link to be visible at a glance: wrap the editor at character
-        // boundaries across up to three lines (long links become ~3 lines,
-        // short ones stay on one), and let the outer ScrollView handle the
-        // rest. Disable auto-link so the text is rendered in plain black, not
-        // the system "link" colour.
+        // No hint/header text: the example `vless://uuid@host:port?...` header
+        // was removed on request. Long URIs wrap across up to three lines so the
+        // whole link stays visible; the outer ScrollView handles the rest.
         linkEdit.setSingleLine(false);
         linkEdit.setMinLines(1);
         linkEdit.setMaxLines(3);
         linkEdit.setHorizontallyScrolling(false);
-        linkEdit.setAutoLinkMask(0);
         linkEdit.setGravity(Gravity.TOP);
         linkEdit.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_MULTI_LINE | InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS);
         linkEdit.setFocusable(true);
-        linkEdit.setTransformHintToHeader(true);
         linkEdit.setTextIsSelectable(true);
         linkEdit.setLineColors(Theme.getColor(Theme.key_windowBackgroundWhiteInputField, getResourceProvider()),
                 Theme.getColor(Theme.key_windowBackgroundWhiteInputFieldActivated, getResourceProvider()),

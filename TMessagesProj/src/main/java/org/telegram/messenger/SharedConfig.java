@@ -47,6 +47,7 @@ import org.telegram.ui.LaunchActivity;
 import io.nekohasekai.libbox.CommandServer;
 import tw.nekomimi.nekogram.helpers.LibboxEngine;
 import tw.nekomimi.nekogram.helpers.ProxyEngineClient;
+import tw.nekomimi.nekogram.helpers.ProxyLinkParser;
 import tw.nekomimi.nekogram.helpers.ProxyTypes;
 import tw.nekomimi.nekogram.helpers.VlessConfig;
 
@@ -1683,6 +1684,9 @@ public class SharedConfig {
 
     /** Creates a node proxy object for [link]; null when the link scheme is unsupported. */
     public static ProxyInfo createNodeProxy(String link) {
+        // Accept alias schemes (hy2:// → hysteria2://) so every caller — editors,
+        // clipboard import, QR — stores the canonical sing-box link form.
+        link = ProxyLinkParser.normalizeScheme(link);
         String kind = ProxyTypes.kind(link);
         ProxyInfo proxy;
         if ("vless".equals(kind)) {
