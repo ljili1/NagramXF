@@ -2077,6 +2077,12 @@ public class SharedConfig {
     }
 
     public static void deleteProxy(ProxyInfo proxyInfo) {
+        // The built-in Cloudflare WebSocket row is re-injected on every load and
+        // never persisted; it is a fixed part of the page and must not be
+        // deletable (delete action / delete-unavailable / multi-delete).
+        if (proxyInfo != null && WebSocketHelper.proxyServer.equals(proxyInfo.address)) {
+            return;
+        }
         if (proxyInfo instanceof SingProxy) {
             stopProxyAsync(proxyInfo);
         }
