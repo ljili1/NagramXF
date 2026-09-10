@@ -12,7 +12,9 @@ import android.widget.TextView;
 import android.widget.Toast;
 
 import org.telegram.messenger.AndroidUtilities;
+import org.telegram.messenger.FileLog;
 import org.telegram.messenger.LocaleController;
+import org.telegram.messenger.NotificationCenter;
 import org.telegram.messenger.R;
 import org.telegram.messenger.SharedConfig;
 import org.telegram.ui.ActionBar.ActionBar;
@@ -265,15 +267,24 @@ public class VlessNodeEditActivity extends BaseFragment {
         }
         String link = linkEdit == null ? "" : linkEdit.getText().toString().trim();
         boolean ok;
-        if (editingLink != null) {
-            ok = SharedConfig.editNodeProxy(editingLink, link);
-        } else {
-            ok = SharedConfig.addNodeProxy(link) != null;
+        try {
+            if (editingLink != null) {
+                ok = SharedConfig.editNodeProxy(editingLink, link);
+            } else {
+                ok = SharedConfig.addNodeProxy(link) != null;
+            }
+        } catch (Throwable e) {
+            FileLog.e(e);
+            ok = false;
         }
         if (!ok) {
             toastInvalidLink();
             return;
         }
+        // SharedConfig posts proxySettingsChanged from add/edit, but posting it
+        // again here makes the list page rebuild deterministically the moment
+        // the editor closes — no need to re-enter the page to see the change.
+        NotificationCenter.getGlobalInstance().postNotificationName(NotificationCenter.proxySettingsChanged);
         finishFragment();
     }
 }

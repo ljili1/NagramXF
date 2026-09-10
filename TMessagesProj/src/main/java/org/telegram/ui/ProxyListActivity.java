@@ -506,7 +506,8 @@ public class ProxyListActivity extends BaseFragment implements NotificationCente
                     LocaleController.getString("DeleteUnavailableServer", R.string.DeleteUnavailableServer),
                     R.drawable.msg_delete, LocaleController.getString("Delete", R.string.Delete),
                     true, () -> {
-                        for (SharedConfig.ProxyInfo info : SharedConfig.getProxyList()) {
+                        // Iterate a snapshot: deleteProxy mutates SharedConfig.proxyList.
+                        for (SharedConfig.ProxyInfo info : new ArrayList<>(SharedConfig.getProxyList())) {
                             if (info.isExternal() || info.checking) {
                                 continue;
                             }
@@ -658,7 +659,8 @@ public class ProxyListActivity extends BaseFragment implements NotificationCente
                 builder.setNegativeButton(getString(R.string.Cancel), null);
                 builder.setTitle(getString(R.string.DeleteProxyTitle));
                 builder.setPositiveButton(getString(R.string.Delete), (dialog, which) -> {
-                    for (SharedConfig.ProxyInfo info : proxyList) {
+                    // Snapshot: deleteProxy mutates the live list.
+                    for (SharedConfig.ProxyInfo info : new ArrayList<>(proxyList)) {
                         SharedConfig.deleteProxy(info);
                     }
                     useProxyForCalls = false;
@@ -726,7 +728,8 @@ public class ProxyListActivity extends BaseFragment implements NotificationCente
                         builder.setNegativeButton(getString(R.string.Cancel), null);
                         builder.setTitle(getString(R.string.DeleteProxyTitle));
                         builder.setPositiveButton(getString(R.string.Delete), (dialog, which) -> {
-                            for (SharedConfig.ProxyInfo info : selectedItems) {
+                            // Snapshot: deleteProxy mutates the live list.
+                            for (SharedConfig.ProxyInfo info : new ArrayList<>(selectedItems)) {
                                 SharedConfig.deleteProxy(info);
                             }
                             if (SharedConfig.currentProxy == null) {
@@ -813,8 +816,10 @@ public class ProxyListActivity extends BaseFragment implements NotificationCente
         connectionsHeaderRow = rowCount++;
 
         if (notify) {
+            // Rebuild from the authoritative saved list every time. copyList
+            // guards against the source list being mutated while we sort.
             proxyList.clear();
-            proxyList.addAll(SharedConfig.proxyList);
+            proxyList.addAll(new ArrayList<>(SharedConfig.proxyList));
 
             boolean checking = false;
             if (!wasCheckedAllList) {

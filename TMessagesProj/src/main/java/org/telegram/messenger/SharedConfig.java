@@ -1796,6 +1796,10 @@ public class SharedConfig {
                 setProxyEnable(true);
             }
         }
+        // Editing a node is a structural change to the saved list: the proxy
+        // page rebuilds its rows from SharedConfig.proxyList and must be told
+        // about it right away instead of waiting for the next onResume.
+        notifyProxyChanged();
         return true;
     }
 
@@ -2008,10 +2012,10 @@ public class SharedConfig {
             }
             data.cleanup();
         }
-        if (!WebSocketHelper.proxyServer.equals(proxyAddress)) {
-            ProxyInfo info = new ProxyInfo(WebSocketHelper.proxyServer, 6356, "", "", "");
-            proxyList.add(0, info);
-        }
+        // The built-in ws row is never persisted, so it is (re-)injected here.
+        // ensureWsProxyRow is idempotent: a replay of loadProxyList must not
+        // produce a second ws row.
+        ensureWsProxyRow();
         if (currentProxy == null) {
             int currentHash = preferences.getInt("current_proxy", 0);
             if (currentHash != 0) {
@@ -2132,6 +2136,8 @@ public class SharedConfig {
         }
         proxyList.add(0, proxyInfo);
         saveProxyList();
+        // Structural change: the proxy page must rebuild immediately.
+        notifyProxyChanged();
         return proxyInfo;
     }
 
@@ -2169,6 +2175,26 @@ public class SharedConfig {
         }
         proxyList.remove(proxyInfo);
         saveProxyList();
+        // Deleting a row is a structural change and, depending on the path, may
+        // be the moment the built-in ws row has to be put back (it is never
+        // persisted, so it must be re-injected in memory on every reload).
+        ensureWsProxyRow();
+        notifyProxyChanged();
+    }
+
+    /**
+     * Guarantees the built-in Cloudflare WebSocket row is present exactly once.
+     * The row is not persisted (saveProxyList skips it), so any code path that
+     * clears or rebuilds the in-memory list has to call this to keep it alive —
+     * without it the ws entry silently disappears from the page.
+     */
+    public static void ensureWsProxyRow() {
+        for (ProxyInfo info : proxyList) {
+            if (WebSocketHelper.proxyServer.equals(info.address)) {
+                return;
+            }
+        }
+        proxyList.add(0, new ProxyInfo(WebSocketHelper.proxyServer, 6356, "", "", ""));
     }
 
     public static void deleteAllProxy() {
@@ -2181,8 +2207,12 @@ public class SharedConfig {
 
         saveProxyList();
 
+        proxyListLoaded = false;
         loadProxyList();
+        ensureWsProxyRow();
+        saveProxyList();
 
+        notifyProxyChanged();
     }
 
     public static void checkSaveToGalleryFiles() {
