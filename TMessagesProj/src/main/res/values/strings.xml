@@ -2697,6 +2697,7 @@
     <string name="VlessDeleteNodeConfirm">Delete this VLESS node?</string>
     <string name="VlessFetchFailed">Failed to load subscription</string>
     <string name="VlessNoLinkFound">No supported proxy link found</string>
+    <string name="AddProxyLinkNode">Add proxy node</string>
     <string name="VlessNodeActive">In use</string>
     <string name="VlessNodeInactive">Tap to enable</string>
     <string name="VlessNodesAdded">%1$d node(s) added</string>

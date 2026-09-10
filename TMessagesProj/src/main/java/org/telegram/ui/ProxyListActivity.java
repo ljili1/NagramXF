@@ -453,6 +453,7 @@ public class ProxyListActivity extends BaseFragment implements NotificationCente
     private final static int na_menu_other = 1001;
     private final static int na_menu_add_input_telegram = 1002;
     private final static int na_menu_add_import_from_clipboard = 1003;
+    private final static int na_menu_add_link_node = 1007;
     private final static int na_menu_retest_ping = 1004;
     private final static int na_menu_delete_all = 1005;
     private final static int na_menu_delete_unavailable = 1006;
@@ -480,6 +481,7 @@ public class ProxyListActivity extends BaseFragment implements NotificationCente
         otherItem = menu.addItem(na_menu_other, R.drawable.ic_ab_other);
         otherItem.setContentDescription(LocaleController.getString("AccDescrMoreOptions", R.string.AccDescrMoreOptions));
         otherItem.addSubItem(na_menu_add_input_telegram, LocaleController.getString("AddProxyTelegram", R.string.AddProxyTelegram)).setOnClickListener((v) -> presentFragment(new ProxySettingsActivity()));
+        otherItem.addSubItem(na_menu_add_link_node, LocaleController.getString(R.string.AddProxyLinkNode)).setOnClickListener((v) -> presentFragment(new VlessNodeEditActivity()));
         otherItem.addSubItem(na_menu_add_import_from_clipboard, LocaleController.getString("ImportProxyFromClipboard", R.string.ImportProxyFromClipboard)).setOnClickListener((v) -> ProxyUtil.importFromClipboard(getParentActivity()));
         otherItem.addSubItem(na_menu_retest_ping, LocaleController.getString("RetestPing", R.string.RetestPing)).setOnClickListener((v) -> {
             checkProxyList(true);

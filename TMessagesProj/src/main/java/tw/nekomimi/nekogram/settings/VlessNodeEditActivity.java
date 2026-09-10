@@ -43,6 +43,7 @@ import java.util.List;
 public class VlessNodeEditActivity extends BaseFragment {
 
     private static final int MENU_DONE = 1;
+    private static final int MENU_SCAN_QR = 2;
 
     /** Link being edited, or null when adding a new node. */
     private final String editingLink;
@@ -69,10 +70,13 @@ public class VlessNodeEditActivity extends BaseFragment {
                     finishFragment();
                 } else if (id == MENU_DONE) {
                     save();
+                } else if (id == MENU_SCAN_QR) {
+                    showQrScanner();
                 }
             }
         });
         ActionBarMenu menu = actionBar.createMenu();
+        menu.addItem(MENU_SCAN_QR, R.drawable.msg_qrcode_mini_remix);
         menu.addItem(MENU_DONE, R.drawable.ic_done);
 
         ScrollView scrollView = new ScrollView(context);
@@ -124,17 +128,6 @@ public class VlessNodeEditActivity extends BaseFragment {
         fieldContainer.addView(linkEdit, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
 
         // --- helpers ---
-        TextSettingsCell scanCell = new TextSettingsCell(context);
-        scanCell.setBackgroundColor(Theme.getColor(Theme.key_windowBackgroundWhite));
-        scanCell.setText(LocaleController.getString(R.string.ScanQrCode), true);
-        scanCell.setOnClickListener(v -> CameraScanActivity.showAsSheet(VlessNodeEditActivity.this, false, CameraScanActivity.TYPE_QR, new CameraScanActivity.CameraScanActivityDelegate() {
-            @Override
-            public void didFindQr(String text) {
-                fillLinkFromText(text);
-            }
-        }));
-        content.addView(scanCell, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
-
         TextSettingsCell pasteCell = new TextSettingsCell(context);
         pasteCell.setBackgroundColor(Theme.getColor(Theme.key_windowBackgroundWhite));
         pasteCell.setText(LocaleController.getString(R.string.PasteFromClipboard), false);
@@ -251,6 +244,19 @@ public class VlessNodeEditActivity extends BaseFragment {
 
     private void toastInvalidLink() {
         toast(LocaleController.getString(R.string.VlessNoLinkFound));
+    }
+
+    /** Open Telegram's built-in QR scanner and feed the decoded payload to the editor. */
+    private void showQrScanner() {
+        if (isFinished || getParentActivity() == null) {
+            return;
+        }
+        CameraScanActivity.showAsSheet(VlessNodeEditActivity.this, false, CameraScanActivity.TYPE_QR, new CameraScanActivity.CameraScanActivityDelegate() {
+            @Override
+            public void didFindQr(String text) {
+                fillLinkFromText(text);
+            }
+        });
     }
 
     private void save() {
