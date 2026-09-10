@@ -61,7 +61,7 @@ public class VlessNodeEditActivity extends BaseFragment {
     public View createView(Context context) {
         actionBar.setBackButtonImage(R.drawable.ic_ab_back);
         actionBar.setAllowOverlayTitle(true);
-        actionBar.setTitle(LocaleController.getString(editingLink == null ? R.string.VlessAddNode : R.string.VlessSettings));
+        actionBar.setTitle(LocaleController.getString(editingLink == null ? R.string.ProxyAddNode : R.string.ProxyDetails));
         actionBar.setActionBarMenuOnItemClick(new ActionBar.ActionBarMenuOnItemClick() {
             @Override
             public void onItemClick(int id) {
@@ -88,15 +88,25 @@ public class VlessNodeEditActivity extends BaseFragment {
         fieldContainer.setBackgroundColor(Theme.getColor(Theme.key_windowBackgroundWhite));
         content.addView(fieldContainer, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
 
+        // Permanent field label: a plain TextView, so it stays visible whether
+        // the editor is empty, focused or already filled. Only this long-link
+        // field uses the generic "links" caption.
+        TextView linkHeader = new TextView(context);
+        linkHeader.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 13);
+        linkHeader.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlueHeader, getResourceProvider()));
+        linkHeader.setPadding(AndroidUtilities.dp(21), AndroidUtilities.dp(12), AndroidUtilities.dp(21), 0);
+        linkHeader.setText(LocaleController.getString(R.string.ProxyLinkFieldLabel));
+        fieldContainer.addView(linkHeader, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
+
         linkEdit = new EditTextBoldCursor(context);
         linkEdit.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 15);
         linkEdit.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlackText, getResourceProvider()));
-        // No hint/header text: the example `vless://uuid@host:port?...` header
-        // was removed on request. Long URIs wrap across up to three lines so the
-        // whole link stays visible; the outer ScrollView handles the rest.
+        // Long values (vless://…, vmess://<base64>, a subscription URL) contain no
+        // whitespace to wrap on, so the field is allowed to grow vertically until
+        // the whole value is visible instead of being clipped after N lines.
         linkEdit.setSingleLine(false);
         linkEdit.setMinLines(1);
-        linkEdit.setMaxLines(3);
+        linkEdit.setMaxLines(Integer.MAX_VALUE);
         linkEdit.setHorizontallyScrolling(false);
         linkEdit.setGravity(Gravity.TOP);
         linkEdit.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_MULTI_LINE | InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS);
@@ -106,7 +116,7 @@ public class VlessNodeEditActivity extends BaseFragment {
                 Theme.getColor(Theme.key_windowBackgroundWhiteInputFieldActivated, getResourceProvider()),
                 Theme.getColor(Theme.key_text_RedRegular, getResourceProvider()));
         linkEdit.setBackground(null);
-        linkEdit.setPadding(AndroidUtilities.dp(20), AndroidUtilities.dp(14), AndroidUtilities.dp(20), AndroidUtilities.dp(14));
+        linkEdit.setPadding(AndroidUtilities.dp(21), AndroidUtilities.dp(4), AndroidUtilities.dp(21), AndroidUtilities.dp(12));
         if (editingLink != null) {
             linkEdit.setText(editingLink);
             linkEdit.setSelection(editingLink.length());
@@ -164,33 +174,83 @@ public class VlessNodeEditActivity extends BaseFragment {
         toastInvalidLink();
     }
 
-    /** Fills the editor with the first supported proxy link found in [text]. */
+    /**
+     * Fills the editor from [text]. A direct node link (any sing-box scheme)
+     * fills the field; a subscription URL is downloaded first and then either
+     * fills the field (single node) or imports every node it carries.
+     */
     private void fillLinkFromText(String text) {
         if (text == null || text.trim().isEmpty()) {
             toastInvalidLink();
             return;
         }
-        java.util.List<tw.nekomimi.nekogram.helpers.ProxyLinkParser.Parsed> parsed = tw.nekomimi.nekogram.helpers.ProxyLinkParser.parse(text);
+        if (ProxyUtil.isSubscriptionText(text)) {
+            toast(LocaleController.getString(R.string.SubscriptionFetching));
+            final String raw = text;
+            new Thread(() -> {
+                final String expanded = ProxyUtil.expandSubscriptions(raw);
+                final List<tw.nekomimi.nekogram.helpers.ProxyLinkParser.Parsed> parsed =
+                        tw.nekomimi.nekogram.helpers.ProxyLinkParser.parse(expanded);
+                AndroidUtilities.runOnUIThread(() -> applyParsedLinks(parsed));
+            }, "proxy-subscription").start();
+            return;
+        }
+        applyParsedLinks(tw.nekomimi.nekogram.helpers.ProxyLinkParser.parse(text));
+    }
+
+    /**
+     * A single supported node fills the field; several nodes (a subscription
+     * body) are all imported into the saved proxy list instead.
+     */
+    private void applyParsedLinks(List<tw.nekomimi.nekogram.helpers.ProxyLinkParser.Parsed> parsed) {
+        if (isFinished || getParentActivity() == null) {
+            return;
+        }
+        List<String> links = new java.util.ArrayList<>();
         for (tw.nekomimi.nekogram.helpers.ProxyLinkParser.Parsed p : parsed) {
             if (!(p instanceof tw.nekomimi.nekogram.helpers.ProxyLinkParser.Parsed.NodeLink)) {
                 continue;
             }
-            tw.nekomimi.nekogram.helpers.ProxyLinkParser.Parsed.NodeLink node = (tw.nekomimi.nekogram.helpers.ProxyLinkParser.Parsed.NodeLink) p;
-            if (ProxyTypes.isSupported(node.getLink())) {
-                String link = node.getLink();
-                linkEdit.setText(link);
-                linkEdit.setSelection(link.length());
-                return;
+            String link = tw.nekomimi.nekogram.helpers.ProxyLinkParser.normalizeScheme(
+                    ((tw.nekomimi.nekogram.helpers.ProxyLinkParser.Parsed.NodeLink) p).getLink());
+            if (!ProxyTypes.isSupported(link)) {
+                continue;
+            }
+            if (!links.contains(link)) {
+                links.add(link);
             }
         }
-        toastInvalidLink();
+        if (links.isEmpty()) {
+            toastInvalidLink();
+            return;
+        }
+        if (links.size() == 1) {
+            linkEdit.setText(links.get(0));
+            linkEdit.setSelection(links.get(0).length());
+            return;
+        }
+        int before = SharedConfig.proxyList.size();
+        for (String link : links) {
+            SharedConfig.addNodeProxy(link);
+        }
+        int added = SharedConfig.proxyList.size() - before;
+        if (added <= 0) {
+            toastInvalidLink();
+            return;
+        }
+        toast(LocaleController.formatString("VlessNodesAdded", R.string.VlessNodesAdded, added));
+        finishFragment();
+    }
+
+    private void toast(String text) {
+        Context context = getParentActivity();
+        if (context != null) {
+            Toast.makeText(context, text, Toast.LENGTH_SHORT).show();
+        }
     }
 
     private void toastInvalidLink() {
-        Context context = getParentActivity();
-        if (context != null) {
-            Toast.makeText(context, LocaleController.getString(R.string.VlessNoLinkFound), Toast.LENGTH_SHORT).show();
-        }
+        toast(LocaleController.getString(R.string.VlessNoLinkFound));
     }
 
     private void save() {

@@ -8,11 +8,13 @@ import java.net.URLDecoder
  * can paste, scan as QR or pull from a subscription body.
  *
  * Recognised forms (in roughly this order):
- *  - sing-box node links:  `vless://`  `trojan://`  `ss://`  `hysteria2://`
- *  - native SOCKS5:        `tg://socks?…`  `https?://t.me/socks?…`
+ *  - sing-box node links:  `vless://`  `vmess://`  `trojan://`  `ss://`
+ *                          `hysteria://`  `hysteria2://` (alias `hy2://`)  `tuic://`
+ *  - native SOCKS5:        `socks5://…`  `tg://socks?…`  `https?://t.me/socks?…`
  *  - native MTProto:       `tg://proxy?…`  `https?://t.me/proxy?…`
  *  - bare `host:port` (optionally `:user:pass`) — defaults to SOCKS5
  *  - subscription bodies:  base64-encoded blob containing any of the above
+ *                          (whole payload or one base64 line per node)
  *
  * Used by every import entry point (clipboard / QR / subscription) and the link
  * editor so a single implementation handles every format. The two output kinds
@@ -35,7 +37,9 @@ object ProxyLinkParser {
         ) : Parsed()
     }
 
-    private val NODE_SCHEME_REGEX = Regex("(?i)\\b(vless|hy2|hysteria2|trojan|ss)://\\S+")
+    // hysteria2 must precede the legacy hysteria alternative so the longer
+    // scheme wins; the same applies to the ss/ssr pair.
+    private val NODE_SCHEME_REGEX = Regex("(?i)\\b(vless|vmess|hy2|hysteria2|hysteria|trojan|ss|tuic)://\\S+")
     private val SOCKS_SCHEME_REGEX = Regex("(?i)\\b(socks5|socks)://[^\\s\\r\\n;]*")
     private val TG_SOCKS_REGEX = Regex("(?i)\\btg://socks\\?[^\\s\\r\\n;]*")
     private val TG_PROXY_REGEX = Regex("(?i)\\btg://proxy\\?[^\\s\\r\\n;]*")
@@ -43,6 +47,8 @@ object ProxyLinkParser {
     private val TME_PROXY_REGEX = Regex("(?i)https?://t\\.me/proxy\\?[^\\s\\r\\n;]*")
     // host(IPv4/dns or bracketed IPv6) : port [: user : pass] at end of line
     private val BASE64_LINE_REGEX = Regex("^[-A-Za-z0-9+/=_]+$")
+    // Whole-body base64: same alphabet but newlines/whitespace are tolerated.
+    private val BASE64_BODY_REGEX = Regex("^[-A-Za-z0-9+/=_\\s]+$")
     private val BARE_HOST_REGEX = Regex(
         "^(?<host>(?:\\[[^\\]]+\\])|(?:[^:\\s\\[]+))(?::(?<port>\\d{1,5}))(?:(?::(?<u>[^:\\s]+))?(?::(?<p>[^:\\s]+))?)?$"
     )
@@ -64,10 +70,13 @@ object ProxyLinkParser {
         val out = LinkedHashMap<String, Parsed>()
         val sources = mutableListOf(text)
         runCatching {
+            // Whole-payload base64 (a typical subscription body): base64 may
+            // legitimately contain '/' and '+', so the only shape check is the
+            // alphabet — anything with '://' or stray punctuation is skipped.
             val trimmed = text.trim()
-            if (trimmed.length in 2..20000 && !trimmed.contains("://") && !trimmed.contains('/')) {
-                val decoded = String(Base64.decode(trimmed, Base64.DEFAULT), Charsets.UTF_8)
-                if (decoded.length >= 4) {
+            if (trimmed.length in 2..1_000_000 && !trimmed.contains("://") && BASE64_BODY_REGEX.matches(trimmed)) {
+                val decoded = decodeBase64Body(trimmed)
+                if (!decoded.isNullOrEmpty() && decoded.length >= 4 && decoded != trimmed) {
                     sources.add(decoded)
                 }
             }
@@ -76,7 +85,16 @@ object ProxyLinkParser {
             extractAll(chunk, out)
             for (line in chunk.split('\n', '\r')) {
                 val trimmedLine = line.trim(' ', '\t', ';')
-                if (trimmedLine.isEmpty() || trimmedLine.contains("://")) continue
+                if (trimmedLine.isEmpty()) continue
+                // Some subscriptions base64-encode every line separately.
+                if (!trimmedLine.contains("://") && trimmedLine.length >= 16 && BASE64_LINE_REGEX.matches(trimmedLine)) {
+                    val decoded = decodeBase64Body(trimmedLine)
+                    if (!decoded.isNullOrEmpty() && decoded.contains("://")) {
+                        extractAll(decoded, out)
+                        continue
+                    }
+                }
+                if (trimmedLine.contains("://")) continue
                 parseBareHost(trimmedLine)?.let { parsed ->
                     if (parsed is Parsed.NativeConfig) {
                         out.put("native:" + parsed.address + ":" + parsed.port, parsed)
@@ -188,6 +206,30 @@ object ProxyLinkParser {
         URLDecoder.decode(s, "UTF-8")
     } catch (e: Throwable) {
         s
+    }
+
+    /**
+     * Decodes a base64 blob (whole subscription body or a single encoded line).
+     * Tries the standard, url-safe and unpadded alphabets; returns null when none
+     * of them yields readable text.
+     */
+    private fun decodeBase64Body(s: String): String? {
+        if (s.isBlank()) return null
+        val candidates = arrayOf(
+            Base64.DEFAULT,
+            Base64.NO_WRAP,
+            Base64.NO_PADDING or Base64.NO_WRAP,
+            Base64.URL_SAFE or Base64.NO_WRAP,
+            Base64.URL_SAFE or Base64.NO_PADDING or Base64.NO_WRAP
+        )
+        for (flags in candidates) {
+            try {
+                val decoded = String(Base64.decode(s, flags), Charsets.UTF_8)
+                if (decoded.isNotBlank()) return decoded
+            } catch (ignored: Throwable) {
+            }
+        }
+        return null
     }
 
     private fun parseBareHost(line: String): Parsed? {

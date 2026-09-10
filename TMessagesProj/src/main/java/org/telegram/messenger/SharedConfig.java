@@ -674,6 +674,54 @@ public class SharedConfig {
         }
     }
 
+    public static class VmessProxy extends SingProxy {
+        public VmessProxy(String link) {
+            super(link);
+        }
+
+        @Override
+        public String getSchemaDisplayType() {
+            return "VMess";
+        }
+
+        @Override
+        public String getSchemaType() {
+            return "vmess";
+        }
+    }
+
+    public static class TuicProxy extends SingProxy {
+        public TuicProxy(String link) {
+            super(link);
+        }
+
+        @Override
+        public String getSchemaDisplayType() {
+            return "TUIC";
+        }
+
+        @Override
+        public String getSchemaType() {
+            return "tuic";
+        }
+    }
+
+    public static class HysteriaProxy extends SingProxy {
+        public HysteriaProxy(String link) {
+            super(link);
+        }
+
+        @Override
+        public String getSchemaDisplayType() {
+            return "Hysteria";
+        }
+
+        @Override
+        public String getSchemaType() {
+            return "hysteria";
+        }
+    }
+
     public static ArrayList<ProxyInfo> proxyList = new ArrayList<>();
     public static LinkedList<ProxyInfo> getProxyList() {
         while (true) {
@@ -1691,12 +1739,18 @@ public class SharedConfig {
         ProxyInfo proxy;
         if ("vless".equals(kind)) {
             proxy = new VlessProxy(link);
+        } else if ("vmess".equals(kind)) {
+            proxy = new VmessProxy(link);
         } else if ("trojan".equals(kind)) {
             proxy = new TrojanProxy(link);
         } else if ("ss".equals(kind)) {
             proxy = new ShadowsocksProxy(link);
         } else if ("hysteria2".equals(kind)) {
             proxy = new Hysteria2Proxy(link);
+        } else if ("hysteria".equals(kind)) {
+            proxy = new HysteriaProxy(link);
+        } else if ("tuic".equals(kind)) {
+            proxy = new TuicProxy(link);
         } else {
             return null;
         }
@@ -2002,12 +2056,18 @@ public class SharedConfig {
                 String link = obj.optString("link", "");
                 if ("vless".equals(type)) {
                     info = new VlessProxy(link);
+                } else if ("vmess".equals(type)) {
+                    info = new VmessProxy(link);
                 } else if ("trojan".equals(type)) {
                     info = new TrojanProxy(link);
                 } else if ("shadowsocks".equals(type)) {
                     info = new ShadowsocksProxy(link);
                 } else if ("hysteria2".equals(type)) {
                     info = new Hysteria2Proxy(link);
+                } else if ("hysteria".equals(type)) {
+                    info = new HysteriaProxy(link);
+                } else if ("tuic".equals(type)) {
+                    info = new TuicProxy(link);
                 } else {
                     return null;
                 }

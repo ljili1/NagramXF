@@ -12,9 +12,12 @@ import org.json.JSONObject
  *
  * The outbound type is recognized from the link scheme:
  * - `vless://`      -> sing-box "vless"
+ * - `vmess://`      -> sing-box "vmess"
  * - `trojan://`     -> sing-box "trojan"
  * - `ss://`         -> sing-box "shadowsocks"
+ * - `hysteria://`   -> sing-box "hysteria" (legacy v1)
  * - `hysteria2://`  -> sing-box "hysteria2"
+ * - `tuic://`       -> sing-box "tuic"
  *
  * The inbound / route template is identical for every type, so switching a node
  * is a pure hot reload of the outbound.
@@ -23,7 +26,8 @@ object VlessConfig {
 
     /** Prefixes for which an outbound config can be produced. */
     private val SUPPORTED_PREFIXES = arrayOf(
-        "vless://", "trojan://", "ss://", "hysteria2://"
+        "vless://", "vmess://", "trojan://", "ss://",
+        "hysteria2://", "hysteria://", "tuic://"
     )
 
     /**
@@ -77,11 +81,140 @@ object VlessConfig {
         val trimmed = link.trim()
         return when {
             trimmed.startsWith("vless://", ignoreCase = true) -> parseVless(trimmed)
+            trimmed.startsWith("vmess://", ignoreCase = true) -> buildVmessOutbound(ProxyParse.parseVmess(trimmed))
             trimmed.startsWith("trojan://", ignoreCase = true) -> buildTrojanOutbound(ProxyParse.parseTrojan(trimmed))
             trimmed.startsWith("ss://", ignoreCase = true) -> buildShadowsocksOutbound(ProxyParse.parseSs(trimmed))
+            // hysteria2 must be tested before the legacy hysteria prefix.
             trimmed.startsWith("hysteria2://", ignoreCase = true) -> buildHysteria2Outbound(ProxyParse.parseHysteria2(trimmed))
+            trimmed.startsWith("hysteria://", ignoreCase = true) -> buildHysteriaOutbound(ProxyParse.parseHysteria(trimmed))
+            trimmed.startsWith("tuic://", ignoreCase = true) -> buildTuicOutbound(ProxyParse.parseTuic(trimmed))
             else -> null
         }
+    }
+
+    /**
+     * Build a sing-box "vmess" outbound from a parsed [ProxyParse.VmessBean].
+     *
+     * The transport block mirrors the VLESS builder (ws / grpc / h2 / httpupgrade);
+     * `alter_id` and `security` are emitted as-is so AEAD (`alter_id: 0`) and
+     * legacy (`aid > 0`) servers both work.
+     */
+    @JvmStatic
+    fun buildVmessOutbound(bean: ProxyParse.VmessBean?): JSONObject? {
+        if (bean == null) return null
+        if (bean.address.isBlank() || bean.port <= 0 || bean.port > 65535 || bean.uuid.isBlank()) return null
+
+        val outbound = JSONObject()
+        outbound.put("type", "vmess")
+        outbound.put("tag", "proxy")
+        outbound.put("server", bean.address)
+        outbound.put("server_port", bean.port)
+        outbound.put("uuid", bean.uuid)
+        outbound.put("security", bean.security.ifBlank { "auto" })
+        outbound.put("alter_id", bean.alterId)
+
+        if (bean.tls) {
+            outbound.put("tls", buildTls(bean.sni.ifBlank { bean.address }, bean.alpn, bean.fingerprint, false))
+        }
+
+        when (bean.network.lowercase()) {
+            "ws" -> {
+                val transport = JSONObject()
+                transport.put("type", "ws")
+                if (bean.path.isNotBlank()) transport.put("path", bean.path)
+                if (bean.host.isNotBlank()) transport.put("headers", JSONObject().put("Host", bean.host))
+                outbound.put("transport", transport)
+            }
+            "grpc" -> {
+                val transport = JSONObject()
+                transport.put("type", "grpc")
+                // v2rayN stores the gRPC service name in `path`.
+                if (bean.path.isNotBlank()) transport.put("service_name", bean.path)
+                outbound.put("transport", transport)
+            }
+            "h2", "http" -> {
+                val transport = JSONObject()
+                transport.put("type", "http")
+                if (bean.host.isNotBlank()) transport.put("host", JSONArray().put(bean.host))
+                if (bean.path.isNotBlank()) transport.put("path", bean.path)
+                outbound.put("transport", transport)
+            }
+            "httpupgrade" -> {
+                val transport = JSONObject()
+                transport.put("type", "httpupgrade")
+                if (bean.host.isNotBlank()) transport.put("host", bean.host)
+                if (bean.path.isNotBlank()) transport.put("path", bean.path)
+                outbound.put("transport", transport)
+            }
+            "quic" -> outbound.put("transport", JSONObject().put("type", "quic"))
+            else -> Unit // tcp: no transport block
+        }
+        return outbound
+    }
+
+    /**
+     * Build a sing-box "tuic" outbound (TUIC v5). QUIC+TLS is mandatory; ALPN
+     * defaults to `h3` because every TUIC server speaks HTTP/3 framing.
+     */
+    @JvmStatic
+    fun buildTuicOutbound(bean: ProxyParse.TuicBean?): JSONObject? {
+        if (bean == null) return null
+        if (bean.server.isBlank() || bean.serverPort <= 0 || bean.serverPort > 65535) return null
+        if (bean.uuid.isBlank()) return null
+
+        val outbound = JSONObject()
+        outbound.put("type", "tuic")
+        outbound.put("tag", "proxy")
+        outbound.put("server", bean.server)
+        outbound.put("server_port", bean.serverPort)
+        outbound.put("uuid", bean.uuid)
+        if (bean.password.isNotBlank()) outbound.put("password", bean.password)
+        if (bean.congestionControl.isNotBlank()) outbound.put("congestion_control", bean.congestionControl)
+        if (bean.udpRelayMode.isNotBlank()) outbound.put("udp_relay_mode", bean.udpRelayMode)
+        outbound.put("tls", buildTls(bean.sni.ifBlank { bean.server }, bean.alpn.ifBlank { "h3" }, "", bean.allowInsecure))
+        return outbound
+    }
+
+    /**
+     * Build a sing-box legacy "hysteria" (v1) outbound. The bandwidth hints are
+     * emitted when the link carries them; otherwise sing-box falls back to its
+     * own congestion-control defaults.
+     */
+    @JvmStatic
+    fun buildHysteriaOutbound(bean: ProxyParse.HysteriaBean?): JSONObject? {
+        if (bean == null) return null
+        if (bean.server.isBlank() || bean.serverPort <= 0 || bean.serverPort > 65535) return null
+        if (bean.authStr.isBlank()) return null
+
+        val outbound = JSONObject()
+        outbound.put("type", "hysteria")
+        outbound.put("tag", "proxy")
+        outbound.put("server", bean.server)
+        outbound.put("server_port", bean.serverPort)
+        outbound.put("auth_str", bean.authStr)
+        if (bean.upMbps > 0) outbound.put("up_mbps", bean.upMbps)
+        if (bean.downMbps > 0) outbound.put("down_mbps", bean.downMbps)
+        if (bean.obfs.isNotBlank()) outbound.put("obfs", bean.obfs)
+        outbound.put("tls", buildTls(bean.sni.ifBlank { bean.server }, bean.alpn.ifBlank { "h3" }, "", bean.insecure))
+        return outbound
+    }
+
+    /** Shared TLS block builder for the stream/QUIC protocols. */
+    private fun buildTls(serverName: String, alpn: String, fingerprint: String, insecure: Boolean): JSONObject {
+        val tls = JSONObject()
+        tls.put("enabled", true)
+        if (serverName.isNotBlank()) tls.put("server_name", serverName)
+        val alpnArray = JSONArray()
+        for (item in alpn.split(',')) {
+            val trimmed = item.trim()
+            if (trimmed.isNotEmpty()) alpnArray.put(trimmed)
+        }
+        if (alpnArray.length() > 0) tls.put("alpn", alpnArray)
+        if (fingerprint.isNotBlank()) {
+            tls.put("utls", JSONObject().put("enabled", true).put("fingerprint", fingerprint))
+        }
+        if (insecure) tls.put("insecure", true)
+        return tls
     }
 
     /**

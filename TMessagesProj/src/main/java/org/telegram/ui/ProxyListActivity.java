@@ -411,6 +411,10 @@ public class ProxyListActivity extends BaseFragment implements NotificationCente
             presentFragment(new ShadowsocksNodeEditActivity(info.toShareUrl()));
         } else if (info instanceof SharedConfig.Hysteria2Proxy) {
             presentFragment(new Hysteria2NodeEditActivity(info.toShareUrl()));
+        } else if (info instanceof SharedConfig.SingProxy) {
+            // VMess / TUIC / Hysteria(v1) have no dedicated form: the generic
+            // link editor handles every sing-box scheme.
+            presentFragment(new VlessNodeEditActivity(info.toShareUrl()));
         } else {
             presentFragment(new ProxySettingsActivity(info));
         }

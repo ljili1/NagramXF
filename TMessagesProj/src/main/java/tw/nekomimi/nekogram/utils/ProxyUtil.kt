@@ -43,6 +43,7 @@ import org.telegram.messenger.TelegramQRCodeWriter
 import org.telegram.messenger.browser.Browser
 import tw.nekomimi.nekogram.helpers.ProxyLinkParser
 import tw.nekomimi.nekogram.helpers.ProxyTypes
+import tw.nekomimi.nekogram.helpers.SubscriptionHelper
 import tw.nekomimi.nekogram.ui.BottomBuilder
 import tw.nekomimi.nekogram.utils.AlertUtil.showToast
 import java.io.File
@@ -306,7 +307,43 @@ object ProxyUtil {
     @JvmStatic
     fun importFromClipboard(ctx: Activity) {
         val text = clipboardText(ctx)
-        val parsed = ProxyLinkParser.parse(text)
+        if (text.isNullOrBlank()) {
+            showToast(getString(R.string.BrokenLink))
+            return
+        }
+        val urls = SubscriptionHelper.extractUrls(text)
+        if (urls.isEmpty()) {
+            applyImport(ctx, ProxyLinkParser.parse(text))
+            return
+        }
+        // A subscription URL needs a network round-trip: fetch on a worker
+        // thread, then apply the parsed nodes back on the UI thread.
+        showToast(getString(R.string.SubscriptionFetching))
+        Thread {
+            val all = ArrayList<ProxyLinkParser.Parsed>()
+            all.addAll(ProxyLinkParser.parse(text))
+            var fetchedAny = false
+            for (url in urls) {
+                val body = SubscriptionHelper.fetch(url) ?: continue
+                fetchedAny = true
+                all.addAll(ProxyLinkParser.parse(body))
+            }
+            AndroidUtilities.runOnUIThread {
+                if (!fetchedAny && all.isEmpty()) {
+                    showToast(getString(R.string.VlessFetchFailed))
+                    return@runOnUIThread
+                }
+                applyImport(ctx, all)
+            }
+        }.start()
+    }
+
+    /**
+     * Adds every parsed entry to [SharedConfig] and reports a summary. Must run
+     * on the UI thread (it mutates the shared proxy list and shows a dialog).
+     */
+    @JvmStatic
+    fun applyImport(ctx: Activity, parsed: List<ProxyLinkParser.Parsed>) {
         if (parsed.isEmpty()) {
             showToast(getString(R.string.BrokenLink))
             return
@@ -336,6 +373,10 @@ object ProxyUtil {
                 }
             }
         }
+        if (nativeAdded.isEmpty() && singAdded.isEmpty()) {
+            showToast(getString(R.string.BrokenLink))
+            return
+        }
         val summary = buildString {
             if (nativeAdded.isNotEmpty()) {
                 append(getString(R.string.ImportedProxies))
@@ -353,6 +394,32 @@ object ProxyUtil {
         AndroidUtilities.runOnUIThread {
             NotificationCenter.getGlobalInstance().postNotificationName(NotificationCenter.proxySettingsChanged)
         }
+    }
+
+    /**
+     * Blocking. Returns [text] plus the downloaded body of every subscription URL
+     * it contains, so the caller can parse everything in a single pass. Returns
+     * [text] unchanged when it holds no subscription URL. Never throws.
+     */
+    @JvmStatic
+    fun expandSubscriptions(text: String?): String {
+        if (text.isNullOrBlank()) return text ?: ""
+        val urls = SubscriptionHelper.extractUrls(text)
+        if (urls.isEmpty()) return text
+        val builder = StringBuilder(text)
+        for (url in urls) {
+            val body = SubscriptionHelper.fetch(url) ?: continue
+            builder.append('\n').append(body)
+        }
+        return builder.toString()
+    }
+
+    /** True when [text] holds a subscription URL that must be fetched first. */
+    @JvmStatic
+    fun isSubscriptionText(text: String?): Boolean {
+        if (text.isNullOrBlank()) return false
+        if (ProxyLinkParser.parse(text).isNotEmpty()) return false
+        return SubscriptionHelper.hasSubscriptionUrl(text)
     }
 
     @JvmStatic
@@ -414,12 +481,12 @@ object ProxyUtil {
     // Adapted from Nekogram X 9.3.3 (GPL-3.0): pulls every standard proxy link
     // token out of a pasted text / subscription body / QR payload. Native
     // Telegram proxy links (tg://proxy etc.) are handled by the existing native
-    // import path and intentionally left out of this extractor. vmess:// links
-    // are intentionally not matched anymore — the sing-box engine no longer
-    // carries them and VlessProxyManager.addNode rejects them at import time.
+    // import path and intentionally left out of this extractor. Every scheme the
+    // sing-box engine carries is listed here (vless/vmess/trojan/ss/hysteria/
+    // hysteria2/tuic); `ssr` is kept so the caller can report it as unsupported.
 
     private val proxySchemeRegex = Regex(
-        "(vless|trojan|ss|hysteria2|ssr|socks|ws|wss)://",
+        "(vless|vmess|trojan|ss|hysteria2|hysteria|tuic|ssr|socks|ws|wss)://",
         RegexOption.IGNORE_CASE
     )
 

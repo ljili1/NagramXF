@@ -113,16 +113,27 @@ public class TrojanNodeEditActivity extends BaseFragment {
     }
 
     private EditTextBoldCursor addEditRow(Context context, String hint, String value, int inputType) {
+        LinearLayout row = new LinearLayout(context);
+        row.setOrientation(LinearLayout.VERTICAL);
+
+        // Permanent field label: it stays visible whether the field is empty,
+        // focused or already filled. The EditText's own floating hint used to be
+        // shown only while typing, which made the form hard to scan.
+        TextView header = new TextView(context);
+        header.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 13);
+        header.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlueHeader, getResourceProvider()));
+        header.setPadding(AndroidUtilities.dp(21), AndroidUtilities.dp(10), AndroidUtilities.dp(21), 0);
+        header.setText(hint);
+        row.addView(header, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
+
         final EditTextBoldCursor cursor = mkCursor(context);
         cursor.setInputType(inputType);
-        cursor.setHintText(hint);
         if (value != null && !value.isEmpty()) {
             cursor.setText(value);
             cursor.setSelection(cursor.length());
         }
-        FrameLayout container = new FrameLayout(context);
-        container.addView(cursor, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT, Gravity.LEFT | Gravity.TOP, 21, 0, 21, 0));
-        fieldsContainer.addView(container, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, 64));
+        row.addView(cursor, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, 44, Gravity.LEFT | Gravity.TOP, 21, 0, 21, 0));
+        fieldsContainer.addView(row, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
         return cursor;
     }
 
@@ -133,7 +144,6 @@ public class TrojanNodeEditActivity extends BaseFragment {
         cursor.setHeaderHintColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlueHeader, getResourceProvider()));
         cursor.setSingleLine(true);
         cursor.setGravity((LocaleController.isRTL ? Gravity.RIGHT : Gravity.LEFT) | Gravity.CENTER_VERTICAL);
-        cursor.setTransformHintToHeader(true);
         cursor.setLineColors(Theme.getColor(Theme.key_windowBackgroundWhiteInputField, getResourceProvider()),
                 Theme.getColor(Theme.key_windowBackgroundWhiteInputFieldActivated, getResourceProvider()),
                 Theme.getColor(Theme.key_text_RedRegular, getResourceProvider()));
