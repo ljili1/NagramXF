@@ -89,22 +89,27 @@ public class VlessNodeEditActivity extends BaseFragment {
         content.addView(fieldContainer, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
 
         linkEdit = new EditTextBoldCursor(context);
-        linkEdit.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 16);
+        linkEdit.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 15);
         linkEdit.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlackText, getResourceProvider()));
         linkEdit.setHintText(LocaleController.getString(R.string.VlessLinkHint));
         linkEdit.setHeaderHintColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlueHeader, getResourceProvider()));
-        linkEdit.setSingleLine(false);
-        linkEdit.setMinLines(2);
-        linkEdit.setMaxLines(6);
-        linkEdit.setGravity(Gravity.TOP);
-        linkEdit.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_MULTI_LINE | InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS);
+        // Long vless:// links never break at whitespace; keep the editor single-line
+        // and let the user scroll horizontally. Vertical layout in a ScrollView
+        // avoids the EditText pushing other controls off the screen.
+        linkEdit.setSingleLine(true);
+        linkEdit.setHorizontallyScrolling(true);
+        linkEdit.setMinLines(1);
+        linkEdit.setMaxLines(1);
+        linkEdit.setGravity(Gravity.CENTER_VERTICAL | Gravity.START);
+        linkEdit.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS);
         linkEdit.setFocusable(true);
         linkEdit.setTransformHintToHeader(true);
+        linkEdit.setTextIsSelectable(true);
         linkEdit.setLineColors(Theme.getColor(Theme.key_windowBackgroundWhiteInputField, getResourceProvider()),
                 Theme.getColor(Theme.key_windowBackgroundWhiteInputFieldActivated, getResourceProvider()),
                 Theme.getColor(Theme.key_text_RedRegular, getResourceProvider()));
         linkEdit.setBackground(null);
-        linkEdit.setPadding(AndroidUtilities.dp(20), AndroidUtilities.dp(12), AndroidUtilities.dp(20), AndroidUtilities.dp(12));
+        linkEdit.setPadding(AndroidUtilities.dp(20), AndroidUtilities.dp(14), AndroidUtilities.dp(20), AndroidUtilities.dp(14));
         if (editingLink != null) {
             linkEdit.setText(editingLink);
             linkEdit.setSelection(editingLink.length());
@@ -135,6 +140,8 @@ public class VlessNodeEditActivity extends BaseFragment {
         info.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteGrayText4, getResourceProvider()));
         info.setGravity(Gravity.LEFT);
         info.setPadding(AndroidUtilities.dp(20), AndroidUtilities.dp(12), AndroidUtilities.dp(20), AndroidUtilities.dp(16));
+        info.setLineSpacing(AndroidUtilities.dp(2), 1.0f);
+        info.setTextIsSelectable(true);
         info.setText(LocaleController.getString(R.string.VlessDescription));
         content.addView(info, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
 
