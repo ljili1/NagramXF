@@ -93,15 +93,19 @@ public class VlessNodeEditActivity extends BaseFragment {
         linkEdit.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlackText, getResourceProvider()));
         linkEdit.setHintText(LocaleController.getString(R.string.VlessLinkHint));
         linkEdit.setHeaderHintColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlueHeader, getResourceProvider()));
-        // Long vless:// links never break at whitespace; keep the editor single-line
-        // and let the user scroll horizontally. Vertical layout in a ScrollView
-        // avoids the EditText pushing other controls off the screen.
-        linkEdit.setSingleLine(true);
-        linkEdit.setHorizontallyScrolling(true);
+        // vless:// URIs have no whitespace to wrap on, but the user expects the
+        // whole link to be visible at a glance: wrap the editor at character
+        // boundaries across up to three lines (long links become ~3 lines,
+        // short ones stay on one), and let the outer ScrollView handle the
+        // rest. Disable auto-link so the text is rendered in plain black, not
+        // the system "link" colour.
+        linkEdit.setSingleLine(false);
         linkEdit.setMinLines(1);
-        linkEdit.setMaxLines(1);
-        linkEdit.setGravity(Gravity.CENTER_VERTICAL | Gravity.START);
-        linkEdit.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS);
+        linkEdit.setMaxLines(3);
+        linkEdit.setHorizontallyScrolling(false);
+        linkEdit.setAutoLinkMask(0);
+        linkEdit.setGravity(Gravity.TOP);
+        linkEdit.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_MULTI_LINE | InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS);
         linkEdit.setFocusable(true);
         linkEdit.setTransformHintToHeader(true);
         linkEdit.setTextIsSelectable(true);
