@@ -5,10 +5,10 @@ import java.net.URLDecoder
 /**
  * Type detection and display helpers for built-in proxy node links.
  *
- * Generalized to any link that the sing-box engine can carry (vless / trojan /
- * shadowsocks / hysteria2). VMess is intentionally not recognized anymore — the
- * engine no longer builds vmess outbounds and legacy `vmess://` nodes are
- * dropped by the manager when they are loaded.
+ * Generalized to every link that the sing-box engine can carry as an outbound:
+ * vless / vmess / trojan / shadowsocks / hysteria (v1) / hysteria2 / tuic.
+ * ShadowsocksR (`ssr://`) is parsed for diagnostics only — sing-box has no SSR
+ * outbound — and is therefore not listed as supported.
  *
  * A node is stored as its original self-describing link string, so the runtime
  * "type" is recognized purely from the scheme prefix.
@@ -18,19 +18,24 @@ object ProxyTypes {
     /** Schemes that the sing-box engine is able to carry as outbounds. */
     private val SUPPORTED_PREFIXES = arrayOf(
         ProxyParse.VLESS_PROTOCOL,
+        ProxyParse.VMESS_PROTOCOL,
         ProxyParse.TROJAN_PROTOCOL,
         ProxyParse.SS_PROTOCOL,
-        ProxyParse.HYSTERIA2_PROTOCOL
+        ProxyParse.HYSTERIA2_PROTOCOL,
+        ProxyParse.HYSTERIA_PROTOCOL,
+        ProxyParse.TUIC_PROTOCOL
     )
 
     /** Scheme used only for the parseProxies extraction regex / QR routing. */
     private val EXTRACT_PREFIXES = arrayOf(
-        "vless://", "trojan://", "ss://", "hysteria2://",
+        "vless://", "vmess://", "trojan://", "ss://",
+        // hysteria2:// must be tested before the legacy hysteria:// prefix.
+        "hysteria2://", "hysteria://", "tuic://",
         "ssr://", "socks://", "ws://", "wss://"
     )
 
     private val EXTRACT_REGEX = Regex(
-        "(vless|trojan|ss|hysteria2|ssr|socks|ws|wss)://",
+        "(vless|vmess|trojan|ss|hysteria2|hysteria|tuic|ssr|socks|ws|wss)://",
         RegexOption.IGNORE_CASE
     )
 
@@ -46,16 +51,22 @@ object ProxyTypes {
         return ""
     }
 
-    /** Protocol family of [link]: vless / trojan / ss / hysteria2 / ssr / socks / ws / wss / "". */
+    /**
+     * Protocol family of [link]:
+     * vless / vmess / trojan / ss / hysteria / hysteria2 / tuic / ssr / socks / ws / wss / "".
+     */
     @JvmStatic
     fun kind(link: String?): String {
         val prefix = scheme(link)
         if (prefix.isEmpty()) return ""
         return when (prefix) {
             "vless://" -> "vless"
+            "vmess://" -> "vmess"
             "trojan://" -> "trojan"
             "ss://" -> "ss"
             "hysteria2://" -> "hysteria2"
+            "hysteria://" -> "hysteria"
+            "tuic://" -> "tuic"
             "ssr://" -> "ssr"
             "socks://" -> "socks"
             "ws://" -> "ws"
@@ -64,7 +75,7 @@ object ProxyTypes {
         }
     }
 
-    /** Short type tag shown in row titles, e.g. `vless` / `trojan` / `ss` / `hysteria2`. */
+    /** Short type tag shown in row titles, e.g. `vless` / `vmess` / `hysteria2`. */
     @JvmStatic
     fun typeTag(link: String?): String = kind(link)
 
@@ -98,8 +109,11 @@ object ProxyTypes {
         if (fragmentName.isNotBlank()) return fragmentName
         // Protocols that can also carry the name inside their encoded payload.
         return when (kind(link)) {
+            "vmess" -> ProxyParse.parseVmess(link)?.remarks?.trim() ?: ""
             "trojan" -> ProxyParse.parseTrojan(link)?.remarks?.trim() ?: ""
             "ss" -> ProxyParse.parseSs(link)?.remarks?.trim() ?: ""
+            "tuic" -> ProxyParse.parseTuic(link)?.remarks?.trim() ?: ""
+            "hysteria" -> ProxyParse.parseHysteria(link)?.remarks?.trim() ?: ""
             "ssr" -> ProxyParse.parseSsr(link)?.remarks?.trim() ?: ""
             else -> ""
         }
@@ -110,6 +124,12 @@ object ProxyTypes {
     fun nodeServerPort(link: String): String {
         if (link.isBlank()) return link
         val server = when (kind(link)) {
+            "vmess" -> {
+                // The VMess body is base64 JSON, so the generic authority walk
+                // cannot be used — decode it and read add/port.
+                val b = ProxyParse.parseVmess(link)
+                if (b != null) hostPort(b.address, b.port) else ""
+            }
             "trojan" -> {
                 val b = ProxyParse.parseTrojan(link)
                 if (b != null) hostPort(b.address, b.port) else ""
@@ -117,6 +137,14 @@ object ProxyTypes {
             "ss" -> {
                 val b = ProxyParse.parseSs(link)
                 if (b != null) hostPort(b.host, b.remotePort) else ""
+            }
+            "tuic" -> {
+                val b = ProxyParse.parseTuic(link)
+                if (b != null) hostPort(b.server, b.serverPort) else ""
+            }
+            "hysteria" -> {
+                val b = ProxyParse.parseHysteria(link)
+                if (b != null) hostPort(b.server, b.serverPort) else ""
             }
             "ssr" -> {
                 val b = ProxyParse.parseSsr(link)
@@ -141,10 +169,17 @@ object ProxyTypes {
         return "[$tag] " + nodeTitle(link)
     }
 
-    /** Capitalizes the protocol tag used for display (`hysteria2` -> `Hysteria2`). */
+    /** Human-facing protocol tag (`hysteria2` -> `Hysteria2`, `ss` -> `SS`). */
     private fun displayTag(tag: String): String {
         return when (tag) {
+            "vless" -> "VLESS"
+            "vmess" -> "VMess"
+            "trojan" -> "Trojan"
+            "ss" -> "SS"
+            "hysteria" -> "Hysteria"
             "hysteria2" -> "Hysteria2"
+            "tuic" -> "TUIC"
+            "ssr" -> "SSR"
             else -> tag
         }
     }

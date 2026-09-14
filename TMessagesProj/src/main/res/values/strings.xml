@@ -11291,4 +11291,7 @@
     <string name="UnsupportedMessageTitle">Unsupported Message</string>
     <string name="UnsupportedMessageMessage">Update Telegram to view this message</string>
     <string name="UnsupportedUpdate">Update</string>
+    <string name="ProxyLinkFieldLabel">links</string>
+    <string name="SubscriptionFetching">Fetching subscription…</string>
+    <string name="AddProxyLinkNode">Add proxy node</string>
 </resources>

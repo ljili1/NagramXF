@@ -339,6 +339,28 @@ public class ApplicationLoader extends Application {
         super();
     }
 
+    /** True in the dedicated sing-box engine process (`:singbox`). */
+    public static boolean isEngineProcess() {
+        try {
+            String name = getCurrentProcessName();
+            return name != null && name.endsWith(":singbox");
+        } catch (Throwable ignore) {
+            return false;
+        }
+    }
+
+    private static String getCurrentProcessName() {
+        try {
+            if (Build.VERSION.SDK_INT >= 28) {
+                return Application.getProcessName();
+            }
+            java.lang.reflect.Method method = Class.forName("android.app.ActivityThread").getMethod("currentProcessName");
+            return (String) method.invoke(null);
+        } catch (Throwable ignore) {
+            return null;
+        }
+    }
+
     @Override
     public void onCreate() {
         applicationLoaderInstance = this;
@@ -349,6 +371,13 @@ public class ApplicationLoader extends Application {
         }
 
         super.onCreate();
+
+        if (isEngineProcess()) {
+            // The sing-box engine host runs in its own `:singbox` process. Only the bare
+            // Application context is required there (libbox loads its own native library);
+            // the full Telegram stack must not be initialised a second time.
+            return;
+        }
 
         // AndroidUtilities must be initialized before FileLog
         final String helloWorld = AndroidUtilities.getHelloWorld();

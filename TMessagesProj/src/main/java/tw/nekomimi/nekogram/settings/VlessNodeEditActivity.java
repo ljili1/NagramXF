@@ -12,8 +12,11 @@ import android.widget.TextView;
 import android.widget.Toast;
 
 import org.telegram.messenger.AndroidUtilities;
+import org.telegram.messenger.FileLog;
 import org.telegram.messenger.LocaleController;
+import org.telegram.messenger.NotificationCenter;
 import org.telegram.messenger.R;
+import org.telegram.messenger.SharedConfig;
 import org.telegram.ui.ActionBar.ActionBar;
 import org.telegram.ui.ActionBar.ActionBarMenu;
 import org.telegram.ui.ActionBar.BaseFragment;
@@ -24,7 +27,6 @@ import org.telegram.ui.Components.EditTextBoldCursor;
 import org.telegram.ui.Components.LayoutHelper;
 
 import tw.nekomimi.nekogram.helpers.ProxyTypes;
-import tw.nekomimi.nekogram.helpers.VlessProxyManager;
 import tw.nekomimi.nekogram.utils.ProxyUtil;
 
 import java.util.List;
@@ -43,6 +45,7 @@ import java.util.List;
 public class VlessNodeEditActivity extends BaseFragment {
 
     private static final int MENU_DONE = 1;
+    private static final int MENU_SCAN_QR = 2;
 
     /** Link being edited, or null when adding a new node. */
     private final String editingLink;
@@ -61,7 +64,7 @@ public class VlessNodeEditActivity extends BaseFragment {
     public View createView(Context context) {
         actionBar.setBackButtonImage(R.drawable.ic_ab_back);
         actionBar.setAllowOverlayTitle(true);
-        actionBar.setTitle(LocaleController.getString(editingLink == null ? R.string.VlessAddNode : R.string.VlessSettings));
+        actionBar.setTitle(LocaleController.getString(editingLink == null ? R.string.ProxyAddNode : R.string.ProxyDetails));
         actionBar.setActionBarMenuOnItemClick(new ActionBar.ActionBarMenuOnItemClick() {
             @Override
             public void onItemClick(int id) {
@@ -69,10 +72,13 @@ public class VlessNodeEditActivity extends BaseFragment {
                     finishFragment();
                 } else if (id == MENU_DONE) {
                     save();
+                } else if (id == MENU_SCAN_QR) {
+                    showQrScanner();
                 }
             }
         });
         ActionBarMenu menu = actionBar.createMenu();
+        menu.addItem(MENU_SCAN_QR, R.drawable.msg_qrcode_mini_remix);
         menu.addItem(MENU_DONE, R.drawable.ic_done);
 
         ScrollView scrollView = new ScrollView(context);
@@ -88,23 +94,35 @@ public class VlessNodeEditActivity extends BaseFragment {
         fieldContainer.setBackgroundColor(Theme.getColor(Theme.key_windowBackgroundWhite));
         content.addView(fieldContainer, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
 
+        // Permanent field label: a plain TextView, so it stays visible whether
+        // the editor is empty, focused or already filled. Only this long-link
+        // field uses the generic "links" caption.
+        TextView linkHeader = new TextView(context);
+        linkHeader.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 13);
+        linkHeader.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlueHeader, getResourceProvider()));
+        linkHeader.setPadding(AndroidUtilities.dp(21), AndroidUtilities.dp(12), AndroidUtilities.dp(21), 0);
+        linkHeader.setText(LocaleController.getString(R.string.ProxyLinkFieldLabel));
+        fieldContainer.addView(linkHeader, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
+
         linkEdit = new EditTextBoldCursor(context);
-        linkEdit.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 16);
+        linkEdit.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 15);
         linkEdit.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlackText, getResourceProvider()));
-        linkEdit.setHintText(LocaleController.getString(R.string.VlessLinkHint));
-        linkEdit.setHeaderHintColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlueHeader, getResourceProvider()));
+        // Long values (vless://…, vmess://<base64>, a subscription URL) contain no
+        // whitespace to wrap on, so the field is allowed to grow vertically until
+        // the whole value is visible instead of being clipped after N lines.
         linkEdit.setSingleLine(false);
-        linkEdit.setMinLines(2);
-        linkEdit.setMaxLines(6);
+        linkEdit.setMinLines(1);
+        linkEdit.setMaxLines(Integer.MAX_VALUE);
+        linkEdit.setHorizontallyScrolling(false);
         linkEdit.setGravity(Gravity.TOP);
         linkEdit.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_MULTI_LINE | InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS);
         linkEdit.setFocusable(true);
-        linkEdit.setTransformHintToHeader(true);
+        linkEdit.setTextIsSelectable(true);
         linkEdit.setLineColors(Theme.getColor(Theme.key_windowBackgroundWhiteInputField, getResourceProvider()),
                 Theme.getColor(Theme.key_windowBackgroundWhiteInputFieldActivated, getResourceProvider()),
                 Theme.getColor(Theme.key_text_RedRegular, getResourceProvider()));
         linkEdit.setBackground(null);
-        linkEdit.setPadding(AndroidUtilities.dp(20), AndroidUtilities.dp(12), AndroidUtilities.dp(20), AndroidUtilities.dp(12));
+        linkEdit.setPadding(AndroidUtilities.dp(21), AndroidUtilities.dp(4), AndroidUtilities.dp(21), AndroidUtilities.dp(12));
         if (editingLink != null) {
             linkEdit.setText(editingLink);
             linkEdit.setSelection(editingLink.length());
@@ -112,17 +130,6 @@ public class VlessNodeEditActivity extends BaseFragment {
         fieldContainer.addView(linkEdit, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
 
         // --- helpers ---
-        TextSettingsCell scanCell = new TextSettingsCell(context);
-        scanCell.setBackgroundColor(Theme.getColor(Theme.key_windowBackgroundWhite));
-        scanCell.setText(LocaleController.getString(R.string.ScanQrCode), true);
-        scanCell.setOnClickListener(v -> CameraScanActivity.showAsSheet(VlessNodeEditActivity.this, false, CameraScanActivity.TYPE_QR, new CameraScanActivity.CameraScanActivityDelegate() {
-            @Override
-            public void didFindQr(String text) {
-                fillLinkFromText(text);
-            }
-        }));
-        content.addView(scanCell, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
-
         TextSettingsCell pasteCell = new TextSettingsCell(context);
         pasteCell.setBackgroundColor(Theme.getColor(Theme.key_windowBackgroundWhite));
         pasteCell.setText(LocaleController.getString(R.string.PasteFromClipboard), false);
@@ -135,6 +142,8 @@ public class VlessNodeEditActivity extends BaseFragment {
         info.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteGrayText4, getResourceProvider()));
         info.setGravity(Gravity.LEFT);
         info.setPadding(AndroidUtilities.dp(20), AndroidUtilities.dp(12), AndroidUtilities.dp(20), AndroidUtilities.dp(16));
+        info.setLineSpacing(AndroidUtilities.dp(2), 1.0f);
+        info.setTextIsSelectable(true);
         info.setText(LocaleController.getString(R.string.VlessDescription));
         content.addView(info, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
 
@@ -160,28 +169,96 @@ public class VlessNodeEditActivity extends BaseFragment {
         toastInvalidLink();
     }
 
-    /** Fills the editor with the first supported proxy link found in [text]. */
+    /**
+     * Fills the editor from [text]. A direct node link (any sing-box scheme)
+     * fills the field; a subscription URL is downloaded first and then either
+     * fills the field (single node) or imports every node it carries.
+     */
     private void fillLinkFromText(String text) {
         if (text == null || text.trim().isEmpty()) {
             toastInvalidLink();
             return;
         }
-        List<String> links = ProxyUtil.parseProxies(text);
-        for (String link : links) {
-            if (ProxyTypes.isSupported(link)) {
-                linkEdit.setText(link);
-                linkEdit.setSelection(link.length());
-                return;
+        if (ProxyUtil.isSubscriptionText(text)) {
+            toast(LocaleController.getString(R.string.SubscriptionFetching));
+            final String raw = text;
+            new Thread(() -> {
+                final String expanded = ProxyUtil.expandSubscriptions(raw);
+                final List<tw.nekomimi.nekogram.helpers.ProxyLinkParser.Parsed> parsed =
+                        tw.nekomimi.nekogram.helpers.ProxyLinkParser.parse(expanded);
+                AndroidUtilities.runOnUIThread(() -> applyParsedLinks(parsed));
+            }, "proxy-subscription").start();
+            return;
+        }
+        applyParsedLinks(tw.nekomimi.nekogram.helpers.ProxyLinkParser.parse(text));
+    }
+
+    /**
+     * A single supported node fills the field; several nodes (a subscription
+     * body) are all imported into the saved proxy list instead.
+     */
+    private void applyParsedLinks(List<tw.nekomimi.nekogram.helpers.ProxyLinkParser.Parsed> parsed) {
+        if (isFinished || getParentActivity() == null) {
+            return;
+        }
+        List<String> links = new java.util.ArrayList<>();
+        for (tw.nekomimi.nekogram.helpers.ProxyLinkParser.Parsed p : parsed) {
+            if (!(p instanceof tw.nekomimi.nekogram.helpers.ProxyLinkParser.Parsed.NodeLink)) {
+                continue;
+            }
+            String link = tw.nekomimi.nekogram.helpers.ProxyLinkParser.normalizeScheme(
+                    ((tw.nekomimi.nekogram.helpers.ProxyLinkParser.Parsed.NodeLink) p).getLink());
+            if (!ProxyTypes.isSupported(link)) {
+                continue;
+            }
+            if (!links.contains(link)) {
+                links.add(link);
             }
         }
-        toastInvalidLink();
+        if (links.isEmpty()) {
+            toastInvalidLink();
+            return;
+        }
+        if (links.size() == 1) {
+            linkEdit.setText(links.get(0));
+            linkEdit.setSelection(links.get(0).length());
+            return;
+        }
+        int before = SharedConfig.proxyList.size();
+        for (String link : links) {
+            SharedConfig.addNodeProxy(link);
+        }
+        int added = SharedConfig.proxyList.size() - before;
+        if (added <= 0) {
+            toastInvalidLink();
+            return;
+        }
+        toast(LocaleController.formatString("VlessNodesAdded", R.string.VlessNodesAdded, added));
+        finishFragment();
+    }
+
+    private void toast(String text) {
+        Context context = getParentActivity();
+        if (context != null) {
+            Toast.makeText(context, text, Toast.LENGTH_SHORT).show();
+        }
     }
 
     private void toastInvalidLink() {
-        Context context = getParentActivity();
-        if (context != null) {
-            Toast.makeText(context, LocaleController.getString(R.string.VlessNoLinkFound), Toast.LENGTH_SHORT).show();
+        toast(LocaleController.getString(R.string.VlessNoLinkFound));
+    }
+
+    /** Open Telegram's built-in QR scanner and feed the decoded payload to the editor. */
+    private void showQrScanner() {
+        if (isFinished || getParentActivity() == null) {
+            return;
         }
+        CameraScanActivity.showAsSheet(VlessNodeEditActivity.this, false, CameraScanActivity.TYPE_QR, new CameraScanActivity.CameraScanActivityDelegate() {
+            @Override
+            public void didFindQr(String text) {
+                fillLinkFromText(text);
+            }
+        });
     }
 
     private void save() {
@@ -190,15 +267,24 @@ public class VlessNodeEditActivity extends BaseFragment {
         }
         String link = linkEdit == null ? "" : linkEdit.getText().toString().trim();
         boolean ok;
-        if (editingLink != null) {
-            ok = VlessProxyManager.replaceNode(editingLink, link);
-        } else {
-            ok = VlessProxyManager.addNode(link);
+        try {
+            if (editingLink != null) {
+                ok = SharedConfig.editNodeProxy(editingLink, link);
+            } else {
+                ok = SharedConfig.addNodeProxy(link) != null;
+            }
+        } catch (Throwable e) {
+            FileLog.e(e);
+            ok = false;
         }
         if (!ok) {
             toastInvalidLink();
             return;
         }
+        // SharedConfig posts proxySettingsChanged from add/edit, but posting it
+        // again here makes the list page rebuild deterministically the moment
+        // the editor closes — no need to re-enter the page to see the change.
+        NotificationCenter.getGlobalInstance().postNotificationName(NotificationCenter.proxySettingsChanged);
         finishFragment();
     }
 }

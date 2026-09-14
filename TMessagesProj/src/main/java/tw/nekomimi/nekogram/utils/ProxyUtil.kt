@@ -41,6 +41,9 @@ import org.telegram.messenger.R
 import org.telegram.messenger.SharedConfig
 import org.telegram.messenger.TelegramQRCodeWriter
 import org.telegram.messenger.browser.Browser
+import tw.nekomimi.nekogram.helpers.ProxyLinkParser
+import tw.nekomimi.nekogram.helpers.ProxyTypes
+import tw.nekomimi.nekogram.helpers.SubscriptionHelper
 import tw.nekomimi.nekogram.ui.BottomBuilder
 import tw.nekomimi.nekogram.utils.AlertUtil.showToast
 import java.io.File
@@ -303,91 +306,164 @@ object ProxyUtil {
 
     @JvmStatic
     fun importFromClipboard(ctx: Activity) {
-
-        val text = (ApplicationLoader.applicationContext.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager).primaryClip?.getItemAt(0)?.text?.toString()
-
-        val proxies = mutableListOf<SharedConfig.ProxyInfo>()
-
-        var error = false
-
-        text?.trim()?.split('\n')?.map { it.split(" ") }?.forEach { it ->
-
-            it.forEach { line ->
-
-                if (line.startsWith("tg://proxy") ||
-                    line.startsWith("tg://socks") ||
-                    line.startsWith("https://t.me/proxy") ||
-                    line.startsWith("https://t.me/socks")) {
-
-                    runCatching { proxies.add(SharedConfig.ProxyInfo.fromUrl(line)) }.onFailure {
-
-                        error = true
-
-                        showToast(getString(R.string.BrokenLink) + ": ${it.message ?: it.javaClass.simpleName}")
-
-                    }
-
-                }
-
-            }
-
-        }
-
-        runCatching {
-
-            if (proxies.isEmpty() && !error) {
-
-                String(Base64.decode(text, Base64.NO_PADDING)).trim().split('\n').map { it.split(" ") }.forEach { str ->
-
-                    str.forEach { line ->
-
-                        if (line.startsWith("tg://proxy") ||
-                            line.startsWith("tg://socks") ||
-                            line.startsWith("https://t.me/proxy") ||
-                            line.startsWith("https://t.me/socks")) {
-
-                            runCatching { proxies.add(SharedConfig.ProxyInfo.fromUrl(line)) }.onFailure {
-
-                                error = true
-
-                                showToast(getString(R.string.BrokenLink) + ": ${it.message ?: it.javaClass.simpleName}")
-
-                            }
-
-                        }
-
-                    }
-
-                }
-
-            }
-
-        }
-
-        if (proxies.isEmpty()) {
-
-            if (!error) showToast(getString(R.string.BrokenLink))
-
+        val text = clipboardText(ctx)
+        if (text.isNullOrBlank()) {
+            showToast(getString(R.string.BrokenLink))
             return
-
-        } else if (!error) {
-
-            AlertUtil.showSimpleAlert(ctx, getString(R.string.ImportedProxies) + "\n\n" + proxies.joinToString("\n") { it.address })
-
         }
-
-        proxies.forEach {
-
-            SharedConfig.addProxy(it)
-
+        val urls = SubscriptionHelper.extractUrls(text)
+        if (urls.isEmpty()) {
+            applyImport(ctx, ProxyLinkParser.parse(text))
+            return
         }
+        // A subscription URL needs a network round-trip: fetch on a worker
+        // thread, then apply the parsed nodes back on the UI thread.
+        showToast(getString(R.string.SubscriptionFetching))
+        Thread {
+            val all = ArrayList<ProxyLinkParser.Parsed>()
+            all.addAll(ProxyLinkParser.parse(text))
+            var fetchedAny = false
+            for (url in urls) {
+                val body = SubscriptionHelper.fetch(url) ?: continue
+                fetchedAny = true
+                all.addAll(ProxyLinkParser.parse(body))
+            }
+            AndroidUtilities.runOnUIThread {
+                if (!fetchedAny && all.isEmpty()) {
+                    showToast(getString(R.string.VlessFetchFailed))
+                    return@runOnUIThread
+                }
+                applyImport(ctx, all)
+            }
+        }.start()
+    }
 
+    /**
+     * Adds every parsed entry to [SharedConfig] and reports a summary. Must run
+     * on the UI thread (it mutates the shared proxy list and shows a dialog).
+     */
+    @JvmStatic
+    fun applyImport(ctx: Activity, parsed: List<ProxyLinkParser.Parsed>) {
+        if (parsed.isEmpty()) {
+            showToast(getString(R.string.BrokenLink))
+            return
+        }
+        val nativeAdded = mutableListOf<String>()
+        val singAdded = mutableListOf<String>()
+        for (p in parsed) {
+            when (p) {
+                is ProxyLinkParser.Parsed.NodeLink -> {
+                    val link = ProxyLinkParser.normalizeScheme(p.link)
+                    if (!ProxyTypes.isSupported(link)) continue
+                    val obj = SharedConfig.createNodeProxy(link) ?: continue
+                    if (SharedConfig.proxyList.none { it == obj }) {
+                        SharedConfig.addProxy(obj)
+                        singAdded.add(obj.getAddressLine())
+                    }
+                }
+                is ProxyLinkParser.Parsed.NativeConfig -> {
+                    val existing = SharedConfig.proxyList.any {
+                        it.address == p.address && it.port == p.port &&
+                                it.username == p.username && it.password == p.password && it.secret == p.secret
+                    }
+                    if (existing) continue
+                    val info = SharedConfig.ProxyInfo(p.address, p.port, p.username, p.password, p.secret)
+                    SharedConfig.addProxy(info)
+                    nativeAdded.add(info.address)
+                }
+            }
+        }
+        if (nativeAdded.isEmpty() && singAdded.isEmpty()) {
+            showToast(getString(R.string.BrokenLink))
+            return
+        }
+        val summary = buildString {
+            if (nativeAdded.isNotEmpty()) {
+                append(getString(R.string.ImportedProxies))
+                append("\n\n")
+                append(nativeAdded.joinToString("\n"))
+            }
+            if (singAdded.isNotEmpty()) {
+                if (isNotEmpty()) append("\n\n")
+                append(getString(R.string.VlessNodesAdded).replace("%1\$d", singAdded.size.toString()))
+                append("\n\n")
+                append(singAdded.joinToString("\n"))
+            }
+        }
+        AlertUtil.showSimpleAlert(ctx, summary)
         AndroidUtilities.runOnUIThread {
-
             NotificationCenter.getGlobalInstance().postNotificationName(NotificationCenter.proxySettingsChanged)
-
         }
+    }
 
+    /**
+     * Blocking. Returns [text] plus the downloaded body of every subscription URL
+     * it contains, so the caller can parse everything in a single pass. Returns
+     * [text] unchanged when it holds no subscription URL. Never throws.
+     */
+    @JvmStatic
+    fun expandSubscriptions(text: String?): String {
+        if (text.isNullOrBlank()) return text ?: ""
+        val urls = SubscriptionHelper.extractUrls(text)
+        if (urls.isEmpty()) return text
+        val builder = StringBuilder(text)
+        for (url in urls) {
+            val body = SubscriptionHelper.fetch(url) ?: continue
+            builder.append('\n').append(body)
+        }
+        return builder.toString()
+    }
+
+    /** True when [text] holds a subscription URL that must be fetched first. */
+    @JvmStatic
+    fun isSubscriptionText(text: String?): Boolean {
+        if (text.isNullOrBlank()) return false
+        if (ProxyLinkParser.parse(text).isNotEmpty()) return false
+        return SubscriptionHelper.hasSubscriptionUrl(text)
+    }
+
+    @JvmStatic
+    fun clipboardText(context: Context?): String? {
+        if (context == null) {
+            return null
+        }
+        return runCatching {
+            val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+            cm.primaryClip?.getItemAt(0)?.coerceToText(context)?.toString()
+        }.getOrNull()
+    }
+
+    /**
+     * Imports every supported sing-box node link (vless/trojan/ss/hysteria2)
+     * found in [text] as a SharedConfig node proxy object.
+     * @return number of nodes newly added
+     */
+    @JvmStatic
+    fun importSingProxies(text: String?): Int {
+        if (text.isNullOrBlank()) {
+            return 0
+        }
+        var added = 0
+        runCatching {
+            for (p in ProxyLinkParser.parse(text)) {
+                if (p !is ProxyLinkParser.Parsed.NodeLink) continue
+                val link = ProxyLinkParser.normalizeScheme(p.link)
+                if (!ProxyTypes.isSupported(link)) continue
+                val created = SharedConfig.createNodeProxy(link) ?: continue
+                if (SharedConfig.proxyList.none { it == created }) {
+                    SharedConfig.addProxy(created)
+                    added++
+                }
+            }
+        }.onFailure {
+            FileLog.e(it)
+        }
+        if (added > 0) {
+            AndroidUtilities.runOnUIThread {
+                NotificationCenter.getGlobalInstance().postNotificationName(NotificationCenter.proxySettingsChanged)
+            }
+        }
+        return added
     }
 
     @JvmStatic
@@ -405,12 +481,12 @@ object ProxyUtil {
     // Adapted from Nekogram X 9.3.3 (GPL-3.0): pulls every standard proxy link
     // token out of a pasted text / subscription body / QR payload. Native
     // Telegram proxy links (tg://proxy etc.) are handled by the existing native
-    // import path and intentionally left out of this extractor. vmess:// links
-    // are intentionally not matched anymore — the sing-box engine no longer
-    // carries them and VlessProxyManager.addNode rejects them at import time.
+    // import path and intentionally left out of this extractor. Every scheme the
+    // sing-box engine carries is listed here (vless/vmess/trojan/ss/hysteria/
+    // hysteria2/tuic); `ssr` is kept so the caller can report it as unsupported.
 
     private val proxySchemeRegex = Regex(
-        "(vless|trojan|ss|hysteria2|ssr|socks|ws|wss)://",
+        "(vless|vmess|trojan|ss|hysteria2|hysteria|tuic|ssr|socks|ws|wss)://",
         RegexOption.IGNORE_CASE
     )
 
