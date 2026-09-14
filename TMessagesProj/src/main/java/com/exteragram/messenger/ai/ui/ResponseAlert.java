@@ -140,6 +140,7 @@ public abstract class ResponseAlert extends BottomSheet implements NotificationC
         loadingTextView.setPadding(AndroidUtilities.dp(22), AndroidUtilities.dp(12), AndroidUtilities.dp(22), AndroidUtilities.dp(6));
         loadingTextView.setTextSize(1, SharedConfig.fontSize);
         loadingTextView.setTextColor(getThemedColor(Theme.key_dialogTextBlack));
+        loadingTextView.setTypeface(AndroidUtilities.regular());
         loadingTextView.setLinkTextColor(Theme.multAlpha(getThemedColor(Theme.key_dialogTextBlack), 0.2f));
         thinkingDotsView = new ThinkingDotsView(context, getThemedColor(Theme.key_dialogTextBlack));
         setPrompt(str.trim());
@@ -155,6 +156,7 @@ public abstract class ResponseAlert extends BottomSheet implements NotificationC
         textView.setDisablePaddingsOffsetY(true);
         textView.setPadding(AndroidUtilities.dp(22), AndroidUtilities.dp(12), AndroidUtilities.dp(22), AndroidUtilities.dp(6));
         textView.setTextSize(1, SharedConfig.fontSize);
+        textView.setTypeface(AndroidUtilities.regular());
         textView.setTextColor(getThemedColor(Theme.key_dialogTextBlack));
         textView.setLinkTextColor(getThemedColor(Theme.key_chat_messageLinkIn));
         textView.setTextIsSelectable(true);

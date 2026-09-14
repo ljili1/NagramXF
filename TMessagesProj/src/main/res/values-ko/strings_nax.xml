@@ -5,6 +5,11 @@
     <string name="JoinOfficialChannelTitle">공식 채널 참여</string>
     <string name="JoinOfficialChannelMessage">Nagram X에 오신 것을 환영합니다! 최신 업데이트와 소식을 받아보려면 공식 채널 @NagramXF에 참여하시겠습니까?</string>
     <string name="EnableSaveDeletedMessages">삭제된 메시지 저장</string>
+    <string name="OnceVideoMessageNote">이 동영상 메시지는 조회 후 유지됩니다.</string>
+    <string name="OncePhotoMessageNote">이 사진 메시지는 조회 후 유지됩니다.</string>
+    <string name="ExpiringVideoMessageNote">이 동영상 메시지는 타이머 종료 후 유지됩니다.</string>
+    <string name="ExpiringVoiceMessageNote">이 음성 메시지는 타이머 종료 후 유지됩니다.</string>
+    <string name="OneViewTTL">1회 보기</string>
     <string name="DeletedMessage">삭제됨</string>
     <string name="EnableSaveEditsHistory">수정 기록 저장</string>
     <string name="EditsHistoryMenuText">수정 기록</string>

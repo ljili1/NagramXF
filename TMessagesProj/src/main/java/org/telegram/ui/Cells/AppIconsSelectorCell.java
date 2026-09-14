@@ -216,6 +216,7 @@ public class AppIconsSelectorCell extends RecyclerListView implements Notificati
             titleView.setGravity(Gravity.CENTER_HORIZONTAL);
             titleView.setLineSpacing(TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, 5.0f,  getResources().getDisplayMetrics()), 1.0f);
             titleView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 13);
+            titleView.setTypeface(AndroidUtilities.regular());
             titleView.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlackText));
             addView(titleView, LayoutHelper.createLinear(LayoutHelper.WRAP_CONTENT, LayoutHelper.WRAP_CONTENT, Gravity.CENTER_HORIZONTAL, 0, 4, 0, 0));
 

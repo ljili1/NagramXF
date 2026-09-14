@@ -2,6 +2,11 @@
 <resources>
     <string name="XChannel">Канал Nagram X</string>
     <string name="EnableSaveDeletedMessages">Сохранять удалённые сообщения</string>
+    <string name="OnceVideoMessageNote">Это видеосообщение будет сохранено после просмотра.</string>
+    <string name="OncePhotoMessageNote">Это фото будет сохранено после просмотра.</string>
+    <string name="ExpiringVideoMessageNote">Это видеосообщение будет сохранено после таймера.</string>
+    <string name="ExpiringVoiceMessageNote">Это голосовое сообщение будет сохранено после таймера.</string>
+    <string name="OneViewTTL">один просмотр</string>
     <string name="DeletedMessage">удалено</string>
     <string name="EnableSaveEditsHistory">Сохранять историю изменений</string>
     <string name="EditsHistoryMenuText">История изменений</string>

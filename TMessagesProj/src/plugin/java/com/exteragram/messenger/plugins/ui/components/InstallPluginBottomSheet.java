@@ -97,6 +97,7 @@ public class InstallPluginBottomSheet extends BottomSheet {
         subtitleView.setGravity(Gravity.CENTER_HORIZONTAL);
         subtitleView.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteGrayText, resourcesProvider));
         subtitleView.setLinkTextColor(Theme.getColor(Theme.key_dialogTextLink, resourcesProvider));
+        subtitleView.setTypeface(AndroidUtilities.regular());
         subtitleView.setTextSize(1, 14);
         SpannableStringBuilder subtitle = new SpannableStringBuilder(LocaleController.getString(R.string.PluginVersion)).append(" ");
         int strikeStart = subtitle.length();
@@ -128,6 +129,7 @@ public class InstallPluginBottomSheet extends BottomSheet {
         sourceBadge.addView(sourceIcon, LayoutHelper.createLinear(14, 14, Gravity.CENTER_VERTICAL, 0, 0, 6, 0));
         TextView sourceText = new TextView(activity);
         sourceText.setTextColor(sourceColor);
+        sourceText.setTypeface(AndroidUtilities.regular());
         sourceText.setTextSize(1, 13);
         sourceText.setText(LocaleController.getString(params.trusted ? R.string.PluginSourceTrusted : R.string.PluginSourceUnknown));
         sourceBadge.addView(sourceText, LayoutHelper.createLinear(LayoutHelper.WRAP_CONTENT, LayoutHelper.WRAP_CONTENT, Gravity.CENTER_VERTICAL));
@@ -142,6 +144,7 @@ public class InstallPluginBottomSheet extends BottomSheet {
         TextViewEffects descriptionView = new TextViewEffects(activity, resourcesProvider);
         descriptionView.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlackText, resourcesProvider));
         descriptionView.setLinkTextColor(Theme.getColor(Theme.key_dialogTextLink, resourcesProvider));
+        descriptionView.setTypeface(AndroidUtilities.regular());
         descriptionView.setTextSize(1, 15);
         descriptionView.setText(LocaleUtils.fullyFormatText(validationResult.plugin.getDescription(), fragment, new Runnable() {
             @Override
@@ -453,11 +456,11 @@ public class InstallPluginBottomSheet extends BottomSheet {
                 Long forwardedFromId = messageObject.getForwardedFromId();
                 if (forwardedFromId != null) {
                     long sourceId = -forwardedFromId;
-                    trusted = BadgesController.INSTANCE.isTrusted(sourceId) || BadgesController.INSTANCE.isExtera(sourceId);
+                    trusted = BadgesController.INSTANCE.isTrusted(sourceId);
                 }
             } else if (messageObject.isFromChannel() && !messageObject.isFromChat()) {
                 long sourceId = -messageObject.getDialogId();
-                trusted = BadgesController.INSTANCE.isTrusted(sourceId) || BadgesController.INSTANCE.isExtera(sourceId);
+                trusted = BadgesController.INSTANCE.isTrusted(sourceId);
             }
             return new PluginInstallParams(MessageHelper.getPathToMessage(messageObject), trusted);
         }

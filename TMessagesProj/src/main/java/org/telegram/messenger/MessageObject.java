@@ -35,7 +35,6 @@ import android.text.SpannableString;
 import android.text.SpannableStringBuilder;
 import android.text.Spanned;
 import android.text.StaticLayout;
-import android.text.TextPaint;
 import android.text.TextUtils;
 import android.text.style.CharacterStyle;
 import android.text.style.ClickableSpan;
@@ -51,6 +50,8 @@ import androidx.collection.LongSparseArray;
 import androidx.core.graphics.ColorUtils;
 
 import org.telegram.PhoneFormat.PhoneFormat;
+import com.exteragram.messenger.utils.ui.TextPaint;
+
 import org.telegram.messenger.browser.Browser;
 import org.telegram.messenger.ringtone.RingtoneDataStore;
 import org.telegram.messenger.utils.tlutils.AmountUtils;
@@ -6188,11 +6189,11 @@ public class MessageObject {
         return formatTextWithEntities(text, out, paint);
     }
 
-    public static CharSequence formatTextWithEntities(TLRPC.TL_textWithEntities text, boolean out, TextPaint paint) {
+    public static CharSequence formatTextWithEntities(TLRPC.TL_textWithEntities text, boolean out, android.text.TextPaint paint) {
         return formatTextWithEntities(text, out, false, paint);
     }
 
-    public static CharSequence formatTextWithEntities(TLRPC.TL_textWithEntities text, boolean out, boolean photoViewer, TextPaint paint) {
+    public static CharSequence formatTextWithEntities(TLRPC.TL_textWithEntities text, boolean out, boolean photoViewer, android.text.TextPaint paint) {
         CharSequence taskText = new SpannableStringBuilder(text.text);
         addEntitiesToText(taskText, text.entities, out, false, photoViewer, false);
         taskText = Emoji.replaceEmoji(taskText, paint.getFontMetricsInt(), false);
@@ -7607,7 +7608,7 @@ public class MessageObject {
             SpannableString ssb = new SpannableString(getString(R.string.NoWordsRecognized));
             ssb.setSpan(new CharacterStyle() {
                 @Override
-                public void updateDrawState(TextPaint textPaint) {
+                public void updateDrawState(android.text.TextPaint textPaint) {
                     textPaint.setTextSize(textPaint.getTextSize() * .8f);
                     textPaint.setColor(Theme.chat_timePaint.getColor());
                 }
@@ -8707,11 +8708,11 @@ public class MessageObject {
         return addEntitiesToText(messageText, useManualParse);
     }
 
-    public static StaticLayout makeStaticLayout(CharSequence text_, TextPaint paint, int width, float lineSpacingMult, float lineSpacingAdd, boolean dontIncludePad) {
+    public static StaticLayout makeStaticLayout(CharSequence text_, android.text.TextPaint paint, int width, float lineSpacingMult, float lineSpacingAdd, boolean dontIncludePad) {
         return makeStaticLayout(text_, paint, width, lineSpacingMult, lineSpacingAdd, dontIncludePad, Layout.Alignment.ALIGN_NORMAL);
     }
 
-    public static StaticLayout makeStaticLayout(CharSequence text_, TextPaint paint, int width, float lineSpacingMult, float lineSpacingAdd, boolean dontIncludePad, Layout.Alignment alignment) {
+    public static StaticLayout makeStaticLayout(CharSequence text_, android.text.TextPaint paint, int width, float lineSpacingMult, float lineSpacingAdd, boolean dontIncludePad, Layout.Alignment alignment) {
         if (width <= 0) width = 1;
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
             final CharSequence text = /* Build.VERSION.SDK_INT >= Build.VERSION_CODES.P ?
@@ -8876,7 +8877,7 @@ public class MessageObject {
                 text = new SpannableStringBuilder(text.subSequence(0, offset)).append("… ").append(readMore);
                 ((SpannableStringBuilder) text).setSpan(new CharacterStyle() {
                     @Override
-                    public void updateDrawState(TextPaint tp) {
+                    public void updateDrawState(android.text.TextPaint tp) {
                         tp.setColor(Theme.chat_msgTextPaint.linkColor);
                     }
                 }, text.length() - readMore.length(), text.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
@@ -9352,7 +9353,7 @@ public class MessageObject {
                     text = new SpannableStringBuilder(text.subSequence(0, offset)).append("… ").append(readMore);
                     ((SpannableStringBuilder) text).setSpan(new CharacterStyle() {
                         @Override
-                        public void updateDrawState(TextPaint tp) {
+                        public void updateDrawState(android.text.TextPaint tp) {
                             tp.setColor(Theme.chat_msgTextPaint.linkColor);
                         }
                     }, text.length() - readMore.length(), text.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
@@ -10121,8 +10122,19 @@ public class MessageObject {
     }
 
     public boolean needDrawBluredPreview() {
+        return needDrawBluredPreview(!NaConfig.INSTANCE.getEnableSaveDeletedMessages().Bool());
+    }
+
+    /**
+     * @param checkTtl 为 true 时检查原始 TTL，以供专用查看器和加密缓存使用。
+     */
+    public boolean needDrawBluredPreview(boolean checkTtl) {
         if (isRepostPreview) {
             return false;
+        }
+        if (!checkTtl) {
+            // show view-once media directly in the chat; only round videos stay blurred
+            return messageOwner instanceof TLRPC.TL_message && getMedia(messageOwner) != null && getMedia(messageOwner).ttl_seconds != 0 && isRoundVideo();
         }
         if (hasExtendedMediaPreview()) {
             return true;
@@ -12101,7 +12113,7 @@ public class MessageObject {
             TLRPC.PhotoSize currentPhotoObject = FileLoader.getClosestPhotoSizeWithSize(photoThumbs, AndroidUtilities.getPhotoSize(true));
             if (currentPhotoObject != null) {
                 File file = FileLoader.getInstance(currentAccount).getPathToMessage(messageOwner, useFileDatabaseQueue);
-                if (needDrawBluredPreview()) {
+                if (needDrawBluredPreview(true)) {
                     mediaExists = new File(file.getAbsolutePath() + ".enc").exists();
                 }
                 if (!mediaExists) {
@@ -12116,7 +12128,7 @@ public class MessageObject {
             }
             if (!attachPathExists) {
                 File file = FileLoader.getInstance(currentAccount).getPathToMessage(messageOwner, useFileDatabaseQueue);
-                if (type == TYPE_VIDEO && needDrawBluredPreview() || isVoiceOnce() || isRoundOnce()) {
+                if (type == TYPE_VIDEO && needDrawBluredPreview(true) || isVoiceOnce() || isRoundOnce()) {
                     mediaExists = new File(file.getAbsolutePath() + ".enc").exists();
                 }
                 if (!mediaExists) {

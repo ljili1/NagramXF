@@ -33,6 +33,8 @@ import org.telegram.ui.Components.LayoutHelper;
 import org.telegram.ui.LaunchActivity;
 import org.telegram.ui.MainTabsActivity;
 
+import tw.nekomimi.nekogram.helpers.MainTabsHelper;
+
 import java.util.ArrayList;
 
 /**
@@ -271,7 +273,7 @@ public class FeedActivity extends BaseFragment implements NotificationCenter.Not
             @Override
             public int getBottomOffset(int type) {
                 if (FeedActivity.this.chatContainer == null || FeedActivity.this.chatContainer.chatActivity == null) {
-                    return 0;
+                    return FeedActivity.this.hasMainTabs ? AndroidUtilities.dp(MainTabsHelper.getMainTabsHeight() + MainTabsHelper.getMainTabsMargin()) : 0;
                 }
                 return FeedActivity.this.chatContainer.chatActivity.getBulletinBottomOffset();
             }

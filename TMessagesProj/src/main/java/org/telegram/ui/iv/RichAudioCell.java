@@ -96,6 +96,7 @@ public class RichAudioCell extends RichBlockCell
         setWillNotDraw(false);
 
         observerTag = DownloadController.getInstance(currentAccount).generateObserverTag();
+        audioTimePaint.setTypeface(AndroidUtilities.regular());
 
         radialProgress = new RadialProgress2(this, resourcesProvider);
         radialProgress.setCircleRadius(dp(24));

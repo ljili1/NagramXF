@@ -64,7 +64,7 @@ public class NekoAyuMomentsSettingsActivity extends BaseNekoXSettingsActivity {
     private final AbstractConfigCell customHeaderRow = cellGroup.appendCell(new ConfigCellHeader(getString(R.string.AyuMomentsCustomHeader)));
     private final AbstractConfigCell deletedMessagesPreviewRow = cellGroup.appendCell(new ConfigCellCustom("DeletedMessagesAppearancePreviewRow", ConfigCellCustom.CUSTOM_ITEM_DeletedMessagesAppearanceCard, false));
     private final AbstractConfigCell translucentDeletedMessagesRow = cellGroup.appendCell(new ConfigCellTextCheck(NaConfig.INSTANCE.getTranslucentDeletedMessages()));
-    private final AbstractConfigCell deletedMarkRow = cellGroup.appendCell(new ConfigCellCustom(NaConfig.INSTANCE.getDeletedIconStyle().getKey(), CellGroup.ITEM_TYPE_TEXT_SETTINGS_CELL, true));
+    private final AbstractConfigCell deletedMarkRow = cellGroup.appendCell(new ConfigCellCustom(NaConfig.INSTANCE.getDeletedIconStyle().getKey(), CellGroup.ITEM_TYPE_TEXT_SETTINGS_CELL, true, R.string.DeletedMarkText));
     private final AbstractConfigCell deletedMarkColorRow = cellGroup.appendCell(new ConfigCellCustom(NaConfig.INSTANCE.getDeletedIconColor().getKey(), ConfigCellCustom.CUSTOM_ITEM_DeletedMessagesColorPicker, false));
     private final AbstractConfigCell customDeletedMarkRow = cellGroup.appendCell(new ConfigCellTextInput(null, NaConfig.INSTANCE.getCustomDeletedMark(), "", null));
     private final AbstractConfigCell dividerCustomExperimentalRow = cellGroup.appendCell(new ConfigCellDivider());

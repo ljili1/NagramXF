@@ -80,16 +80,15 @@ public class TypefaceHelper {
                     Build.VERSION.SDK_INT >= Build.VERSION_CODES.P ? Typeface.create(Typeface.SANS_SERIF, 400, true) : Typeface.create("sans-serif", Typeface.ITALIC);
             case AndroidUtilities.TYPEFACE_ROBOTO_MONO ->
                     Typeface.MONOSPACE;
+            case AndroidUtilities.TYPEFACE_ROBOTO_REGULAR ->
+                    Typeface.SANS_SERIF;
             default -> createTypefaceFromAsset(assetPath);
         };
     }
 
     public static Typeface createTypefaceFromAsset(String assetPath) {
         Typeface.Builder builder = new Typeface.Builder(ApplicationLoader.applicationContext.getAssets(), assetPath);
-        if (assetPath.contains("rextrabold")) {
-            builder.setWeight(800);
-        }
-        if (assetPath.contains("medium") || assetPath.contains("rbold")) {
+        if (assetPath.contains("medium")) {
             builder.setWeight(700);
         }
         if (assetPath.contains("italic")) {

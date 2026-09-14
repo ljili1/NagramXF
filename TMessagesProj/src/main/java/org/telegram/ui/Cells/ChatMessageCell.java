@@ -272,6 +272,7 @@ import tw.nekomimi.nekogram.NekoXConfig;
 import tw.nekomimi.nekogram.filters.AyuFilter;
 import tw.nekomimi.nekogram.helpers.MessageHelper;
 import tw.nekomimi.nekogram.helpers.TimeStringHelper;
+import com.radolyn.ayugram.utils.AyuMessageUtils;
 import tw.nekomimi.nekogram.helpers.TranscribeHelper;
 import tw.nekomimi.nekogram.ui.icons.BaseIconPacks;
 import tw.nekomimi.nekogram.utils.AndroidUtil;
@@ -18645,6 +18646,7 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
             }
         }
         CharSequence timeString;
+        int ttlIconWidth = 0;
         TLRPC.User author = null;
         if (currentMessageObject.isFromUser()) {
             author = MessagesController.getInstance(currentAccount).getUser(fromId);
@@ -18734,6 +18736,15 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
         if (currentMessageObject.messageOwner.video_processing_pending) {
             timeString = formatString(R.string.ScheduledTimeApprox, timeString);
         }
+        if (!currentMessageObject.isSponsored() && !TextUtils.isEmpty(timeString)) {
+            AyuMessageUtils.Triple ttlInfo = AyuMessageUtils.formatTTL(currentMessageObject, true);
+            if (ttlInfo != null) {
+                timeString = new SpannableStringBuilder(ttlInfo.text)
+                    .append(ttlInfo.useSeparator ? " | " : " ")
+                    .append(timeString);
+                ttlIconWidth = ttlInfo.width;
+            }
+        }
         if (NaConfig.INSTANCE.getShowMessageID().Bool() && messageObject.messageOwner != null/* && (isChat || isMegagroup || ChatObject.isChannel(currentChat))*/) {
             if (!(timeString instanceof SpannableStringBuilder)) {
                 timeString = new SpannableStringBuilder(timeString);
@@ -18787,6 +18798,9 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
             }
         }
         timeTextWidth = timeWidth = (int) Math.ceil(Theme.chat_timePaint.measureText(currentTimeString, 0, currentTimeString == null ? 0 : currentTimeString.length()));
+        if (ttlIconWidth != 0) {
+            timeTextWidth = timeWidth += ttlIconWidth;
+        }
         if (timeString instanceof SpannableStringBuilder) {
             if (edited && NaConfig.INSTANCE.getUseEditedIcon().Bool() && TimeStringHelper.editedDrawable != null) {
                 timeTextWidth = timeWidth += TimeStringHelper.editedDrawable.getIntrinsicWidth();

@@ -255,7 +255,7 @@ public abstract class BaseNekoSettingsActivity extends BaseFragment {
                 layoutManager.scrollToPositionWithOffset(position, dp(60));
                 return position;
             });
-        } else {
+        } else if (unknown != null) {
             unknown.run();
         }
     }

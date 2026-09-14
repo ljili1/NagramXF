@@ -7,6 +7,7 @@ import android.app.Activity;
 import android.net.Uri;
 import android.text.TextUtils;
 
+import com.exteragram.messenger.ai.ui.activities.AiPreferencesActivity;
 import com.exteragram.messenger.pillstack.ui.PillStackPreferencesActivity;
 import com.exteragram.messenger.plugins.PluginsController;
 import com.exteragram.messenger.plugins.ui.PluginsActivity;
@@ -17,7 +18,9 @@ import org.telegram.ui.ActionBar.BaseFragment;
 
 import java.util.ArrayList;
 import java.util.Map;
+import java.util.function.Supplier;
 
+import tw.nekomimi.nekogram.config.cell.AbstractConfigCell;
 import tw.nekomimi.nekogram.settings.BaseNekoSettingsActivity;
 import tw.nekomimi.nekogram.settings.BaseNekoXSettingsActivity;
 import tw.nekomimi.nekogram.settings.GhostModeActivity;
@@ -175,15 +178,6 @@ public class SettingsHelper {
 
     public static ArrayList<SettingsSearchResult> onCreateSearchArray(Callback callback) {
         ArrayList<SettingsSearchResult> items = new ArrayList<>();
-        ArrayList<BaseNekoXSettingsActivity> fragments = new ArrayList<>();
-        fragments.add(new NekoGeneralSettingsActivity());
-        fragments.add(new NekoAppearanceSettingsActivity());
-        fragments.add(new NekoAyuMomentsSettingsActivity());
-        fragments.add(new NekoAyuSpySettingsActivity());
-        fragments.add(new NekoChatSettingsActivity());
-        fragments.add(new NekoExperimentalSettingsActivity());
-        fragments.add(new NekoTranslatorSettingsActivity());
-
         String n_title = getString(R.string.NekoSettings);
         if (PluginsController.isPluginEngineSupported()) {
             items.add(new SettingsSearchResult(
@@ -195,31 +189,72 @@ public class SettingsHelper {
                     () -> callback.presentFragment(new PluginsActivity())
             ));
         }
-        for (BaseNekoXSettingsActivity fragment: fragments) {
-            int uid = fragment.getBaseGuid();
+        // 顶层 N 设置页：既是搜索结果分类入口，也索引其内部选项。
+        BaseNekoXSettingsActivity[] pages = {
+                new NekoGeneralSettingsActivity(),
+                new NekoAppearanceSettingsActivity(),
+                new NekoAyuMomentsSettingsActivity(),
+                new NekoAyuSpySettingsActivity(),
+                new NekoChatSettingsActivity(),
+                new NekoExperimentalSettingsActivity(),
+                new NekoTranslatorSettingsActivity(),
+                // 子设置页：入口行已在父页面可搜，这里只补充索引其内部选项。
+                new GhostModeActivity(),
+                new MainTabsCustomizeActivity(),
+                new RegexFiltersSettingActivity(),
+                new AiPreferencesActivity(),
+        };
+        final int topPageCount = 7;
+
+        for (int idx = 0; idx < pages.length; idx++) {
+            BaseNekoXSettingsActivity fragment = pages[idx];
             int drawable = fragment.getDrawable();
             String f_title = fragment.getTitle();
-            for (Map.Entry<Integer, String> entry : fragment.getRowMapReverse().entrySet()) {
-                Integer i = entry.getKey();
-                String key = entry.getValue();
-                if (key.equals(String.valueOf(i))) {
-                    continue;
-                }
-                int guid = uid + i;
-                String title = getString(key);
-                if (title == null || title.isEmpty()) {
-                    continue;
-                }
+            if (idx < topPageCount && !TextUtils.isEmpty(f_title)) {
+                items.add(new SettingsSearchResult(searchGuid(fragment.getClass(), "", 0), f_title, n_title, null, drawable,
+                        () -> callback.presentFragment(fragment)));
+            }
+            for (Map.Entry<String, AbstractConfigCell> entry : fragment.getSearchRows().entrySet()) {
+                String key = entry.getKey();
                 Runnable open = () -> {
                     callback.presentFragment(fragment);
                     AndroidUtilities.runOnUIThread(() -> fragment.scrollToRow(key, null));
                 };
-                SettingsSearchResult result = new SettingsSearchResult(
-                        guid, title, n_title, f_title, drawable, open
-                );
-                items.add(result);
+                int titleIndex = 0;
+                for (CharSequence title : entry.getValue().getSearchTitles()) {
+                    int guid = searchGuid(fragment.getClass(), key, titleIndex++);
+                    if (TextUtils.isEmpty(title) || title.toString().startsWith("LOC_ERR")) {
+                        continue;
+                    }
+                    items.add(new SettingsSearchResult(guid, title.toString(), n_title, f_title, drawable, open));
+                }
             }
         }
+        addSearchRow(items, callback, SidebarMenuActivity::new, SidebarMenuActivity.class,
+                R.string.DrawerElements, R.string.HomeDrawer, "navigationDrawerEnabled", R.drawable.menu_newfilter);
+        addSearchRow(items, callback, PillStackPreferencesActivity::new, PillStackPreferencesActivity.class,
+                R.string.PillStackPills, R.string.PillStackInfiniteScrolling, "pillStackInfiniteScrolling", R.drawable.ic_ab_search);
+        if (!PasscodeHelper.isSettingsHidden()) {
+            items.add(new SettingsSearchResult(searchGuid(NekoPasscodeSettingsActivity.class, "", 0),
+                    getString(R.string.PasscodeNeko), n_title, null, R.drawable.msg_secret,
+                    () -> callback.presentFragment(new NekoPasscodeSettingsActivity())));
+        }
         return items;
+    }
+
+    private static void addSearchRow(ArrayList<SettingsSearchResult> items, Callback callback,
+                                     Supplier<? extends BaseNekoSettingsActivity> factory, Class<?> page,
+                                     int pageTitle, int title, String key, int icon) {
+        items.add(new SettingsSearchResult(searchGuid(page, key, 0), getString(title),
+                getString(R.string.NekoSettings), getString(pageTitle), icon, () -> {
+            BaseNekoSettingsActivity fragment = factory.get();
+            callback.presentFragment(fragment);
+            AndroidUtilities.runOnUIThread(() -> fragment.scrollToRow(key, null));
+        }));
+    }
+
+    private static int searchGuid(Class<?> page, String key, int titleIndex) {
+        // Keep search-history identities stable across row insertion, folding and locale changes.
+        return 0x40000000 | ((page.getName() + ":" + key + ":" + titleIndex).hashCode() & 0x3fffffff);
     }
 }

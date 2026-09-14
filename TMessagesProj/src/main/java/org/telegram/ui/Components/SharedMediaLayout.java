@@ -38,7 +38,7 @@ import android.text.SpannableString;
 import android.text.SpannableStringBuilder;
 import android.text.Spanned;
 import android.text.StaticLayout;
-import android.text.TextPaint;
+import com.exteragram.messenger.utils.ui.TextPaint;
 import android.text.TextUtils;
 import android.text.style.ForegroundColorSpan;
 import android.transition.TransitionManager;
@@ -9130,6 +9130,7 @@ public class SharedMediaLayout extends FrameLayout implements NotificationCenter
                     msg.noforwards = omsg.noforwards;
                     // AyuGram: 已删除标记必须一起复制，否则媒体查看器里会丢掉转发/保存限制
                     msg.ayuDeleted = omsg.ayuDeleted;
+                    msg.ayuDeleteDate = omsg.ayuDeleteDate;
                     msg.invert_media = omsg.invert_media;
                     msg.offline = omsg.offline;
                     msg.factcheck = omsg.factcheck;

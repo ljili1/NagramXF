@@ -1,12 +1,16 @@
 package com.radolyn.ayugram.utils;
 
+import android.text.SpannableStringBuilder;
+import android.text.Spanned;
 import android.text.TextUtils;
 import android.util.Log;
 
+import androidx.collection.LongSparseArray;
 import androidx.core.util.Pair;
 
 import com.radolyn.ayugram.AyuConstants;
 import com.radolyn.ayugram.AyuUtils;
+import com.radolyn.ayugram.controllers.AyuAttachments;
 import com.radolyn.ayugram.database.entities.AyuMessageBase;
 import com.radolyn.ayugram.messages.AyuMessagesController;
 import com.radolyn.ayugram.messages.AyuSavePreferences;
@@ -19,8 +23,10 @@ import org.telegram.messenger.DialogObject;
 import org.telegram.messenger.FileLoader;
 import org.telegram.messenger.FileLog;
 import org.telegram.messenger.LiteMode;
+import org.telegram.messenger.LocaleController;
 import org.telegram.messenger.MessageObject;
 import org.telegram.messenger.MessagesController;
+import org.telegram.messenger.R;
 import org.telegram.messenger.UserConfig;
 import org.telegram.messenger.Utilities;
 import org.telegram.messenger.secretmedia.EncryptedFileInputStream;
@@ -28,7 +34,9 @@ import org.telegram.tgnet.NativeByteBuffer;
 import org.telegram.tgnet.TLObject;
 import org.telegram.tgnet.TLRPC;
 import org.telegram.tgnet.tl.TL_iv;
+import org.telegram.ui.ActionBar.Theme;
 import org.telegram.ui.ChatActivity;
+import org.telegram.ui.Components.ColoredImageSpan;
 
 import java.io.File;
 import java.io.FileOutputStream;
@@ -118,6 +126,68 @@ public abstract class AyuMessageUtils {
             return true;
         }
         return compareMessages(candidate.messageOwner, existing.messageOwner) < 0;
+    }
+
+    /**
+     * 从本批更新里捞出被删除的消息本体。
+     *
+     * <p>删除更新常常和新消息更新同批到达（评论、bot 撤回等场景），
+     * 此时消息还只在本次更新的对象里，内存索引和 messages_v2 都查不到。
+     *
+     * @param batchMessages 本批更新已构造出的 MessageObject，按 dialogId 分组
+     * @param rawMessages   本批更新里的原始 TL 消息
+     * @param pushMessages  本批更新构造的通知消息
+     */
+    public static MessageObject extractFromUpdates(int account, long dialogId, int messageId,
+            LongSparseArray<ArrayList<MessageObject>> batchMessages,
+            ArrayList<TLRPC.Message> rawMessages,
+            ArrayList<MessageObject> pushMessages) {
+        if (batchMessages != null) {
+            for (int a = 0; a < batchMessages.size(); a++) {
+                if (dialogId != 0 && batchMessages.keyAt(a) != dialogId) {
+                    continue;
+                }
+                ArrayList<MessageObject> list = batchMessages.valueAt(a);
+                if (list == null) continue;
+                for (MessageObject obj : list) {
+                    if (matchesDeletionMessage(account, dialogId, messageId, obj)) return obj;
+                }
+            }
+        }
+        if (rawMessages != null) {
+            for (int i = 0; i < rawMessages.size(); i++) {
+                TLRPC.Message message = rawMessages.get(i);
+                if (message == null || message.id != messageId) {
+                    continue;
+                }
+                long messageDialogId = MessageObject.getDialogId(message);
+                if (messageDialogId == dialogId || (dialogId == 0 && messageId > 0
+                        && !DialogObject.isEncryptedDialog(messageDialogId)
+                        && message.peer_id != null && message.peer_id.channel_id == 0)) {
+                    return new MessageObject(account, message, false, false);
+                }
+            }
+        }
+        if (pushMessages != null) {
+            for (int i = 0; i < pushMessages.size(); i++) {
+                MessageObject obj = pushMessages.get(i);
+                if (matchesDeletionMessage(account, dialogId, messageId, obj)) {
+                    return obj;
+                }
+            }
+        }
+        return null;
+    }
+
+    public static boolean matchesDeletionMessage(int account, long dialogId, int messageId, MessageObject message) {
+        if (message == null || message.messageOwner == null || message.currentAccount != account || message.getId() != messageId) {
+            return false;
+        }
+        long actualDialogId = message.getDialogId();
+        if (actualDialogId == 0) return false;
+        if (dialogId != 0) return actualDialogId == dialogId;
+        return messageId > 0 && !DialogObject.isEncryptedDialog(actualDialogId)
+                && message.messageOwner.peer_id != null && message.messageOwner.peer_id.channel_id == 0;
     }
 
     public static final class PseudoReplyResult {
@@ -479,6 +549,7 @@ public abstract class AyuMessageUtils {
         target.edit_hide = (2097152 & flags) != 0;
         target.pinned = (16777216 & flags) != 0;
         target.noforwards = false;
+        target.invert_media = (134217728 & flags) != 0;
         target.edit_date = source.editDate;
         target.views = source.views;
         target.forwards = source.forwards;
@@ -494,8 +565,9 @@ public abstract class AyuMessageUtils {
             forwardHeader.post_author = source.fwdPostAuthor;
         }
         if ((target.flags & 8) != 0) {
-            // replyFlags 为 0 说明来源库只存了整个 header 的 BLOB（AyuGram 的存法），走兜底反序列化
-            if (source.replyFlags == 0 && source.replySerialized != null && source.replySerialized.length > 0) {
+            // 完整 header 的 BLOB 优先：手工重建只覆盖了部分字段，
+            // quote_offset / reply_to_scheduled / todo_item_id 这类新字段会丢
+            if (source.replySerialized != null && source.replySerialized.length > 0) {
                 NativeByteBuffer data = null;
                 try {
                     data = new NativeByteBuffer(source.replySerialized.length);
@@ -1058,17 +1130,12 @@ public abstract class AyuMessageUtils {
                 return processAttachment(prefs.getAccountId(), storyMedia.photo);
             }
         }
-        File pathToMessage = FileLoader.getInstance(prefs.getAccountId()).getPathToMessage(message);
-        if (!pathToMessage.exists() && !pathToMessage.getAbsolutePath().endsWith("/cache")) {
-            pathToMessage = FileLoader.getInstance(prefs.getAccountId()).getPathToMessage(message, false);
-        }
-        if (pathToMessage.exists() || message.media.document == null) {
-            if (pathToMessage.exists() || message.media.photo == null) {
-                return processAttachment(pathToMessage, new File(AyuMessagesController.attachmentsPath, AyuUtils.getFilename(message, pathToMessage)));
-            }
-            return processAttachment(prefs.getAccountId(), message.media.photo);
-        }
-        return processAttachment(prefs.getAccountId(), message.media.document);
+        // 允许按 Wi-Fi / 移动网络限额补下载：只找现有路径会让大部分附件退化成"仅元数据"
+        String path = AyuAttachments.getInstance(prefs.getAccountId()).getExistingPath(message, true);
+        File source = TextUtils.isEmpty(path) || "/".equals(path)
+                ? FileLoader.getInstance(prefs.getAccountId()).getPathToMessage(message)
+                : new File(path);
+        return processAttachment(source, new File(AyuMessagesController.attachmentsPath, AyuUtils.getFilename(message, source)));
     }
 
     private static File processAttachment(File source, File target) {
@@ -1440,6 +1507,103 @@ public abstract class AyuMessageUtils {
             }
         }
         return messagesController.getPeer(peerId);
+    }
+
+    private static SpannableStringBuilder oneViewIcon;
+    private static SpannableStringBuilder expiringIcon;
+    private static SpannableStringBuilder burntIcon;
+
+    private static void initializeIcons() {
+        // 图标只替换占位字符，不能扩展到后续追加的 TTL 文本和时间。
+        if (oneViewIcon == null) {
+            oneViewIcon = new SpannableStringBuilder("\u200B");
+            oneViewIcon.setSpan(new ColoredImageSpan(Theme.chat_oneViewDrawable), 0, 1, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+        }
+        if (expiringIcon == null) {
+            expiringIcon = new SpannableStringBuilder("\u200B");
+            expiringIcon.setSpan(new ColoredImageSpan(Theme.chat_expiringDrawable), 0, 1, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+        }
+        if (burntIcon == null) {
+            burntIcon = new SpannableStringBuilder("\u200B");
+            burntIcon.setSpan(new ColoredImageSpan(Theme.chat_burntDrawable), 0, 1, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+        }
+    }
+
+    private static CharSequence getBurntIcon() {
+        initializeIcons();
+        return new SpannableStringBuilder().append(burntIcon);
+    }
+
+    private static int getBurntIconWidth() {
+        initializeIcons();
+        return Theme.chat_burntDrawable.getIntrinsicWidth();
+    }
+
+    /**
+     * 阅后即毁 / 自动销毁消息的时间标识。
+     * <ul>
+     *   <li>{@code ttl == 0x7FFFFFFF}：阅后即毁。非语音/圆视频显示 "one view" + 眼睛/已毁图标；
+     *       语音/圆视频仅在已毁时显示已毁图标。</li>
+     *   <li>其它 {@code ttl > 0}：显示 {@code Ns} + 倒计时/已毁图标。</li>
+     * </ul>
+     */
+    public static Triple formatTTL(MessageObject messageObject, boolean withIcon) {
+        if (messageObject == null || messageObject.messageOwner == null) {
+            return null;
+        }
+        int ttl = messageObject.messageOwner.ttl;
+        if (ttl == 0) {
+            return null;
+        }
+        TLRPC.MessageMedia media = messageObject.messageOwner.media;
+        if (media == null || media instanceof TLRPC.TL_messageMediaEmpty || messageObject.messageOwner.ayuDeleted) {
+            return null;
+        }
+        if (ttl < 0) {
+            ttl = 0;
+        }
+        initializeIcons();
+        boolean burned = AyuState.isMessageBurned(messageObject.currentAccount, messageObject.getDialogId(), messageObject.getId());
+        SpannableStringBuilder sb = new SpannableStringBuilder();
+
+        if (ttl == 0x7FFFFFFF) {
+            // 阅后即毁
+            if (!messageObject.isVoice() && !messageObject.isRoundVideo()) {
+                CharSequence icon = burned ? getBurntIcon() : oneViewIcon;
+                int width = burned ? getBurntIconWidth() : Theme.chat_oneViewDrawable.getIntrinsicWidth();
+                if (withIcon) {
+                    sb = (SpannableStringBuilder) sb.append(icon).append(" ");
+                }
+                return new Triple(sb.append(LocaleController.getString(R.string.OneViewTTL)), width, true);
+            }
+            if (burned && withIcon) {
+                return new Triple(sb.append(getBurntIcon()).append(" "), getBurntIconWidth(), false);
+            }
+            return null;
+        }
+
+        // 定时自动销毁
+        CharSequence icon = burned ? getBurntIcon() : expiringIcon;
+        int width = burned ? getBurntIconWidth() : Theme.chat_expiringDrawable.getIntrinsicWidth();
+        if (withIcon) {
+            sb = (SpannableStringBuilder) sb.append(icon).append(" ");
+        }
+        return new Triple(sb.append(String.valueOf(ttl)).append("s"), width, true);
+    }
+
+    /**
+     * {@link #formatTTL} 的返回结构：标识文本（含图标）、图标宽度、是否用 " | " 与时间分隔。
+     */
+    public static final class Triple {
+        public final CharSequence text;
+        public final int width;
+        public final boolean useSeparator;
+
+        Triple(CharSequence text, int width, boolean useSeparator) {
+            this.text = text;
+            this.width = width;
+            this.useSeparator = useSeparator;
+        }
     }
 
 }

@@ -31,6 +31,7 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 import com.radolyn.ayugram.utils.AyuFileLocation;
+import xyz.nextalone.nagram.NaConfig;
 
 public class FileLoader extends BaseController {
 
@@ -1741,6 +1742,10 @@ public class FileLoader extends BaseController {
     }
 
     public void deleteFiles(final ArrayList<File> files, final int type) {
+        // keep burned media files (and their .enc/.key counterparts) on disk when deleted-message saving is on
+        if (NaConfig.INSTANCE.getEnableSaveDeletedMessages().Bool()) {
+            return;
+        }
         if (files == null || files.isEmpty()) {
             return;
         }

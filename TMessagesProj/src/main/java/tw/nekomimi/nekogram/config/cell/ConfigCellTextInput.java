@@ -70,6 +70,11 @@ public class ConfigCellTextInput extends AbstractConfigCell implements WithBindC
         return bindConfig == null ? null : bindConfig.getKey();
     }
 
+    @Override
+    public String getTitle() {
+        return title;
+    }
+
     public boolean isEnabled() {
         return enabled;
     }

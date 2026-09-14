@@ -224,6 +224,7 @@ public class BookmarksActivity extends NekoDelegateFragment {
                         AyuMessageUtils.map(base, tl, accountId);
                         AyuMessageUtils.mapMedia(base, tl, accountId);
                         tl.ayuDeleted = true;
+                        tl.ayuDeleteDate = base.entityCreateDate;
                         messageObject = new MessageObject(accountId, tl, false, true);
                     }
                 }

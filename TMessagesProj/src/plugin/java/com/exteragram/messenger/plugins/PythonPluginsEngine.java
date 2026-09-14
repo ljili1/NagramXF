@@ -169,9 +169,27 @@ public class PythonPluginsEngine implements PluginsController.PluginsEngine {
                 Python.start(new AndroidPlatform(ApplicationLoader.applicationContext));
             }
             python = Python.getInstance();
+            lastPythonError = null;
         } catch (Throwable e) {
+            if (lastPythonError == null) {
+                lastPythonError = describeThrowable(e);
+            }
             FileLog.e("Failed to initialize Python", e);
         }
+    }
+
+    /** Message of the most recent Python.start() failure, or null if it succeeded. */
+    static volatile String lastPythonError;
+
+    private static String describeThrowable(Throwable e) {
+        StringBuilder sb = new StringBuilder(e.getClass().getName());
+        int depth = 0;
+        for (Throwable c = e; c != null && depth < 8; c = c.getCause(), depth++) {
+            if (c.getMessage() != null) {
+                sb.append(depth == 0 ? ": " : " <- ").append(c.getMessage());
+            }
+        }
+        return sb.toString();
     }
 
     @Override
@@ -1515,6 +1533,12 @@ public class PythonPluginsEngine implements PluginsController.PluginsEngine {
     public PluginsController.PluginValidationResult validatePluginFromFile(String filePath) {
         if (!new File(filePath).exists()) {
             return new PluginsController.PluginValidationResult(null, "Plugin file not found.");
+        }
+        if (getPython() == null) {
+            String err = lastPythonError;
+            return new PluginsController.PluginValidationResult(null, err == null
+                    ? "Python engine is initializing or was not started; try again in a moment."
+                    : "Python engine failed to start: " + err);
         }
         try {
             Map<String, String> pluginMetadata = parsePluginMetadata(filePath);

@@ -4959,9 +4959,7 @@ public class ProfileActivity extends BaseFragment implements NotificationCenter.
                             } else if (which == 3) { // Reset Dialogs
                                 getMessagesController().forceResetDialogs();
                             } else if (which == 4) { // Logs
-                                BuildVars.LOGS_ENABLED = !BuildVars.LOGS_ENABLED;
-                                SharedPreferences sharedPreferences = ApplicationLoader.applicationContext.getSharedPreferences("systemConfig", Context.MODE_PRIVATE);
-                                sharedPreferences.edit().putBoolean("logsEnabled", BuildVars.LOGS_ENABLED).commit();
+                                AndroidUtil.toggleLogs();
                                 updateRowsIds();
                                 listAdapter.notifyDataSetChanged();
                                 if (BuildVars.LOGS_ENABLED) {

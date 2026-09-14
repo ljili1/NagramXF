@@ -80,6 +80,11 @@ public class ConfigCellTextDetail extends AbstractConfigCell implements WithBind
         return bindConfig == null ? null : bindConfig.getKey();
     }
 
+    @Override
+    public String getTitle() {
+        return title;
+    }
+
     public boolean isEnabled() {
         return true;
     }

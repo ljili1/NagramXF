@@ -26,6 +26,7 @@ import android.widget.FrameLayout;
 import android.widget.ImageView;
 import android.widget.TextView;
 
+import org.telegram.messenger.AndroidUtilities;
 import org.telegram.messenger.Emoji;
 import org.telegram.messenger.LocaleController;
 import org.telegram.ui.ActionBar.Theme;
@@ -70,6 +71,7 @@ public class TextDetailCell extends FrameLayout {
         this.multiline = textMultiline || valueMultiline;
 
         textView = new SpoilersTextView(context, resourcesProvider);
+        textView.setTypeface(AndroidUtilities.regular());
         textView.setOnLinkLongPressListener(span -> {
             if (span != null) {
                 try {
@@ -102,6 +104,7 @@ public class TextDetailCell extends FrameLayout {
                 return processColor(super.overrideColor());
             }
         };
+        valueTextView.setTypeface(AndroidUtilities.regular());
         valueTextView.setOnLinkLongPressListener(span -> {
             if (span != null) {
                 try {

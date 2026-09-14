@@ -2,6 +2,11 @@
 <resources>
     <string name="XChannel">Nagram X チャンネル</string>
     <string name="EnableSaveDeletedMessages">削除済みメッセージを保存</string>
+    <string name="OnceVideoMessageNote">この動画メッセージは再生後に保持されます。</string>
+    <string name="OncePhotoMessageNote">この写真メッセージは閲覧後に保持されます。</string>
+    <string name="ExpiringVideoMessageNote">この動画メッセージはタイマー終了後に保持されます。</string>
+    <string name="ExpiringVoiceMessageNote">この音声メッセージはタイマー終了後に保持されます。</string>
+    <string name="OneViewTTL">1回のみ閲覧</string>
     <string name="DeletedMessage">削除済み</string>
     <string name="EnableSaveEditsHistory">編集履歴を保存</string>
     <string name="EditsHistoryMenuText">編集履歴</string>

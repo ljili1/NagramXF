@@ -1,6 +1,11 @@
 package tw.nekomimi.nekogram.config.cell;
 
+import static org.telegram.messenger.LocaleController.getString;
+
 import androidx.recyclerview.widget.RecyclerView;
+
+import java.util.ArrayList;
+import java.util.List;
 
 public class ConfigCellCustom extends AbstractConfigCell implements WithKey {
     public static final int CUSTOM_ITEM_StickerSize = 998;
@@ -25,11 +30,29 @@ public class ConfigCellCustom extends AbstractConfigCell implements WithKey {
     public final int type;
     public boolean enabled;
     private final String key;
+    private final int[] searchTitleResIds;
 
     public ConfigCellCustom(String key, int type, boolean enabled) {
+        this(key, type, enabled, new int[0]);
+    }
+
+    public ConfigCellCustom(String key, int type, boolean enabled, int... searchTitleResIds) {
         this.key = key;
         this.type = type;
         this.enabled = enabled;
+        this.searchTitleResIds = searchTitleResIds;
+    }
+
+    @Override
+    public List<CharSequence> getSearchTitles() {
+        if (searchTitleResIds.length == 0) {
+            return super.getSearchTitles();
+        }
+        ArrayList<CharSequence> titles = new ArrayList<>();
+        for (int resId : searchTitleResIds) {
+            titles.add(getString(resId));
+        }
+        return titles;
     }
 
     public int getType() {

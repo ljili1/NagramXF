@@ -6,16 +6,17 @@ on:
       build_type:
         description: 'Build type: release or staging'
         required: false
-        default: 'release'
+        default: 'Release'
         type: choice
         options:
-          - release
-          - staging
+          - Release
+          - Staging
   push:
     branches:
       - main
       - master
       - dev
+      - 1251
     paths-ignore:
       - '**.md'
       - '.github/**'
@@ -61,6 +62,14 @@ jobs:
         uses: android-actions/setup-android@v3
         with:
           packages: "build-tools;36.0.0 ndk;27.2.12479018 platforms;android-36 cmake;3.31.6"
+
+      - name: Set up Python (Chaquopy bridge source build)
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11.9'
+
+      - name: Install Cython (Chaquopy bridge source build)
+        run: pip install Cython==3.0.11
 
       - name: Configure SDK path
         run: |
@@ -119,12 +128,12 @@ jobs:
           BUILD_TIMESTAMP: ${{ steps.timestamp.outputs.value }}
           COMMIT_ID: ${{ github.sha }}
         run: |
-          ./gradlew TMessagesProj:assemble${{ github.event.inputs.build_type || 'Release' }}
+          ./gradlew TMessagesProj:assembleNormal${{ github.event.inputs.build_type || 'Release' }}
 
       - name: Locate APK
         id: locate_apk
         run: |
-          APK=$(find TMessagesProj/build/outputs/apk -name '*arm64-v8a*.apk' | head -n 1)
+          APK=$(find TMessagesProj/build/outputs/apk/normal -name '*arm64-v8a*.apk' | head -n 1)
           echo "APK path: $APK"
           echo "apk_path=$APK" >> "$GITHUB_OUTPUT"
           echo "apk_name=$(basename "$APK")" >> "$GITHUB_OUTPUT"

@@ -141,6 +141,7 @@ public class NowPlayingCard extends FrameLayout {
 
         TextView artist = new TextView(context);
         artist.setGravity(Gravity.START);
+        artist.setTypeface(AndroidUtilities.regular());
         artist.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14.0f);
         artist.setSingleLine(true);
         artist.setEllipsize(end);
@@ -152,6 +153,7 @@ public class NowPlayingCard extends FrameLayout {
 
         TextView album = new TextView(context);
         album.setGravity(Gravity.START);
+        album.setTypeface(AndroidUtilities.regular());
         album.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14.0f);
         album.setSingleLine(true);
         album.setEllipsize(end);

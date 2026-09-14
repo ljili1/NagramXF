@@ -71,6 +71,7 @@ import androidx.annotation.NonNull;
 import androidx.core.content.ContextCompat;
 
 import org.telegram.PhoneFormat.PhoneFormat;
+import org.telegram.messenger.AndroidUtilities;
 import org.telegram.messenger.utils.DrawableUtils;
 import org.telegram.messenger.utils.tlutils.TLKeyboardHelper;
 import org.telegram.tgnet.TLObject;
@@ -182,6 +183,11 @@ public class RichMessageLayout {
 
     public final TextPaint textPaint = new TextPaint(TextPaint.ANTI_ALIAS_FLAG);
     public final TextPaint numTextPaint = new TextPaint(TextPaint.ANTI_ALIAS_FLAG);
+
+    {
+        textPaint.setTypeface(AndroidUtilities.regular());
+        numTextPaint.setTypeface(AndroidUtilities.regular());
+    }
     public final ReplyMessageLine quoteLine = new ReplyMessageLine(null);
     public final GradientClip clip = new GradientClip();
 
@@ -2343,7 +2349,7 @@ public class RichMessageLayout {
             } else if (italic) {
                 return AndroidUtilities.getTypeface("fonts/ritalic.ttf");
             } else {
-                return null;
+                return AndroidUtilities.regular();
             }
         }
 
@@ -7465,6 +7471,7 @@ public class RichMessageLayout {
             this.currentMessageObject = root.audioBlocks.get(block);
             this.currentDocument = currentMessageObject != null ? currentMessageObject.getDocument() : null;
             this.observerTag = DownloadController.getInstance(root.currentAccount).generateObserverTag();
+            audioTimePaint.setTypeface(AndroidUtilities.regular());
 
             radialProgress = new RadialProgress2(null);
             radialProgress.setCircleRadius(dp(24));

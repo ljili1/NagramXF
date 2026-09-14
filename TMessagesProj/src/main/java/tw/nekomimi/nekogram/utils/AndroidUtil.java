@@ -183,9 +183,15 @@ public class AndroidUtil {
     }
 
     public static void toggleLogs() {
-        BuildVars.LOGS_ENABLED = BuildVars.DEBUG_VERSION = !BuildVars.LOGS_ENABLED;
-        SharedPreferences sharedPreferences = ApplicationLoader.applicationContext.getSharedPreferences("systemConfig", Context.MODE_PRIVATE);
-        sharedPreferences.edit().putBoolean("logsEnabled", BuildVars.LOGS_ENABLED).apply();
+        setLogsEnabled(!BuildVars.LOGS_ENABLED);
+    }
+
+    public static boolean setLogsEnabled(boolean enabled) {
+        if (BuildVars.setLogsEnabled(enabled)) {
+            return true;
+        }
+        showErrorDialog(getString(R.string.ErrorOccurred));
+        return false;
     }
 
     @SuppressWarnings("ConstantValue")

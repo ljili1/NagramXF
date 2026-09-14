@@ -11,9 +11,13 @@ package com.radolyn.ayugram.utils;
 
 import android.util.LongSparseArray;
 
+import org.telegram.messenger.MessagesController;
+import org.telegram.messenger.UserConfig;
+
 import java.util.ArrayList;
 
 import tw.nekomimi.nekogram.NekoConfig;
+import xyz.nextalone.nagram.NaConfig;
 
 public class AyuState {
     private static final AyuStateVariable allowReadPacket = new AyuStateVariable();
@@ -88,5 +92,24 @@ public class AyuState {
         }
 
         list.remove((Object) messageId);
+    }
+
+    /**
+     * 标记阅后即焚媒体已被查看过。
+     */
+    public static void setMessageBurned(int account, long dialogId, int messageId) {
+        if (!NaConfig.INSTANCE.getEnableSaveDeletedMessages().Bool()) {
+            return;
+        }
+        long clientUserId = UserConfig.getInstance(account).getClientUserId();
+        MessagesController.getGlobalMainSettings().edit().putBoolean("messageBurned_" + clientUserId + "_" + dialogId + "_" + messageId, true).apply();
+    }
+
+    public static boolean isMessageBurned(int account, long dialogId, int messageId) {
+        if (!NaConfig.INSTANCE.getEnableSaveDeletedMessages().Bool()) {
+            return false;
+        }
+        long clientUserId = UserConfig.getInstance(account).getClientUserId();
+        return MessagesController.getGlobalMainSettings().getBoolean("messageBurned_" + clientUserId + "_" + dialogId + "_" + messageId, false);
     }
 }

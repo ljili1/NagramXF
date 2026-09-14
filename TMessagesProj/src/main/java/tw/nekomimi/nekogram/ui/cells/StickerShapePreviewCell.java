@@ -204,7 +204,7 @@ public class StickerShapePreviewCell extends LinearLayout {
             this.progress = f;
             textPaint.setColor(ColorUtils.blendARGB(Theme.getColor(Theme.key_windowBackgroundWhiteBlackText),
                     Theme.getColor(Theme.key_windowBackgroundWhiteValueText), f));
-            textPaint.setTypeface(f >= 0.5f ? AndroidUtilities.bold() : null);
+            textPaint.setTypeface(f >= 0.5f ? AndroidUtilities.bold() : AndroidUtilities.regular());
             backgroundDrawable.setSelectionProgress(f);
             invalidate();
         }

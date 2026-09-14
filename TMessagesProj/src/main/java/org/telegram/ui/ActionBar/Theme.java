@@ -58,7 +58,7 @@ import android.hardware.SensorManager;
 import android.net.Uri;
 import android.os.Build;
 import android.os.SystemClock;
-import android.text.TextPaint;
+import com.exteragram.messenger.utils.ui.TextPaint;
 import android.text.TextUtils;
 import android.util.Base64;
 import android.util.Log;
@@ -2546,6 +2546,9 @@ public class Theme {
     public static Path[] chat_updatePath = new Path[3];
     public static Drawable chat_flameIcon;
     public static Drawable chat_gifIcon;
+    public static Drawable chat_oneViewDrawable;
+    public static Drawable chat_expiringDrawable;
+    public static Drawable chat_burntDrawable;
 
     private static AudioVisualizerDrawable chat_msgAudioVisualizeDrawable;
     private static HashMap<MessageObject, AudioVisualizerDrawable> animatedOutVisualizerDrawables;
@@ -8402,6 +8405,10 @@ public class Theme {
 
             chat_flameIcon = resources.getDrawable(R.drawable.filled_fire).mutate();
             chat_gifIcon = resources.getDrawable(R.drawable.msg_round_gif_m).mutate();
+
+            chat_oneViewDrawable = resources.getDrawable(R.drawable.ttl_oneview).mutate();
+            chat_expiringDrawable = resources.getDrawable(R.drawable.ttl_expiring).mutate();
+            chat_burntDrawable = resources.getDrawable(R.drawable.ttl_burnt).mutate();
 
             chat_fileStatesDrawable[0][0] = createCircleDrawableWithIcon(dp(44), R.drawable.msg_round_play_m);
             chat_fileStatesDrawable[0][1] = createCircleDrawableWithIcon(dp(44), R.drawable.msg_round_play_m);

@@ -124,6 +124,8 @@ public class ButtonWithCounterView extends FrameLayout implements Loadable {
         text.setTextSize(dp(14));
         if (filled) {
             text.setTypeface(AndroidUtilities.bold());
+        } else {
+            text.setTypeface(AndroidUtilities.regular());
         }
         text.setGravity(Gravity.CENTER_HORIZONTAL);
 

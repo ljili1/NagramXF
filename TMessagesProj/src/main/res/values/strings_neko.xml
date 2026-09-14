@@ -240,6 +240,7 @@
     <string name="AutoDownload">Disable Auto Download</string>
     <string name="Win32ExecutableFiles">Win32 executable files</string>
     <string name="ArchiveFiles">Archive files</string>
+    <string name="NoPreloadTrackIfRepeatOne">Don\'t preload next track in repeat one mode</string>
     <string name="AutoLockImmediately">Immediately</string>
     <string name="BackupSettings">Export Settings</string>
     <string name="ImportSettings">Import Settings</string>

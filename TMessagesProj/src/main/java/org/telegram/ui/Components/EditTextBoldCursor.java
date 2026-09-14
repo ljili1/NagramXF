@@ -862,6 +862,7 @@ public class EditTextBoldCursor extends EditTextEffects {
                     hintLayout.draw(canvas);
                 }
             }
+            getPaint().setTypeface(AndroidUtilities.regular());
             getPaint().setColor(oldColor);
             canvas.restore();
         }

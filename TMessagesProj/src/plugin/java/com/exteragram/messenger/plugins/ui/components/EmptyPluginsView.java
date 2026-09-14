@@ -1,7 +1,6 @@
 package com.exteragram.messenger.plugins.ui.components;
 
 import android.content.Context;
-import android.graphics.Typeface;
 import android.view.MotionEvent;
 import android.view.View;
 import android.widget.FrameLayout;
@@ -40,7 +39,7 @@ public class EmptyPluginsView extends FrameLayout {
         textView.setTextSize(1, 14);
         textView.setTextColor(Theme.getColor(Theme.key_emptyListPlaceholder, resourcesProvider));
         textView.setGravity(android.view.Gravity.CENTER_HORIZONTAL);
-        textView.setTypeface(Typeface.DEFAULT);
+        textView.setTypeface(AndroidUtilities.regular());
         textView.setMovementMethod(new AndroidUtilities.LinkMovementMethodMy());
         textView.setLinkTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteLinkText, resourcesProvider));
         textView.setText(LocaleController.getString(R.string.NoResult));

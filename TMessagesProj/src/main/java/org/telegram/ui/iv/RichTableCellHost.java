@@ -9,6 +9,7 @@ import android.view.Gravity;
 import android.view.MotionEvent;
 import android.widget.FrameLayout;
 
+import org.telegram.messenger.AndroidUtilities;
 import org.telegram.messenger.Emoji;
 import org.telegram.messenger.SharedConfig;
 import org.telegram.tgnet.tl.TL_iv;
@@ -114,6 +115,6 @@ public class RichTableCellHost extends FrameLayout {
         else if (cell.align_center) textGravity = Gravity.TOP | Gravity.CENTER_HORIZONTAL;
         editText.setGravity(textGravity);
         // Highlighting applies a real bold span so the user can remove bold from any range.
-        editText.setTypeface(null);
+        editText.setTypeface(AndroidUtilities.regular());
     }
 }

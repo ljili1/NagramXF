@@ -19,7 +19,7 @@ import java.util.Objects;
 public class BuildVars {
 
     public static boolean DEBUG_VERSION = BuildConfig.BUILD_TYPE.equals("debug");
-    public static boolean LOGS_ENABLED = false;
+    public static volatile boolean LOGS_ENABLED = false;
     public static boolean DEBUG_PRIVATE_VERSION = false;
     public static boolean USE_CLOUD_STRINGS = true;
     public static boolean CHECK_UPDATES = true;
@@ -47,18 +47,39 @@ public class BuildVars {
         APP_ID = BuildConfig.APP_ID;
         APP_HASH = BuildConfig.APP_HASH;
         if (ApplicationLoader.applicationContext != null) {
-            SharedPreferences sharedPreferences = ApplicationLoader.applicationContext.getSharedPreferences("systemConfig", Context.MODE_PRIVATE);
-            LOGS_ENABLED = DEBUG_VERSION || sharedPreferences.getBoolean("logsEnabled", DEBUG_VERSION);
-            if (LOGS_ENABLED) {
-                final Thread.UncaughtExceptionHandler pastHandler = Thread.getDefaultUncaughtExceptionHandler();
-                Thread.setDefaultUncaughtExceptionHandler((thread, exception) -> {
-                    FileLog.fatal(exception, false);
-                    if (pastHandler != null) {
-                        pastHandler.uncaughtException(thread, exception);
-                    }
-                });
-            }
+            loadLogsEnabled(ApplicationLoader.applicationContext);
         }
+        final Thread.UncaughtExceptionHandler pastHandler = Thread.getDefaultUncaughtExceptionHandler();
+        Thread.setDefaultUncaughtExceptionHandler((thread, exception) -> {
+            try {
+                if (LOGS_ENABLED) {
+                    FileLog.fatal(exception, false);
+                }
+            } finally {
+                if (pastHandler != null) {
+                    pastHandler.uncaughtException(thread, exception);
+                }
+            }
+        });
+    }
+
+    public static synchronized void loadLogsEnabled(Context context) {
+        SharedPreferences sharedPreferences = context.getSharedPreferences("systemConfig", Context.MODE_PRIVATE);
+        LOGS_ENABLED = sharedPreferences.getBoolean("logsEnabled", BuildConfig.BUILD_TYPE.equals("debug"));
+    }
+
+    public static synchronized boolean setLogsEnabled(boolean enabled) {
+        Context context = ApplicationLoader.applicationContext;
+        if (context == null) {
+            return false;
+        }
+        SharedPreferences sharedPreferences = context.getSharedPreferences("systemConfig", Context.MODE_PRIVATE);
+        // Publish the setting only after it has been saved across process restarts.
+        if (!sharedPreferences.edit().putBoolean("logsEnabled", enabled).commit()) {
+            return false;
+        }
+        LOGS_ENABLED = enabled;
+        return true;
     }
 
     public static boolean useInvoiceBilling() {

@@ -232,6 +232,7 @@
     <string name="AutoDownload">自動ダウンロードを禁止</string>
     <string name="Win32ExecutableFiles">Win32 実行ファイル</string>
     <string name="ArchiveFiles">アーカイブファイル</string>
+    <string name="NoPreloadTrackIfRepeatOne">1曲リピート時に次の曲をプリロードしない</string>
     <string name="AutoLockImmediately">すぐに</string>
     <string name="BackupSettings">設定をバックアップ</string>
     <string name="ImportSettings">設定をインポート</string>

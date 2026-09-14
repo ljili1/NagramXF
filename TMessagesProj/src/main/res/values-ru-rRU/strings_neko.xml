@@ -232,6 +232,7 @@
     <string name="AutoDownload">Автозагрузка</string>
     <string name="Win32ExecutableFiles">Исполняемые файлы Win32</string>
     <string name="ArchiveFiles">Архивы</string>
+    <string name="NoPreloadTrackIfRepeatOne">Не загружать следующий трек при повторе одного трека</string>
     <string name="AutoLockImmediately">Немедленно</string>
     <string name="BackupSettings">Экспорт настроек</string>
     <string name="ImportSettings">Импорт настроек</string>

@@ -50,6 +50,7 @@ public class SafeModeBottomSheet extends BottomSheet {
         TextView subtitleView = new TextView(activity);
         subtitleView.setGravity(Gravity.CENTER_HORIZONTAL);
         subtitleView.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteGrayText, resourcesProvider));
+        subtitleView.setTypeface(AndroidUtilities.regular());
         subtitleView.setTextSize(1, 14);
         subtitleView.setText(PluginsController.getSafeModeStatusText());
         content.addView(subtitleView, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, Gravity.TOP, 21, 8, 21, 0));

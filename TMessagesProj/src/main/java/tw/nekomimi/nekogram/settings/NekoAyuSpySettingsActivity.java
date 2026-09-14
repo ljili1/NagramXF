@@ -98,14 +98,14 @@ public class NekoAyuSpySettingsActivity extends BaseNekoXSettingsActivity {
     private final AbstractConfigCell saveDeletedMessageForBotsUserRow = cellGroup.appendCell(new ConfigCellTextCheck(NaConfig.INSTANCE.getSaveDeletedMessageForBotUser()));
     private final AbstractConfigCell saveDeletedMessageInBotChatRow = cellGroup.appendCell(new ConfigCellTextCheck(NaConfig.INSTANCE.getSaveDeletedMessageForBot()));
     private final AbstractConfigCell dividerAttachmentsSection = cellGroup.appendCell(new ConfigCellDivider());
-    private final AbstractConfigCell saveAttachmentsRow = cellGroup.appendCell(new ConfigCellCustom("SaveAttachmentsRow", CellGroup.ITEM_TYPE_TEXT_CHECK, true));
-    private final AbstractConfigCell attachmentFolderRow = cellGroup.appendCell(new ConfigCellCustom("AttachmentFolderRow", CellGroup.ITEM_TYPE_TEXT_SETTINGS_CELL, true));
+    private final AbstractConfigCell saveAttachmentsRow = cellGroup.appendCell(new ConfigCellCustom("SaveAttachmentsRow", CellGroup.ITEM_TYPE_TEXT_CHECK, true, R.string.MessageSavingSaveMedia));
+    private final AbstractConfigCell attachmentFolderRow = cellGroup.appendCell(new ConfigCellCustom("AttachmentFolderRow", CellGroup.ITEM_TYPE_TEXT_SETTINGS_CELL, true, R.string.AttachmentFolder));
     private final AbstractConfigCell dividerAttachmentLimit = cellGroup.appendCell(new ConfigCellDivider());
     private final AbstractConfigCell attachmentLimitHeaderRow = cellGroup.appendCell(new ConfigCellCustom("AttachmentFolderSizeLimitHeader", CellGroup.ITEM_TYPE_HEADER, false));
-    private final AbstractConfigCell attachmentLimitSliderRow = cellGroup.appendCell(new ConfigCellCustom("AttachmentFolderSizeLimitSlider", ConfigCellCustom.CUSTOM_ITEM_AttachmentSizeLimit, false));
+    private final AbstractConfigCell attachmentLimitSliderRow = cellGroup.appendCell(new ConfigCellCustom("AttachmentFolderSizeLimitSlider", ConfigCellCustom.CUSTOM_ITEM_AttachmentSizeLimit, false, R.string.AttachmentFolderSizeLimit));
     private final AbstractConfigCell attachmentLimitInfoRow = cellGroup.appendCell(new ConfigCellCustom("AttachmentFolderSizeLimitInfo", CellGroup.ITEM_TYPE_TEXT, false));
-    private final AbstractConfigCell exportDatabaseRow = cellGroup.appendCell(new ConfigCellCustom("ExportDatabaseRow", CellGroup.ITEM_TYPE_TEXT_CHECK_ICON, true));
-    private final AbstractConfigCell importDatabaseRow = cellGroup.appendCell(new ConfigCellCustom("ImportDatabaseRow", CellGroup.ITEM_TYPE_TEXT_CHECK_ICON, true));
+    private final AbstractConfigCell exportDatabaseRow = cellGroup.appendCell(new ConfigCellCustom("ExportDatabaseRow", CellGroup.ITEM_TYPE_TEXT_CHECK_ICON, true, R.string.ExportMessageDatabase));
+    private final AbstractConfigCell importDatabaseRow = cellGroup.appendCell(new ConfigCellCustom("ImportDatabaseRow", CellGroup.ITEM_TYPE_TEXT_CHECK_ICON, true, R.string.ImportMessageDatabase));
     private final AbstractConfigCell dividerStats = cellGroup.appendCell(new ConfigCellDivider());
     private final AbstractConfigCell headerStats = cellGroup.appendCell(new ConfigCellHeader(getString(R.string.AyuStatsHeader)));
     private final AbstractConfigCell statsDeletedMessagesRow = cellGroup.appendCell(new ConfigCellCustom("AyuStatsDeletedMessages", CellGroup.ITEM_TYPE_TEXT_SETTINGS_CELL, true));
@@ -113,7 +113,7 @@ public class NekoAyuSpySettingsActivity extends BaseNekoXSettingsActivity {
     private final AbstractConfigCell statsReadMarksRow = cellGroup.appendCell(new ConfigCellCustom("AyuStatsReadMarks", CellGroup.ITEM_TYPE_TEXT_SETTINGS_CELL, true));
     private final AbstractConfigCell statsLastSeenRow = cellGroup.appendCell(new ConfigCellCustom("AyuStatsLastSeen", CellGroup.ITEM_TYPE_TEXT_SETTINGS_CELL, true));
     private final AbstractConfigCell dividerClearData = cellGroup.appendCell(new ConfigCellDivider());
-    private final AbstractConfigCell clearDataRow = cellGroup.appendCell(new ConfigCellCustom("ClearSavedDataRow", CellGroup.ITEM_TYPE_TEXT_CHECK_ICON, true));
+    private final AbstractConfigCell clearDataRow = cellGroup.appendCell(new ConfigCellCustom("ClearSavedDataRow", CellGroup.ITEM_TYPE_TEXT_CHECK_ICON, true, R.string.ClearSavedMessageData));
 
     public NekoAyuSpySettingsActivity() {
         checkSaveBotMsgRows();

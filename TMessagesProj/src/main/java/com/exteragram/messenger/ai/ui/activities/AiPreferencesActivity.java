@@ -54,7 +54,7 @@ public class AiPreferencesActivity extends BaseNekoXSettingsActivity {
 
     private final AbstractConfigCell dividerGeneral = cellGroup.appendCell(new ConfigCellDivider());
     private final AbstractConfigCell headerTemperature = cellGroup.appendCell(new ConfigCellHeader(getString(R.string.AIChatTemperature)));
-    private final AbstractConfigCell temperatureRow = cellGroup.appendCell(new ConfigCellCustom("AiChatTemperature", ConfigCellCustom.CUSTOM_ITEM_AiChatTemperature, false));
+    private final AbstractConfigCell temperatureRow = cellGroup.appendCell(new ConfigCellCustom("AiChatTemperature", ConfigCellCustom.CUSTOM_ITEM_AiChatTemperature, false, R.string.AIChatTemperature));
 
     private final AbstractConfigCell dividerTemperature = cellGroup.appendCell(new ConfigCellDivider());
     private final AbstractConfigCell headerOther = cellGroup.appendCell(new ConfigCellHeader(getString(R.string.AIChatOther)));

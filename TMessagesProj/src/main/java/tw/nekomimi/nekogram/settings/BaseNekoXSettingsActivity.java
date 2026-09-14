@@ -46,6 +46,8 @@ import org.telegram.ui.Components.UndoView;
 
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Locale;
 
 import tw.nekomimi.nekogram.config.CellGroup;
@@ -362,6 +364,20 @@ public class BaseNekoXSettingsActivity extends BaseFragment {
     }
 
     public void scrollToRow(String key, Runnable unknown) {
+        CellGroup group = getCellGroup();
+        if (group != null) {
+            for (AbstractConfigCell row : new ArrayList<>(group.rows)) {
+                if (row instanceof ConfigCellTextCheck2 expandable && expandable.isCollapsed()) {
+                    for (ConfigCellCheckBox child : expandable.getVisibleCheckBox()) {
+                        if (key.equals(child.getKey()) && getListAdapter() != null) {
+                            expandable.onClick();
+                            break;
+                        }
+                    }
+                }
+            }
+            addRowsToMap(group);
+        }
         int position = -1;
         try {
             position = Integer.parseInt(key);
@@ -382,6 +398,32 @@ public class BaseNekoXSettingsActivity extends BaseFragment {
 
     public HashMap<Integer, String> getRowMapReverse() {
         return rowMapReverse;
+    }
+
+    public LinkedHashMap<String, AbstractConfigCell> getSearchRows() {
+        LinkedHashMap<String, AbstractConfigCell> rows = new LinkedHashMap<>();
+        CellGroup group = getCellGroup();
+        if (group == null) {
+            return rows;
+        }
+        for (AbstractConfigCell row : group.rows) {
+            int type = row.getType();
+            if (type == CellGroup.ITEM_TYPE_HEADER || type == CellGroup.ITEM_TYPE_DIVIDER || type == CellGroup.ITEM_TYPE_TEXT) {
+                continue;
+            }
+            String key = getRowKey(row);
+            if (key != null) {
+                rows.put(key, row);
+            }
+            if (row instanceof ConfigCellTextCheck2 expandable) {
+                for (ConfigCellCheckBox child : expandable.getVisibleCheckBox()) {
+                    if (child.getKey() != null) {
+                        rows.put(child.getKey(), child);
+                    }
+                }
+            }
+        }
+        return rows;
     }
 
     protected void styleTextInfoPrivacyCell(TextInfoPrivacyCell cell) {
@@ -615,6 +657,21 @@ public class BaseNekoXSettingsActivity extends BaseFragment {
         builder.setPositiveButton(getString(R.string.OK), null);
         builder.setView(linearLayout);
         return builder.create();
+    }
+
+    protected ConfigCellTextCheckIcon createConfigMenuCell(String key, int titleResId, int iconResId,
+                                                          ArrayList<ConfigCellTextCheckIcon> options) {
+        return new ConfigCellTextCheckIcon(null, key, getString(titleResId), iconResId, false,
+                () -> showDialog(showConfigMenuWithIconAlert(this, titleResId, options))) {
+            @Override
+            public List<CharSequence> getSearchTitles() {
+                ArrayList<CharSequence> titles = new ArrayList<>(super.getSearchTitles());
+                for (ConfigCellTextCheckIcon option : options) {
+                    titles.add(option.getTitle());
+                }
+                return titles;
+            }
+        };
     }
 
     public interface RunnableInt {

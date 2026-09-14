@@ -29,7 +29,6 @@ import android.text.Layout;
 import android.text.Spannable;
 import android.text.SpannableStringBuilder;
 import android.text.StaticLayout;
-import android.text.TextPaint;
 import android.text.TextUtils;
 import android.view.Gravity;
 import android.view.MotionEvent;
@@ -37,6 +36,8 @@ import android.view.View;
 import android.view.accessibility.AccessibilityNodeInfo;
 
 import androidx.annotation.NonNull;
+
+import com.exteragram.messenger.utils.ui.TextPaint;
 
 import org.telegram.messenger.AndroidUtilities;
 import org.telegram.messenger.Emoji;

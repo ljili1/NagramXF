@@ -70,6 +70,7 @@ import org.telegram.ui.Components.ThanosEffect;
 import org.telegram.ui.Components.TimerParticles;
 import org.telegram.ui.Components.VideoPlayer;
 import org.telegram.ui.Stories.recorder.HintView2;
+import xyz.nextalone.nagram.NaConfig;
 
 import java.io.File;
 
@@ -638,6 +639,8 @@ public class SecretVoicePlayer extends Dialog {
                     }
                 }
                 hintView.setText(AndroidUtilities.replaceTags(LocaleController.formatString(isRound ? R.string.VideoOnceOutHint : R.string.VoiceOnceOutHint, name)));
+            } else if (NaConfig.INSTANCE.getEnableSaveDeletedMessages().Bool()) {
+                hintView.setText(AndroidUtilities.replaceTags(LocaleController.getString(isRound ? R.string.ExpiringVideoMessageNote : R.string.ExpiringVoiceMessageNote)));
             } else {
                 hintView.setText(AndroidUtilities.replaceTags(LocaleController.getString(isRound ? R.string.VideoOnceHint : R.string.VoiceOnceHint)));
             }
@@ -674,7 +677,7 @@ public class SecretVoicePlayer extends Dialog {
         }
         closeButton.setPadding(dp(12), dp(6), dp(12), dp(6));
         ScaleStateListAnimator.apply(closeButton);
-        closeButton.setText(LocaleController.getString(isOut ? R.string.VoiceOnceClose : R.string.VoiceOnceDeleteClose));
+        closeButton.setText(LocaleController.getString(isOut || NaConfig.INSTANCE.getEnableSaveDeletedMessages().Bool() ? R.string.VoiceOnceClose : R.string.VoiceOnceDeleteClose));
         closeButton.setOnClickListener(v -> {
             dismiss();
         });

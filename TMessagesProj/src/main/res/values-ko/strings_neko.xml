@@ -228,6 +228,7 @@
     <string name="AutoDownload">자동 다운로드 끄기</string>
     <string name="Win32ExecutableFiles">Win32 실행 파일</string>
     <string name="ArchiveFiles">압축 파일</string>
+    <string name="NoPreloadTrackIfRepeatOne">한 곡 반복 재생 시 다음 트랙 미리 받지 않기</string>
     <string name="AutoLockImmediately">즉시</string>
     <string name="BackupSettings">설정 내보내기</string>
     <string name="ImportSettings">설정 가져오기</string>

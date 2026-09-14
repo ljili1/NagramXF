@@ -76,6 +76,7 @@ public class RichMapCell extends RichBlockCell
 
         hintPaint.setTextSize(dp(15));
         hintPaint.setTextAlign(Paint.Align.CENTER);
+        hintPaint.setTypeface(AndroidUtilities.regular());
 
         imageReceiver = new ImageReceiver(this);
 

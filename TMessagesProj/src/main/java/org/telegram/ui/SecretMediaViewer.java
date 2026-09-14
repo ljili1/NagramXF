@@ -108,6 +108,7 @@ import org.telegram.ui.Components.VideoPlayer;
 import org.telegram.ui.Components.VideoPlayerSeekBar;
 import org.telegram.ui.Stories.DarkThemeResourceProvider;
 import org.telegram.ui.Stories.recorder.HintView2;
+import xyz.nextalone.nagram.NaConfig;
 
 import java.io.File;
 import java.util.ArrayList;
@@ -478,7 +479,8 @@ public class SecretMediaViewer implements NotificationCenter.NotificationCenterD
     public void didReceivedNotification(int id, int account, Object... args) {
         if (id == NotificationCenter.messagesDeleted) {
             boolean scheduled = (Boolean) args[2];
-            if (scheduled) {
+            // keep the viewer open when deleted-message saving is on
+            if (NaConfig.INSTANCE.getEnableSaveDeletedMessages().Bool() || scheduled) {
                 return;
             }
             if (currentMessageObject == null) {
@@ -1360,7 +1362,13 @@ public class SecretMediaViewer implements NotificationCenter.NotificationCenterD
 
     private void showSecretHint() {
         secretHint.setMultilineText(true);
-        CharSequence text = LocaleController.getString(isVideo ? R.string.VideoShownOnce : R.string.PhotoShownOnce);
+        int textRes;
+        if (NaConfig.INSTANCE.getEnableSaveDeletedMessages().Bool()) {
+            textRes = isVideo ? R.string.OnceVideoMessageNote : R.string.OncePhotoMessageNote;
+        } else {
+            textRes = isVideo ? R.string.VideoShownOnce : R.string.PhotoShownOnce;
+        }
+        CharSequence text = LocaleController.getString(textRes);
         secretHint.setMaxWidthPx(HintView2.cutInFancyHalf(text, secretHint.getTextPaint()));
         secretHint.setText(text);
         secretHint.setInnerPadding(12, 7, 11, 7);
@@ -1378,7 +1386,7 @@ public class SecretMediaViewer implements NotificationCenter.NotificationCenterD
     private boolean ignoreDelete;
 
     public void openMedia(MessageObject messageObject, PhotoViewer.PhotoViewerProvider provider, Runnable onOpen, Runnable onClose) {
-        if (parentActivity == null || messageObject == null || !messageObject.needDrawBluredPreview() || provider == null) {
+        if (parentActivity == null || messageObject == null || !messageObject.needDrawBluredPreview(true) || provider == null) {
             return;
         }
         final PhotoViewer.PlaceProviderObject object = provider.getPlaceForPhoto(messageObject, null, 0, true, false);

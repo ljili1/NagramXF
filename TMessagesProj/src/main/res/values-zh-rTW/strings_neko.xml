@@ -234,6 +234,7 @@
     <string name="AutoDownload">禁止自動下載</string>
     <string name="Win32ExecutableFiles">Win32 可執行檔案</string>
     <string name="ArchiveFiles">壓縮檔案</string>
+    <string name="NoPreloadTrackIfRepeatOne">單曲循環時不預先載入下一首</string>
     <string name="AutoLockImmediately">立即</string>
     <string name="BackupSettings">備份設定</string>
     <string name="ImportSettings">匯入設定</string>

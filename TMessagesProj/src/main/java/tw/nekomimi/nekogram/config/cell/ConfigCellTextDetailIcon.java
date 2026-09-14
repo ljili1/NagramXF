@@ -35,6 +35,11 @@ public class ConfigCellTextDetailIcon extends AbstractConfigCell implements With
         return key;
     }
 
+    @Override
+    public String getTitle() {
+        return title;
+    }
+
     public boolean isEnabled() {
         return true;
     }

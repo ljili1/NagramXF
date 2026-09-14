@@ -7,7 +7,6 @@ import android.graphics.Path;
 import android.graphics.PorterDuff;
 import android.graphics.PorterDuffColorFilter;
 import android.graphics.RectF;
-import android.graphics.Typeface;
 import android.graphics.drawable.Drawable;
 import android.text.SpannableStringBuilder;
 import android.text.TextUtils;
@@ -128,6 +127,7 @@ public class PluginCell extends FrameLayout implements NotificationCenter.Notifi
         subtitleView = new TextViewEffects(context, resourcesProvider);
         subtitleView.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteGrayText, resourcesProvider));
         subtitleView.setLinkTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteLinkText, resourcesProvider));
+        subtitleView.setTypeface(AndroidUtilities.regular());
         subtitleView.setTextSize(1, 14);
         subtitleView.setEllipsize(TextUtils.TruncateAt.END);
         textContainer.addView(subtitleView, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, 0, 2, 0, 0));
@@ -140,6 +140,7 @@ public class PluginCell extends FrameLayout implements NotificationCenter.Notifi
         descriptionView = new TextViewEffects(context, resourcesProvider);
         descriptionView.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlackText, resourcesProvider));
         descriptionView.setLinkTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteLinkText, resourcesProvider));
+        descriptionView.setTypeface(AndroidUtilities.regular());
         descriptionView.setTextSize(1, 15);
         content.addView(descriptionView, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, 0, 8, 0, 0));
 
@@ -328,7 +329,7 @@ public class PluginCell extends FrameLayout implements NotificationCenter.Notifi
     private void bindNormalState() {
         descriptionView.setText(LocaleUtils.fullyFormatText(plugin.getDescription()));
         descriptionView.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlackText, resourcesProvider));
-        descriptionView.setTypeface(Typeface.DEFAULT);
+        descriptionView.setTypeface(AndroidUtilities.regular());
         descriptionView.setTextSize(1, 15);
         descriptionView.setOnClickListener(null);
         checkBox.setVisibility(VISIBLE);

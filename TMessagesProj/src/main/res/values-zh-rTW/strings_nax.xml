@@ -2,6 +2,11 @@
 <resources>
     <string name="XChannel">Nagram X 頻道</string>
     <string name="EnableSaveDeletedMessages">儲存已刪除訊息</string>
+    <string name="OnceVideoMessageNote">此影片訊息將在檢視後保留。</string>
+    <string name="OncePhotoMessageNote">此照片訊息將在檢視後保留。</string>
+    <string name="ExpiringVideoMessageNote">此影片訊息將在倒數結束後保留。</string>
+    <string name="ExpiringVoiceMessageNote">此語音訊息將在倒數結束後保留。</string>
+    <string name="OneViewTTL">瀏覽一次</string>
     <string name="DeletedMessage">已刪除</string>
     <string name="EnableSaveEditsHistory">儲存編輯歷史</string>
     <string name="EditsHistoryMenuText">編輯歷史</string>

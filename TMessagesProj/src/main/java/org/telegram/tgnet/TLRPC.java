@@ -57526,6 +57526,7 @@ public class TLRPC {
         public boolean hide; // custom
         // ayuGram
         public boolean ayuDeleted;
+        public int ayuDeleteDate; // 消息被删除的时间（Unix 秒），仅运行时字段，不参与序列化
 
         private static Message fromConstructor(int constructor) {
             switch (constructor) {

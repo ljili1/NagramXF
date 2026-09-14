@@ -231,6 +231,7 @@ import tw.nekomimi.nekogram.helpers.PasscodeHelper;
 import tw.nekomimi.nekogram.ui.BottomBuilder;
 import tw.nekomimi.nekogram.ui.EditTextAutoFill;
 import tw.nekomimi.nekogram.ui.QrView;
+import tw.nekomimi.nekogram.utils.AndroidUtil;
 
 @SuppressLint("HardwareIds")
 public class LoginActivity extends BaseFragment implements NotificationCenter.NotificationCenterDelegate {
@@ -2054,8 +2055,9 @@ public class LoginActivity extends BaseFragment implements NotificationCenter.No
                     LocaleController.getString(R.string.DebugSendLogs)
                 }, (di, b) -> {
                     if (b == 0) {
-                        BuildVars.LOGS_ENABLED = !BuildVars.LOGS_ENABLED;
-                        ApplicationLoader.applicationContext.getSharedPreferences("systemConfig", Context.MODE_PRIVATE).edit().putBoolean("logsEnabled", BuildVars.LOGS_ENABLED).commit();
+                        if (!AndroidUtil.setLogsEnabled(!BuildVars.LOGS_ENABLED)) {
+                            return;
+                        }
                         BulletinFactory.of(LoginActivity.this).createSimpleBulletin(R.raw.chats_infotip, BuildVars.LOGS_ENABLED ? "Logs enabled." : "Logs disabled.").show();
                         if (BuildVars.LOGS_ENABLED) {
                             FileLog.d("app start time = " + ApplicationLoader.startTime);

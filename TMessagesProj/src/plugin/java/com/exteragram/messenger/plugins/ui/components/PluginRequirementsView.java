@@ -1,7 +1,6 @@
 package com.exteragram.messenger.plugins.ui.components;
 
 import android.content.Context;
-import android.graphics.Typeface;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.TextView;
@@ -48,7 +47,7 @@ public class PluginRequirementsView extends ViewGroup {
             int color = Theme.getColor(Theme.key_featuredStickers_addButton, resourcesProvider);
             view.setText(itemText);
             view.setTextSize(1, 12);
-            view.setTypeface(Typeface.DEFAULT);
+            view.setTypeface(AndroidUtilities.regular());
             view.setTextColor(color);
             view.setBackground(Theme.createRoundRectDrawable(AndroidUtilities.dp(6), ColorUtils.setAlphaComponent(color, 30)));
             view.setPadding(AndroidUtilities.dp(6), AndroidUtilities.dp(2), AndroidUtilities.dp(6), AndroidUtilities.dp(2));
