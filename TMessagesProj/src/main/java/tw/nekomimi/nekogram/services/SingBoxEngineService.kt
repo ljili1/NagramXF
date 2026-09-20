@@ -27,8 +27,10 @@ import java.net.ServerSocket
  * process dies and the UI keeps running.
  *
  * The service is started by the main process with a plain bind
- * (no foreground service, no notification). The main process keeps the saved
- * proxy selection untouched when the engine dies and simply (re)starts the
+ * (no foreground service, no notification), using
+ * `BIND_AUTO_CREATE | BIND_IMPORTANT | BIND_ABOVE_CLIENT` so this process is never
+ * the first one the system reclaims in the background. The main process keeps the
+ * saved proxy selection untouched when the engine dies and simply (re)starts the
  * engine afterwards — the local proxy configuration is never cleared
  * automatically.
  */
@@ -66,18 +68,39 @@ class SingBoxEngineService : Service() {
             }
         } catch (t: Throwable) {
             Log.e(TAG, "command failed", t)
-            reply(msg.replyTo, EngineProtocol.REPLY_ERR, EngineProtocol.KEY_ERROR to (t.message ?: t.javaClass.simpleName))
+            reply(
+                msg.replyTo, EngineProtocol.REPLY_ERR,
+                EngineProtocol.KEY_ID to idOf(msg),
+                EngineProtocol.KEY_ERROR to (t.message ?: t.javaClass.simpleName)
+            )
         }
     }
 
+    /**
+     * Every reply echoes the request id: the main process correlates replies with
+     * the command that produced them, and a reply without the id is dropped — that
+     * is what silently prevented `onStarted` (live port persisted + Telegram proxy
+     * re-applied) from ever running.
+     */
+    private fun idOf(msg: Message): Int = msg.data.getInt(EngineProtocol.KEY_ID, 0)
+
     private fun handleStart(msg: Message) {
-        val link = msg.data.getString(EngineProtocol.KEY_LINK) ?: return
+        val id = idOf(msg)
+        val link = msg.data.getString(EngineProtocol.KEY_LINK)
+        if (link.isNullOrBlank()) {
+            reply(
+                msg.replyTo, EngineProtocol.REPLY_ERR,
+                EngineProtocol.KEY_ID to id,
+                EngineProtocol.KEY_ERROR to "Missing proxy link"
+            )
+            return
+        }
         val portHint = msg.data.getInt(EngineProtocol.KEY_PORT_HINT, 0)
         val replyTo = msg.replyTo
         synchronized(stateLock) {
             if (currentServer != null && currentLink == link) {
                 // Already running the very same node — answer with the live port.
-                reply(replyTo, EngineProtocol.REPLY_OK, EngineProtocol.KEY_PORT to currentPort)
+                reply(replyTo, EngineProtocol.REPLY_OK, EngineProtocol.KEY_ID to id, EngineProtocol.KEY_PORT to currentPort)
                 return
             }
             stopLocked()
@@ -86,7 +109,11 @@ class SingBoxEngineService : Service() {
         val config = VlessConfig.buildConfig(link, port)
         if (config == null) {
             Log.e(TAG, "refusing invalid node: $link")
-            reply(replyTo, EngineProtocol.REPLY_ERR, EngineProtocol.KEY_ERROR to "Unsupported or invalid proxy link")
+            reply(
+                replyTo, EngineProtocol.REPLY_ERR,
+                EngineProtocol.KEY_ID to id,
+                EngineProtocol.KEY_ERROR to "Unsupported or invalid proxy link"
+            )
             return
         }
         val server = LibboxEngine.start(applicationContext, config)
@@ -95,14 +122,18 @@ class SingBoxEngineService : Service() {
             currentLink = link
             currentPort = port
         }
-        reply(replyTo, EngineProtocol.REPLY_OK, EngineProtocol.KEY_PORT to port)
+        reply(replyTo, EngineProtocol.REPLY_OK, EngineProtocol.KEY_ID to id, EngineProtocol.KEY_PORT to port)
     }
 
     private fun handleStop(msg: Message) {
         synchronized(stateLock) {
             stopLocked()
         }
-        reply(msg.replyTo, EngineProtocol.REPLY_OK, EngineProtocol.KEY_PORT to 0)
+        reply(
+            msg.replyTo, EngineProtocol.REPLY_OK,
+            EngineProtocol.KEY_ID to idOf(msg),
+            EngineProtocol.KEY_PORT to 0
+        )
     }
 
     private fun handleStatus(msg: Message) {
@@ -111,6 +142,7 @@ class SingBoxEngineService : Service() {
         }
         reply(
             msg.replyTo, EngineProtocol.REPLY_OK,
+            EngineProtocol.KEY_ID to idOf(msg),
             EngineProtocol.KEY_RUNNING to state.first,
             EngineProtocol.KEY_PORT to state.second
         )

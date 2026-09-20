@@ -1810,25 +1810,16 @@ public class SharedConfig {
         }
         final SingProxy sing = (SingProxy) proxyInfo;
         try {
+            // Recovery hook: when the isolated engine process is reclaimed while the
+            // app is backgrounded, the client calls back into this layer so the node
+            // is restarted from the *persisted* state (idempotent, and a no-op once
+            // the proxy has been disabled).
+            ProxyEngineClient.setRestartDelegate(SharedConfig::ensureCurrentExternalStarted);
             ProxyEngineClient.start(ApplicationLoader.applicationContext, sing.link, sing.port, new ProxyEngineClient.StartCallback() {
                 @Override
                 public void onStarted(int port) {
                     try {
-                        sing.port = port;
-                        // Persist the live local port so cold start can rebind the
-                        // very same endpoint.
-                        saveProxyList();
-                        if (isProxyEnabledPref() && currentProxy == sing) {
-                            MessagesController.getGlobalMainSettings().edit()
-                                    .putString("proxy_ip", "127.0.0.1")
-                                    .putInt("proxy_port", port)
-                                    .putString("proxy_user", "")
-                                    .putString("proxy_pass", "")
-                                    .putString("proxy_secret", "")
-                                    .putBoolean("proxy_enabled", true)
-                                    .apply();
-                            Utilities.globalQueue.postRunnable(() -> ConnectionsManager.setProxySettings(true, "127.0.0.1", port, "", "", ""));
-                        }
+                        applySingProxyEndpoint(sing, port);
                     } catch (Throwable e) {
                         FileLog.e(e);
                     } finally {
@@ -1848,6 +1839,85 @@ public class SharedConfig {
         } catch (Throwable e) {
             FileLog.e(e);
             notifyProxyChanged();
+        }
+    }
+
+    /**
+     * Pushes the live local inbound endpoint of [sing] into both the persisted
+     * settings and the native connection layer. Runs on the main thread; the native
+     * call itself is posted to the global queue.
+     */
+    private static void applySingProxyEndpoint(SingProxy sing, int port) {
+        sing.port = port;
+        // Persist the live local port so cold start can rebind the very same
+        // endpoint.
+        saveProxyList();
+        if (isProxyEnabledPref() && currentProxy == sing) {
+            MessagesController.getGlobalMainSettings().edit()
+                    .putString("proxy_ip", "127.0.0.1")
+                    .putInt("proxy_port", port)
+                    .putString("proxy_user", "")
+                    .putString("proxy_pass", "")
+                    .putString("proxy_secret", "")
+                    .putBoolean("proxy_enabled", true)
+                    .apply();
+            Utilities.globalQueue.postRunnable(() -> ConnectionsManager.setProxySettings(true, "127.0.0.1", port, "", "", ""));
+        }
+    }
+
+    /**
+     * Foreground hook (called when the app returns to the foreground).
+     *
+     * The sing-box engine runs in its own `:singbox` process, which the system may
+     * freeze or kill while the app is backgrounded — Telegram however keeps its
+     * persisted proxy pointed at the local `127.0.0.1` mixed inbound. Coming back to
+     * the foreground therefore has to prove that the engine still answers and
+     * restart the node when it does not; otherwise every connection to the local
+     * port keeps failing until the app is restarted.
+     *
+     * No-op when the current proxy is not a sing-box node, when the proxy is
+     * disabled, or when the engine confirms that it is running on the persisted
+     * port. Never throws.
+     */
+    public static void recoverExternalProxyIfNeeded() {
+        try {
+            loadProxyList();
+            if (!isProxyEnabledPref()) {
+                return;
+            }
+            ProxyInfo info = currentProxy;
+            if (!(info instanceof SingProxy)) {
+                return;
+            }
+            final SingProxy sing = (SingProxy) info;
+            ProxyEngineClient.probeRunning(ApplicationLoader.applicationContext, (running, port) -> {
+                try {
+                    if (!running) {
+                        FileLog.d("sing-box engine not running after foreground");
+                        startProxyAsync(sing);
+                        return;
+                    }
+                    // The engine may have come back on a different port while
+                    // Telegram kept the old one — and a build that failed to persist
+                    // the endpoint leaves `proxy_enabled` on with no usable address.
+                    // Re-point Telegram at the live port whenever the persisted
+                    // endpoint does not describe it.
+                    SharedPreferences proxyPrefs = MessagesController.getGlobalMainSettings();
+                    boolean endpointMatches =
+                            "127.0.0.1".equals(proxyPrefs.getString("proxy_ip", ""))
+                                    && proxyPrefs.getInt("proxy_port", 0) == port
+                                    && proxyPrefs.getBoolean("proxy_enabled", false);
+                    if (port > 0 && !endpointMatches) {
+                        FileLog.d("re-applying sing-box endpoint on port " + port);
+                        applySingProxyEndpoint(sing, port);
+                        notifyProxyChanged();
+                    }
+                } catch (Throwable e) {
+                    FileLog.e(e);
+                }
+            });
+        } catch (Throwable e) {
+            FileLog.e(e);
         }
     }
 

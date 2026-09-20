@@ -426,6 +426,12 @@ public class ApplicationLoader extends Application {
                 super.onActivityStarted(activity);
                 if (wasInBackground) {
                     ensureCurrentNetworkGet(true);
+                    // ngx: the sing-box engine lives in its own `:singbox` process,
+                    // which the system may freeze or kill while the app is
+                    // backgrounded, while Telegram keeps its proxy pointed at the
+                    // local 127.0.0.1 inbound. Verify the engine on every return to
+                    // the foreground and restart it when it stopped answering.
+                    SharedConfig.recoverExternalProxyIfNeeded();
                 }
             }
         };
