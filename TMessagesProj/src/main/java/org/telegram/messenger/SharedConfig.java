@@ -2106,9 +2106,39 @@ public class SharedConfig {
             }
         }
         if (currentProxy == null && !TextUtils.isEmpty(proxyAddress) && proxyPort > 0) {
-            ProxyInfo info = currentProxy = new ProxyInfo(proxyAddress, proxyPort, proxyUsername, proxyPassword, proxySecret);
-            proxyList.add(0, info);
+            if (isLocalhostAddress(proxyAddress)) {
+                // The persisted endpoint is a snapshot of a previous session's
+                // sing-box local inbound (it always lives on 127.0.0.1). Turning
+                // it into a native SOCKS row leaves Telegram pointed at a port
+                // nothing listens on (the engine is not running) - the exact
+                // "node won't connect" symptom. Match the live port against an
+                // existing node proxy instead, and drop the stale snapshot when
+                // no node matches so the next start binds a fresh port.
+                for (ProxyInfo info : proxyList) {
+                    if (info instanceof SingProxy && info.port == proxyPort) {
+                        currentProxy = info;
+                        break;
+                    }
+                }
+                if (currentProxy == null) {
+                    preferences.edit()
+                            .remove("proxy_ip")
+                            .remove("proxy_port")
+                            .remove("proxy_user")
+                            .remove("proxy_pass")
+                            .remove("proxy_secret")
+                            .remove("proxy_enabled")
+                            .apply();
+                }
+            } else {
+                ProxyInfo info = currentProxy = new ProxyInfo(proxyAddress, proxyPort, proxyUsername, proxyPassword, proxySecret);
+                proxyList.add(0, info);
+            }
         }
+    }
+
+    private static boolean isLocalhostAddress(String address) {
+        return "127.0.0.1".equals(address) || "localhost".equalsIgnoreCase(address) || "::1".equals(address);
     }
 
     /** Decodes one typed proxy entry (V3). Returns null for invalid entries. */

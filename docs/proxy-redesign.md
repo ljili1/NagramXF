@@ -85,8 +85,8 @@ MTProto 是**最省资源**的选择：Telegram 原生支持、无需本地进�
 ### 4.1 协议与连接方式
 
 - **出站协议**：VLESS（`security=none|tls|reality`；支持 `flow`、uTLS 指纹 `fp`、
-  Reality 的 `pbk`/`sid`；传输支持 `tcp`/`ws`/`grpc`）
-- **内核**：sing-box（libbox AAR，**钉死 v1.13.21**）
+  Reality 的 `pbk`/`sid`；传输支持 `tcp`/`ws`/`grpc`/`h2`/`httpupgrade`）
+- **内核**：sing-box（libbox AAR，**钉死 v1.14.1**）
 - **入站**：`mixed`（SOCKS5 + HTTP 合一）监听 `127.0.0.1:6357`
 - **Telegram 侧**：使用其原生 SOCKS5 代理能力，指向该本地端口
   （复用 `native_setProxySettings`，**未改 JNI 层**）
@@ -127,8 +127,8 @@ Telegram ──SOCKS5──► 127.0.0.1:6357 ──► sing-box ──VLESS─�
 | **独立入口** | “VLESS 代理”是应用自身设置（`NekoSettingsActivity`）里的一等管理页；启用时经 `SharedConfig.setCurrentProxy(127.0.0.1:6357)` 把 Telegram 当前代理指向本地端口并持久化。**不再向 Telegram 原生代理列表注入哨兵条目、不再做哨兵地址翻译**（参考 Nekogram 谱系应用内设置形态） |
 | **配置与内核解耦** | `VlessConfig` 只负责 `vless://` → sing-box JSON，不碰内核；换内核不影响解析层 |
 | **未配置即直连** | `hasConfig()==false` 时不显示内置条目、不下发代理；`getLocalPort()<=0` 时**不设置代理**，回落直连。避免"端口 -1 导致连不上" |
-| **PlatformInterface 桩** | 本地代理无 TUN/VPN，15 个回调返回中性值（v1.13.21 只有 15 个方法，非新版 29 个） |
-| **版本钉死** | libbox 跨版本 `PlatformInterface` 签名会变，CI 固定 v1.13.21；升级需重跑 javap dump |
+| **PlatformInterface 桩** | 本地代理无 TUN/VPN，27 个回调返回中性值（v1.14.1 PlatformInterface 共 27 个方法；换版本需按接口补全 `PlatformStub`） |
+| **版本钉死** | libbox 跨版本 `PlatformInterface` 签名会变，CI 固定 v1.14.1；升级需按新版接口补全 `PlatformStub` |
 
 ---
 
@@ -165,7 +165,7 @@ Telegram ──SOCKS5──► 127.0.0.1:6357 ──► sing-box ──VLESS─�
 | `build.gradle` | `implementation fileTree("libs")`（对齐 Momogram：`TMessagesProj/libs/` 下任意 AAR 自动纳入；并取代原 `compileOnly fileTree('libs')`，避免同 AAR 双 classpath） |
 | `AndroidManifest.xml` | ~~登记 `VlessProxyService`~~ **已移除**（无前台 Service） |
 | `values/strings.xml` | 新增 vless 相关文案 |
-| `.github/workflows/build_arm64.yml` | CI 拉取并缓存 libbox.aar（v1.13.21） |
+| `.github/workflows/build_arm64.yml` | CI 拉取并缓存 libbox.aar（v1.14.1） |
 
 ### 5.4 重构目标
 
@@ -182,7 +182,7 @@ Momogram 作为"在 Telegram 客户端里内置代理内核"的开源参照，�
 |---|---|
 | 内核 AAR 放 `TMessagesProj/libs/`（`libv2ray.aar` 等） | ✅ `libbox.aar` 放 `TMessagesProj/libs/` |
 | `implementation fileTree("libs")` 引入 | ✅ 已替换原 `files(...)` + `compileOnly fileTree` |
-| CI 构建/下载 AAR + `actions/cache` 缓存 | ✅ `gh release download` + cache（钉 `v1.13.21`） |
+| CI 构建/下载 AAR + `actions/cache` 缓存 | ✅ `gh release download` + cache（钉 `v1.14.1`） |
 
 已知差异（均为有意为之）：
 

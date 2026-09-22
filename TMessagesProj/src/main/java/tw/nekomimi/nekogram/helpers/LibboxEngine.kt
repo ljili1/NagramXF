@@ -1,17 +1,22 @@
 package tw.nekomimi.nekogram.helpers
 
 import android.content.Context
+import io.nekohasekai.libbox.BridgeOptions
+import io.nekohasekai.libbox.BridgeSession
 import io.nekohasekai.libbox.CommandServer
 import io.nekohasekai.libbox.CommandServerHandler
 import io.nekohasekai.libbox.ConnectionOwner
 import io.nekohasekai.libbox.InterfaceUpdateListener
 import io.nekohasekai.libbox.Libbox
 import io.nekohasekai.libbox.LocalDNSTransport
+import io.nekohasekai.libbox.NeighborUpdateListener
 import io.nekohasekai.libbox.NetworkInterfaceIterator
 import io.nekohasekai.libbox.Notification
 import io.nekohasekai.libbox.OverrideOptions
 import io.nekohasekai.libbox.PlatformInterface
+import io.nekohasekai.libbox.PlatformUser
 import io.nekohasekai.libbox.SetupOptions
+import io.nekohasekai.libbox.ShellSession
 import io.nekohasekai.libbox.StringIterator
 import io.nekohasekai.libbox.SystemProxyStatus
 import io.nekohasekai.libbox.TunOptions
@@ -36,7 +41,7 @@ import android.util.Log
  *
  * and is released with `closeService()` + `close()`.
  *
- * CRITICAL constraints (verified against proother/sing-box-lib v1.13.21):
+ * CRITICAL constraints (verified against proother/sing-box-lib v1.14.1):
  *   * The native calls block for seconds — every entry point here MUST be
  *     called off the UI thread (the owning proxy object dispatches onto a
  *     background executor).
@@ -44,9 +49,9 @@ import android.util.Log
  *     in a state a later native call cannot recover from (SIGABRT bypasses the
  *     Java try/catch), so a failed start is always torn down completely and
  *     surfaced as an exception for the caller to report.
- *   * Keep the AAR pinned to v1.13.21. Newer sing-box releases grow
- *     [PlatformInterface] (shell/bridge/auto-redirect callbacks) and require
- *     re-implementing [PlatformStub].
+ *   * Keep the AAR pinned to v1.14.1. sing-box grows [PlatformInterface]
+ *     across releases (shell / bridge / neighbor-monitor callbacks): a version
+ *     bump requires re-implementing [PlatformStub] against the new interface.
  */
 object LibboxEngine {
 
@@ -121,6 +126,8 @@ object LibboxEngine {
         override fun writeDebugMessage(message: String) {
             Log.d("LibboxEngine", "libbox: $message")
         }
+        override fun triggerNativeCrash() {}
+        override fun connectSSHAgent(): Int = -1
     }
 
     /**
@@ -140,6 +147,7 @@ object LibboxEngine {
         override fun clearDNSCache() {}
         override fun readWIFIState(): WIFIState? = null
         override fun sendNotification(notification: Notification?) {}
+        override fun cancelNotification(identifier: String, typeID: Int) {}
         override fun startDefaultInterfaceMonitor(listener: InterfaceUpdateListener?) {}
         override fun closeDefaultInterfaceMonitor(listener: InterfaceUpdateListener?) {}
         override fun getInterfaces(): NetworkInterfaceIterator? = null
@@ -150,6 +158,24 @@ object LibboxEngine {
             destinationAddress: String?,
             destinationPort: Int
         ): ConnectionOwner? = null
-        override fun systemCertificates(): StringIterator? = null
+        override fun startNeighborMonitor(listener: NeighborUpdateListener?) {}
+        override fun closeNeighborMonitor(listener: NeighborUpdateListener?) {}
+        override fun registerMyInterface(name: String) {}
+        override fun usePlatformShell(): Boolean = false
+        override fun checkPlatformShell() {}
+        override fun openShellSession(
+            user: PlatformUser?,
+            command: String,
+            environ: StringIterator?,
+            term: String,
+            rows: Int,
+            cols: Int
+        ): ShellSession? = null
+        override fun lookupUser(username: String): PlatformUser? = null
+        override fun lookupSFTPServer(): String = ""
+        override fun readSystemSSHHostKey(): String = ""
+        override fun tailscaleHostname(): String = ""
+        override fun usePlatformBridge(): Boolean = false
+        override fun createBridge(options: BridgeOptions?): BridgeSession? = null
     }
 }

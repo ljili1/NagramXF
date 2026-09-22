@@ -235,7 +235,7 @@ object VlessConfig {
 
             val at = authority.indexOf('@')
             if (at < 0) return null
-            val uuid = authority.substring(0, at)
+            val uuid = decode(authority.substring(0, at))
             val hostPort = authority.substring(at + 1)
 
             // host:port, tolerating bare IPv6 hosts like [2001:db8::1]:443
@@ -269,13 +269,23 @@ object VlessConfig {
             outbound.put("uuid", uuid)
 
             val flow = params["flow"]
-            if (!flow.isNullOrBlank()) outbound.put("flow", flow)
+            if (flow != null && flow.equals("xtls-rprx-vision", ignoreCase = true)) {
+                // sing-box only accepts xtls-rprx-vision; an unknown flow value
+                // (e.g. the legacy xtls-rprx-vision-udp443) is rejected at
+                // startup and the whole node appears "unable to connect".
+                outbound.put("flow", "xtls-rprx-vision")
+            }
 
             val security = (params["security"] ?: "none").lowercase()
             if (security != "none") {
                 val tls = JSONObject()
                 tls.put("enabled", true)
-                val sni = params["sni"]
+                // Many providers only set `host` (the ws Host header) without a
+                // separate `sni`. For TLS the server_name must be the CDN/SNI
+                // domain, so fall back host -> sni exactly like v2rayN does;
+                // otherwise the TLS handshake is routed to the wrong vhost and
+                // the connection dies before any proxy traffic.
+                val sni = params["sni"]?.ifBlank { null } ?: params["host"]?.ifBlank { null }
                 if (!sni.isNullOrBlank()) tls.put("server_name", sni)
                 val fp = params["fp"]
                 if (!fp.isNullOrBlank()) {
@@ -285,13 +295,17 @@ object VlessConfig {
                     tls.put("utls", utls)
                 }
                 if (security == "reality") {
-                    val reality = JSONObject()
-                    reality.put("enabled", true)
                     val pbk = params["pbk"]
-                    if (!pbk.isNullOrBlank()) reality.put("public_key", pbk)
-                    val sid = params["sid"]
-                    if (!sid.isNullOrBlank()) reality.put("short_id", sid)
-                    tls.put("reality", reality)
+                    if (!pbk.isNullOrBlank()) {
+                        val reality = JSONObject()
+                        reality.put("enabled", true)
+                        reality.put("public_key", pbk)
+                        val sid = params["sid"]
+                        if (!sid.isNullOrBlank()) reality.put("short_id", sid)
+                        tls.put("reality", reality)
+                    }
+                    // reality without public_key cannot handshake; emit plain TLS
+                    // rather than a config the engine rejects at startup.
                 }
                 outbound.put("tls", tls)
             }
@@ -310,6 +324,22 @@ object VlessConfig {
                 transport.put("type", "grpc")
                 val serviceName = params["serviceName"]
                 if (!serviceName.isNullOrBlank()) transport.put("service_name", serviceName)
+                outbound.put("transport", transport)
+            } else if (type == "h2") {
+                val transport = JSONObject()
+                transport.put("type", "http")
+                val h2Host = params["host"]
+                if (!h2Host.isNullOrBlank()) transport.put("host", JSONArray().put(h2Host))
+                val h2Path = params["path"]
+                if (!h2Path.isNullOrBlank()) transport.put("path", h2Path)
+                outbound.put("transport", transport)
+            } else if (type == "http") {
+                val transport = JSONObject()
+                transport.put("type", "httpupgrade")
+                val huHost = params["host"]
+                if (!huHost.isNullOrBlank()) transport.put("host", huHost)
+                val huPath = params["path"]
+                if (!huPath.isNullOrBlank()) transport.put("path", huPath)
                 outbound.put("transport", transport)
             }
 

@@ -44,6 +44,7 @@ import org.telegram.messenger.browser.Browser
 import tw.nekomimi.nekogram.helpers.ProxyLinkParser
 import tw.nekomimi.nekogram.helpers.ProxyTypes
 import tw.nekomimi.nekogram.helpers.SubscriptionHelper
+import tw.nekomimi.nekogram.helpers.WebSocketHelper
 import tw.nekomimi.nekogram.ui.BottomBuilder
 import tw.nekomimi.nekogram.utils.AlertUtil.showToast
 import java.io.File
@@ -65,17 +66,24 @@ object ProxyUtil {
                     val networkCapabilities =
                         connectivityManager.getNetworkCapabilities(network) ?: return
                     val vpn = networkCapabilities.hasTransport(NetworkCapabilities.TRANSPORT_VPN)
-                    if (!vpn) {
-                        if (SharedConfig.currentProxy == null) {
-                            if (!SharedConfig.proxyList.isEmpty()) {
-                                SharedConfig.setCurrentProxy(SharedConfig.proxyList[0])
-                            } else {
-                                return
+                    // Only react to VPN transitions: drop the proxy when a VPN
+                    // takes over, restore it when the VPN goes away. Never
+                    // auto-select or auto-enable a proxy here - the built-in ws
+                    // row (index 0) has a dead upstream, so auto-selecting it
+                    // would silently point Telegram at a proxy that can never
+                    // connect ("node won't connect").
+                    if (vpn) {
+                        if (SharedConfig.isProxyEnabled()) {
+                            SharedConfig.setProxyEnable(false)
+                            AndroidUtilities.runOnUIThread {
+                                NotificationCenter.getGlobalInstance()
+                                    .postNotificationName(NotificationCenter.proxySettingsChanged)
                             }
                         }
-                    }
-                    if ((SharedConfig.isProxyEnabled() && vpn) || (!SharedConfig.isProxyEnabled() && !vpn)) {
-                        SharedConfig.setProxyEnable(!vpn)
+                    } else if (!SharedConfig.isProxyEnabled() && SharedConfig.currentProxy != null
+                        && !WebSocketHelper.proxyServer.equals(SharedConfig.currentProxy.address)
+                    ) {
+                        SharedConfig.setProxyEnable(true)
                         AndroidUtilities.runOnUIThread {
                             NotificationCenter.getGlobalInstance()
                                 .postNotificationName(NotificationCenter.proxySettingsChanged)
