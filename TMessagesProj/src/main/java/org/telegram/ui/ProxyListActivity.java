@@ -76,6 +76,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 
+import tw.nekomimi.nekogram.helpers.ProxyConnectivityHelper;
 import tw.nekomimi.nekogram.helpers.WebSocketHelper;
 import tw.nekomimi.nekogram.settings.Hysteria2NodeEditActivity;
 import tw.nekomimi.nekogram.settings.ShadowsocksNodeEditActivity;
@@ -892,11 +893,23 @@ public class ProxyListActivity extends BaseFragment implements NotificationCente
     }
 
     private void checkProxyList(boolean force) {
+        // Node proxies (sing-box) run a single engine at a time, so they are
+        // tested sequentially by ProxyConnectivityHelper instead of the parallel
+        // native checkProxy calls below.
+        ArrayList<SharedConfig.SingProxy> externalToCheck = new ArrayList<>();
         for (int a = 0, count = proxyList.size(); a < count; a++) {
             final SharedConfig.ProxyInfo proxyInfo = proxyList.get(a);
             if (proxyInfo.isExternal()) {
-                // sing-box nodes run their engine in the isolated process and are
-                // not probed from here; they keep their last measured state.
+                if (proxyInfo.checking) {
+                    continue;
+                }
+                if (!force && proxyInfo.availableCheckTime > 0) {
+                    long age = SystemClock.elapsedRealtime() - proxyInfo.availableCheckTime;
+                    if (age >= 0 && age < (proxyInfo.available ? 20 : 5) * 1000L) {
+                        continue;
+                    }
+                }
+                externalToCheck.add((SharedConfig.SingProxy) proxyInfo);
                 continue;
             }
             if (proxyInfo.checking || SystemClock.elapsedRealtime() - proxyInfo.availableCheckTime < (proxyInfo.available ? 20 : 5) * 1000 && !force) {
@@ -915,6 +928,9 @@ public class ProxyListActivity extends BaseFragment implements NotificationCente
                 }
                 NotificationCenter.getGlobalInstance().postNotificationName(NotificationCenter.proxyCheckDone, proxyInfo);
             }));
+        }
+        if (!externalToCheck.isEmpty()) {
+            ProxyConnectivityHelper.testNodes(externalToCheck, force, null);
         }
     }
 
