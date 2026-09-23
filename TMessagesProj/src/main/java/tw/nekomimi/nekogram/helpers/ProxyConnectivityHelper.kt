@@ -47,6 +47,18 @@ object ProxyConnectivityHelper {
     private const val NODE_TIMEOUT_MS = 20_000L
 
     /**
+     * Deferral before a probe really starts.
+     *
+     * The engine is started here, and this class is reached from synchronous
+     * notification dispatch - i.e. from inside UI event handlers (a "save" button
+     * or a menu item). Starting an engine inside that stack means a failure in the
+     * engine process looks like the button itself crashed the app. Every start is
+     * therefore pushed to a later main-loop turn, where nothing of the caller is
+     * on the stack anymore.
+     */
+    private const val PROBE_START_DELAY_MS = 200L
+
+    /**
      * Gap between two probes. Each one stops the previous engine and starts a new
      * one, and giving libbox a moment to release the old one keeps the rapid
      * stop/start sequence from stressing the native engine.
@@ -129,7 +141,23 @@ object ProxyConnectivityHelper {
         }
         if (!busy) {
             busy = true
-            processNext()
+            scheduleProcessNext(PROBE_START_DELAY_MS)
+        }
+    }
+
+    private val processNextRunnable = Runnable { processNext() }
+
+    /**
+     * Runs [processNext] on a later main-loop turn (or immediately when the caller
+     * is already outside any UI handler chain). Removable, so a cancelled batch
+     * cannot be resumed by a pending runnable.
+     */
+    private fun scheduleProcessNext(delayMs: Long) {
+        handler.removeCallbacks(processNextRunnable)
+        if (delayMs <= 0L) {
+            processNextRunnable.run()
+        } else {
+            handler.postDelayed(processNextRunnable, delayMs)
         }
     }
 
@@ -233,8 +261,8 @@ object ProxyConnectivityHelper {
             .postNotificationName(NotificationCenter.proxyCheckDone, node)
         // Small gap before the next node: the engine is stopped and restarted for
         // each probe, and libbox prefers not to be torn down and re-created back
-        // to back.
-        handler.postDelayed({ processNext() }, INTER_NODE_DELAY_MS)
+        // to back. Also keeps the next start out of the current callback stack.
+        scheduleProcessNext(INTER_NODE_DELAY_MS)
     }
 
     private fun applyResult(node: SharedConfig.SingProxy, time: Long, infrastructureFailure: Boolean) {
@@ -283,7 +311,7 @@ object ProxyConnectivityHelper {
         // A completion callback may have requested another batch.
         if (synchronized(queue) { queue.isNotEmpty() }) {
             busy = true
-            processNext()
+            scheduleProcessNext(PROBE_START_DELAY_MS)
         }
     }
 
@@ -328,6 +356,7 @@ object ProxyConnectivityHelper {
         generation++
         busy = false
         handler.removeCallbacks(timeoutRunnable)
+        handler.removeCallbacks(processNextRunnable)
         synchronized(completionCallbacks) { completionCallbacks.clear() }
         for (node in cleared) {
             notifyNotChecking(node)
