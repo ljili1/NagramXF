@@ -136,6 +136,18 @@ public class ProxyListActivity extends BaseFragment implements NotificationCente
      */
     private boolean pageVisible;
 
+    /**
+     * Delay before the first connectivity check after the page becomes visible.
+     *
+     * Probing a node starts the sing-box engine, so it is deliberately kept out of
+     * the frame in which the user leaves the node editor (or lands on the page):
+     * "typed/pasted a link, went back, app died" should not be able to happen here.
+     */
+    private static final long PROBE_AFTER_RESUME_DELAY_MS = 900L;
+
+    /** Debounced automatic check used by onResume. */
+    private final Runnable probeRunnable = this::checkProxyList;
+
     // na: action bar menu
     private ActionBarMenuItem otherItem;
 
@@ -1003,16 +1015,17 @@ public class ProxyListActivity extends BaseFragment implements NotificationCente
         if (listAdapter != null) {
             listAdapter.notifyDataSetChanged();
         }
-        // The list is rebuilt while the page was hidden (a node may have been
-        // imported meanwhile); refresh the measured states now that probing is
-        // allowed again.
-        checkProxyList();
+        // Delayed: see PROBE_AFTER_RESUME_DELAY_MS. The list itself was already
+        // rebuilt by the notification that arrived while the page was hidden.
+        AndroidUtilities.cancelRunOnUIThread(probeRunnable);
+        AndroidUtilities.runOnUIThread(probeRunnable, PROBE_AFTER_RESUME_DELAY_MS);
     }
 
     @Override
     public void onPause() {
         super.onPause();
         pageVisible = false;
+        AndroidUtilities.cancelRunOnUIThread(probeRunnable);
     }
 
     @Override

@@ -1,11 +1,13 @@
 package tw.nekomimi.nekogram.utils
 
+import android.app.Activity
 import android.content.Context
 import android.content.Intent
 import android.widget.Toast
 import androidx.core.net.toUri
 import org.telegram.messenger.AndroidUtilities
 import org.telegram.messenger.ApplicationLoader
+import org.telegram.messenger.FileLog
 import org.telegram.messenger.LocaleController.getString
 import org.telegram.messenger.R
 import org.telegram.tgnet.TLRPC
@@ -78,16 +80,25 @@ object AlertUtil {
     @JvmOverloads
     fun showSimpleAlert(ctx: Context?, title: String?, text: String, listener: ((AlertDialog.Builder) -> Unit)? = null) = AndroidUtilities.runOnUIThread(Runnable {
         if (ctx == null) return@Runnable
+        // The callback may arrive long after it was requested (imports / fetches run
+        // on worker threads). Showing a dialog on an Activity that is already
+        // finishing throws WindowManager.BadTokenException and kills the process,
+        // so a dead host is simply skipped.
+        if (ctx is Activity && (ctx.isFinishing || ctx.isDestroyed)) return@Runnable
 
-        val builder = AlertDialog.Builder(ctx)
-        builder.setTitle(title ?: getString(R.string.NagramX))
-        builder.setMessage(text)
+        try {
+            val builder = AlertDialog.Builder(ctx)
+            builder.setTitle(title ?: getString(R.string.NagramX))
+            builder.setMessage(text)
 
-        builder.setPositiveButton(getString(R.string.OK)) { _, _ ->
-            builder.dismissRunnable?.run()
-            listener?.invoke(builder)
+            builder.setPositiveButton(getString(R.string.OK)) { _, _ ->
+                builder.dismissRunnable?.run()
+                listener?.invoke(builder)
+            }
+            builder.show()
+        } catch (t: Throwable) {
+            FileLog.e(t)
         }
-        builder.show()
     })
 
     @JvmStatic
