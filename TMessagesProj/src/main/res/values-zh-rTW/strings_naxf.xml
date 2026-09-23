@@ -374,4 +374,5 @@
     <string name="FeedShownChannels">顯示的頻道</string>
     <string name="FeedUnreadCounter">未讀貼文計數</string>
     <string name="HideFeedTab">隱藏資訊流標籤頁</string>
+    <string name="ProxyCheckUnknown">未檢測</string>
 </resources>

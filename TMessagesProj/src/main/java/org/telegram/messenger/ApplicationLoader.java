@@ -343,9 +343,7 @@ public class ApplicationLoader extends Application {
     public static boolean isEngineProcess() {
         try {
             String name = getCurrentProcessName();
-            // `:singbox` hosts the live engine, `:singbox_test` the throwaway one
-            // used by the connectivity tester. Neither runs the Telegram stack.
-            return name != null && (name.endsWith(":singbox") || name.endsWith(":singbox_test"));
+            return name != null && name.endsWith(":singbox");
         } catch (Throwable ignore) {
             return false;
         }

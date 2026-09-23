@@ -1846,17 +1846,27 @@ public class SharedConfig {
 
                 @Override
                 public void onError(String error) {
-                    // The engine (isolated process) refused the node. The user's
-                    // saved proxy selection is deliberately kept — nothing is
-                    // cleared automatically. The node is marked unreachable though,
-                    // so the row shows "unavailable" instead of looking like it is
-                    // still connecting (and auto-select has a signal to act on).
+                    // The engine (isolated process) did not start the node. Two very
+                    // different situations have to be told apart:
+                    //  * the engine refused the *configuration*: the node really is
+                    //    unusable, so the row is marked unavailable (and auto-select
+                    //    gets a signal to act on);
+                    //  * the engine process/binding itself failed (bind refused,
+                    //    process died, no answer in time): that says nothing about the
+                    //    node, so the user's selection and its measured availability
+                    //    are left exactly as they are. Blaming the node here is what
+                    //    made a healthy node read "unavailable" after any engine
+                    //    hiccup - and the user then cannot connect.
                     FileLog.e("startProxyAsync failed: " + error);
-                    sing.checking = false;
-                    sing.available = false;
-                    sing.ping = 0;
-                    sing.availableCheckTime = SystemClock.elapsedRealtime();
-                    NotificationCenter.getGlobalInstance().postNotificationName(NotificationCenter.proxyCheckDone, sing);
+                    if (!ProxyEngineClient.isInfrastructureError(error)) {
+                        sing.checking = false;
+                        sing.available = false;
+                        sing.ping = 0;
+                        sing.availableCheckTime = SystemClock.elapsedRealtime();
+                        NotificationCenter.getGlobalInstance().postNotificationName(NotificationCenter.proxyCheckDone, sing);
+                    } else {
+                        sing.checking = false;
+                    }
                     notifyProxyChanged();
                 }
             });

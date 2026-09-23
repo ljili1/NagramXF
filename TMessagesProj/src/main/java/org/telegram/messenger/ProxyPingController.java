@@ -61,16 +61,22 @@ public class ProxyPingController {
             }
             final String probeAddress = address;
             final int probePort = port;
-            ConnectionsManager.getInstance(UserConfig.selectedAccount).checkProxy(
-                    probeAddress, probePort,
-                    proxyInfo.username, proxyInfo.password, proxyInfo.secret,
-                    new RequestTimeDelegate() {
-                        @Override
-                        public void run(long time) {
-                            AndroidUtilities.runOnUIThread(() -> onPingResult(proxyInfo, time));
+            try {
+                ConnectionsManager.getInstance(UserConfig.selectedAccount).checkProxy(
+                        probeAddress, probePort,
+                        proxyInfo.username, proxyInfo.password, proxyInfo.secret,
+                        new RequestTimeDelegate() {
+                            @Override
+                            public void run(long time) {
+                                AndroidUtilities.runOnUIThread(() -> onPingResult(proxyInfo, time));
+                            }
                         }
-                    }
-            );
+                );
+            } catch (Throwable e) {
+                // Runs from a timer: an escaping throwable would kill the process.
+                FileLog.e(e);
+                scheduleNextPing();
+            }
         } else {
             scheduleNextPing();
         }

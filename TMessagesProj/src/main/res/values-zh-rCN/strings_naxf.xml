@@ -296,4 +296,5 @@
     <string name="FeedShownChannels">显示的频道</string>
     <string name="FeedUnreadCounter">未读帖子计数</string>
     <string name="HideFeedTab">隐藏信息流标签页</string>
+    <string name="ProxyCheckUnknown">未检测</string>
 </resources>

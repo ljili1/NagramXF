@@ -57,6 +57,32 @@ object ProxyEngineClient {
     /** A stop request that is not confirmed in time is treated as stopped. */
     private const val STOP_TIMEOUT_MS = 2500L
 
+    /**
+     * Upper bound on a start request.
+     *
+     * A start that is never answered (bind refused, service missing, engine
+     * wedged) used to hang forever: no callback at all, so the node kept looking
+     * like it was still connecting and nothing ever tried to bring the engine
+     * back - the "node cannot connect and never recovers" symptom.
+     */
+    private const val START_TIMEOUT_MS = 15_000L
+
+    /**
+     * Prefix marking a failure that is about the **engine process / binding**
+     * rather than about the node configuration (bind refused, binding died,
+     * process killed, no answer in time).
+     *
+     * Callers must distinguish the two: an engine that is not running says
+     * nothing about whether the node works, so such a failure must never mark the
+     * node as unavailable nor clear the user's proxy state.
+     */
+    const val INFRA_ERROR_PREFIX = "infra:"
+
+    /** True when [error] describes an engine/binding failure, not a bad node. */
+    @JvmStatic
+    fun isInfrastructureError(error: String?): Boolean =
+        error != null && error.startsWith(INFRA_ERROR_PREFIX)
+
     /** Upper bound on consecutive recovery rounds (reset once the engine answers). */
     private const val MAX_RECOVERY_ROUNDS = 5
 
@@ -165,7 +191,7 @@ object ProxyEngineClient {
             engineRunning = false
             bindingSuspect = true
             Log.w(TAG, "engine process died; UI keeps proxy state")
-            failPending("engine process died")
+            failPending("$INFRA_ERROR_PREFIX engine process died")
             scheduleRecovery(RECOVER_DELAY_MS)
         }
 
@@ -177,7 +203,7 @@ object ProxyEngineClient {
             engineRunning = false
             bindingSuspect = true
             releaseBinding()
-            failPending("engine binding died")
+            failPending("$INFRA_ERROR_PREFIX engine binding died")
             scheduleRecovery(RECOVER_DELAY_MS)
         }
 
@@ -187,7 +213,7 @@ object ProxyEngineClient {
             engineRunning = false
             bindingSuspect = true
             releaseBinding()
-            failPending("engine service unavailable")
+            failPending("$INFRA_ERROR_PREFIX engine service unavailable")
             scheduleRecovery(RECOVER_DELAY_MS)
         }
     }
@@ -216,10 +242,21 @@ object ProxyEngineClient {
             return
         }
         lastLink = link
-        send(context, EngineProtocol.MSG_START, Pending.Start(callback)) { data ->
+        val id = send(context, EngineProtocol.MSG_START, Pending.Start(callback)) { data ->
             data.putString(EngineProtocol.KEY_LINK, link)
             data.putInt(EngineProtocol.KEY_PORT_HINT, portHint)
         }
+        mainHandler.postDelayed({
+            val request = synchronized(pending) { pending.remove(id) }
+            if (request is Pending.Start) {
+                // No answer in time: report it instead of hanging silently, then
+                // let the (bounded) recovery path try to rebuild the engine.
+                Log.e(TAG, "engine start timed out")
+                engineRunning = false
+                runCallback { request.callback?.onError("$INFRA_ERROR_PREFIX engine start timeout") }
+                scheduleRecovery(RECOVER_DELAY_MS)
+            }
+        }, START_TIMEOUT_MS)
     }
 
     @JvmStatic
@@ -349,7 +386,11 @@ object ProxyEngineClient {
     }
 
     private fun ensureBinding(context: Context?) {
-        val ctx = context ?: ApplicationLoader.applicationContext ?: return
+        val ctx = context ?: ApplicationLoader.applicationContext
+        if (ctx == null) {
+            failPending("$INFRA_ERROR_PREFIX engine context unavailable")
+            return
+        }
         if (messenger != null) {
             return
         }
@@ -379,7 +420,11 @@ object ProxyEngineClient {
         } catch (t: Throwable) {
             bindingHeld = false
             Log.e(TAG, "bind failed", t)
+            // The queued commands must be answered (as an engine failure), not
+            // silently dropped: a dropped start request left the node looking like
+            // it was connecting forever with no attempt to recover.
             synchronized(pendingSend) { pendingSend.clear() }
+            failPending("$INFRA_ERROR_PREFIX engine service unavailable")
         }
     }
 

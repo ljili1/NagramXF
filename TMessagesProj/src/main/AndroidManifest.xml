@@ -914,14 +914,6 @@
             android:process=":singbox"
             android:exported="false" />
 
-        <!-- Throwaway engine host for connectivity tests / retest ping. Its own
-             process keeps the test node from disturbing (or crashing) the engine
-             that currently serves traffic. -->
-        <service
-            android:name="tw.nekomimi.nekogram.services.SingBoxTestEngineService"
-            android:process=":singbox_test"
-            android:exported="false" />
-
     </application>
 
 </manifest>

@@ -30,6 +30,20 @@ object VlessConfig {
         "hysteria2://", "hysteria://", "tuic://"
     )
 
+    /** Tag of the resolver used for the proxy server's own domain. */
+    private const val DNS_DIRECT_TAG = "dns-direct"
+
+    /**
+     * Bootstrap resolver for the proxy server address.
+     *
+     * It has to be a plain IP (it is used *before* any proxy exists, so it cannot
+     * go through the proxy) and sing-box dials it directly. A domestic public
+     * resolver is used because it is reliably reachable on Chinese networks, while
+     * the common 8.8.8.8 / 1.1.1.1 are frequently unreachable or poisoned there -
+     * and a resolver that cannot be reached means the node can never be dialled.
+     */
+    private const val BOOTSTRAP_DNS = "223.5.5.5"
+
     /**
      * Build a full sing-box config JSON. Returns null when [link] is blank or
      * cannot be parsed / is not a supported proxy scheme.
@@ -50,6 +64,27 @@ object VlessConfig {
         val inbounds = JSONArray()
         inbounds.put(inbound)
         config.put("inbounds", inbounds)
+
+        // Since sing-box 1.14 an outbound whose `server` is a *domain* needs a
+        // domain_resolver (or route.default_domain_resolver) - without one the
+        // server address is never resolved and the node cannot connect at all.
+        // Node links overwhelmingly use domain servers, so this is the difference
+        // between "node works" and "node is dead".
+        //
+        // Only emitted when the server really is a domain: for an IP literal there
+        // is nothing to resolve and the config is left exactly as before.
+        val serverHost = outbound.optString("server", "")
+        if (serverHost.isNotBlank() && !isIpLiteral(serverHost)) {
+            val dnsServer = JSONObject()
+                .put("type", "udp")
+                .put("tag", DNS_DIRECT_TAG)
+                .put("server", BOOTSTRAP_DNS)
+                .put("server_port", 53)
+            val servers = JSONArray()
+            servers.put(dnsServer)
+            config.put("dns", JSONObject().put("servers", servers))
+            outbound.put("domain_resolver", DNS_DIRECT_TAG)
+        }
 
         val outbounds = JSONArray()
         outbounds.put(outbound)
@@ -520,6 +555,23 @@ object VlessConfig {
             outbound.put("obfs", obfs)
         }
         return outbound
+    }
+
+    /**
+     * True when [host] is an IP literal (IPv4 or IPv6): the outbound server then
+     * needs no DNS resolution and no resolver is emitted for it.
+     */
+    private fun isIpLiteral(host: String): Boolean {
+        val value = host.trim().trim('[', ']')
+        if (value.isEmpty()) return false
+        if (value.contains(':')) return true // IPv6 literal
+        val parts = value.split('.')
+        if (parts.size != 4) return false
+        for (part in parts) {
+            val octet = part.toIntOrNull() ?: return false
+            if (octet < 0 || octet > 255) return false
+        }
+        return true
     }
 
     private fun parseQuery(query: String): LinkedHashMap<String, String> {

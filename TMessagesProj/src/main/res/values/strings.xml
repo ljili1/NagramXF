@@ -11294,4 +11294,5 @@
     <string name="ProxyLinkFieldLabel">links</string>
     <string name="SubscriptionFetching">Fetching subscription…</string>
     <string name="AddProxyLinkNode">Add proxy node</string>
+    <string name="ProxyCheckUnknown">Not checked</string>
 </resources>

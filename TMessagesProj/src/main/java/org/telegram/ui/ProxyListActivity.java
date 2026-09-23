@@ -125,6 +125,16 @@ public class ProxyListActivity extends BaseFragment implements NotificationCente
     private List<SharedConfig.ProxyInfo> selectedItems = new ArrayList<>();
     private List<SharedConfig.ProxyInfo> proxyList = new ArrayList<>();
     private boolean wasCheckedAllList;
+    /**
+     * True between onResume and onPause.
+     *
+     * Connectivity checks are only ever started while the page is actually
+     * visible: probing a node starts the sing-box engine, and the page is still
+     * alive (but invisible) while another page sits on top of it - e.g. the node
+     * editor used to paste/import a link. Starting the engine from there is what
+     * made "importing a link" look like it crashed the app.
+     */
+    private boolean pageVisible;
 
     // na: action bar menu
     private ActionBarMenuItem otherItem;
@@ -255,6 +265,12 @@ public class ProxyListActivity extends BaseFragment implements NotificationCente
                         valueTextView.setText(getString(R.string.Available));
                     }
                     colorKey = Theme.key_windowBackgroundWhiteGreenText;
+                } else if (currentInfo.availableCheckTime == 0) {
+                    // Never measured, or the measurement could not run at all (the
+                    // engine did not answer / the built-in ws relay is idle): report
+                    // that honestly instead of claiming the proxy is unreachable.
+                    valueTextView.setText(getString(R.string.ProxyCheckUnknown));
+                    colorKey = Theme.key_windowBackgroundWhiteGrayText2;
                 } else {
                     valueTextView.setText(getString(R.string.Unavailable));
                     colorKey = Theme.key_text_RedRegular;
@@ -899,13 +915,18 @@ public class ProxyListActivity extends BaseFragment implements NotificationCente
     }
 
     private void checkProxyList(boolean force) {
+        // Probing a node starts the sing-box engine, so it only happens while this
+        // page is visible. While it is hidden (another page on top, e.g. the node
+        // editor) any engine start here would be a side effect of merely importing
+        // a link - start it from the visible page instead.
+        if (!pageVisible) {
+            return;
+        }
         // Native rows (Socks5 / MTProto) are probed in parallel by
         // ConnectionsManager. Node rows need an engine, so they are probed one
-        // after another by ProxyConnectivityHelper — but in the throwaway
-        // `:singbox_test` process, never in the engine that currently serves
-        // traffic. Probing therefore never interrupts the selected proxy, which
-        // is what makes it safe to refresh *every* row here, including while a
-        // node is in use.
+        // after another by ProxyConnectivityHelper - which never disturbs the node
+        // that currently serves traffic. Probing therefore never interrupts the
+        // selected proxy, which is what makes it safe to refresh every row here.
         ArrayList<SharedConfig.SingProxy> externalCandidates = new ArrayList<>();
         final long now = SystemClock.elapsedRealtime();
         for (int a = 0, count = proxyList.size(); a < count; a++) {
@@ -946,18 +967,24 @@ public class ProxyListActivity extends BaseFragment implements NotificationCente
             proxyInfo.checking = true;
             final String probeAddress = checkAddress;
             final int probePort = checkPort;
-            proxyInfo.proxyCheckPingId = ConnectionsManager.getInstance(currentAccount).checkProxy(probeAddress, probePort, proxyInfo.username, proxyInfo.password, proxyInfo.secret, time -> AndroidUtilities.runOnUIThread(() -> {
-                proxyInfo.availableCheckTime = SystemClock.elapsedRealtime();
+            try {
+                proxyInfo.proxyCheckPingId = ConnectionsManager.getInstance(currentAccount).checkProxy(probeAddress, probePort, proxyInfo.username, proxyInfo.password, proxyInfo.secret, time -> AndroidUtilities.runOnUIThread(() -> {
+                    proxyInfo.availableCheckTime = SystemClock.elapsedRealtime();
+                    proxyInfo.checking = false;
+                    if (time == -1) {
+                        proxyInfo.available = false;
+                        proxyInfo.ping = 0;
+                    } else {
+                        proxyInfo.ping = time;
+                        proxyInfo.available = true;
+                    }
+                    NotificationCenter.getGlobalInstance().postNotificationName(NotificationCenter.proxyCheckDone, proxyInfo);
+                }));
+            } catch (Throwable e) {
+                // A probe must never take the page down with it.
+                FileLog.e(e);
                 proxyInfo.checking = false;
-                if (time == -1) {
-                    proxyInfo.available = false;
-                    proxyInfo.ping = 0;
-                } else {
-                    proxyInfo.ping = time;
-                    proxyInfo.available = true;
-                }
-                NotificationCenter.getGlobalInstance().postNotificationName(NotificationCenter.proxyCheckDone, proxyInfo);
-            }));
+            }
         }
         if (!externalCandidates.isEmpty()) {
             ProxyConnectivityHelper.testNodes(externalCandidates, force, null);
@@ -972,9 +999,20 @@ public class ProxyListActivity extends BaseFragment implements NotificationCente
     @Override
     public void onResume() {
         super.onResume();
+        pageVisible = true;
         if (listAdapter != null) {
             listAdapter.notifyDataSetChanged();
         }
+        // The list is rebuilt while the page was hidden (a node may have been
+        // imported meanwhile); refresh the measured states now that probing is
+        // allowed again.
+        checkProxyList();
+    }
+
+    @Override
+    public void onPause() {
+        super.onPause();
+        pageVisible = false;
     }
 
     @Override
