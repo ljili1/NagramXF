@@ -896,11 +896,28 @@ public class ProxyListActivity extends BaseFragment implements NotificationCente
         // Node proxies (sing-box) run a single engine at a time, so they are
         // tested sequentially by ProxyConnectivityHelper instead of the parallel
         // native checkProxy calls below.
-        ArrayList<SharedConfig.SingProxy> externalToCheck = new ArrayList<>();
+        //
+        // The in-use node is never batched together with other nodes: probing
+        // another node tears the current engine down (stopLocked inside the
+        // engine service) and every connection through the local inbound dies
+        // until the test queue drains. The current node is therefore probed
+        // alone (the engine answers the same link idempotently with its live
+        // port, so this never interrupts it), and while a sing-box node is
+        // actively in use every other node is skipped entirely.
+        ArrayList<SharedConfig.SingProxy> currentToCheck = new ArrayList<>();
+        ArrayList<SharedConfig.SingProxy> othersToCheck = new ArrayList<>();
+        boolean singInUse = SharedConfig.isProxyEnabled() && SharedConfig.currentProxy instanceof SharedConfig.SingProxy;
         for (int a = 0, count = proxyList.size(); a < count; a++) {
             final SharedConfig.ProxyInfo proxyInfo = proxyList.get(a);
             if (proxyInfo.isExternal()) {
                 if (proxyInfo.checking) {
+                    continue;
+                }
+                if (proxyInfo == SharedConfig.currentProxy) {
+                    currentToCheck.add((SharedConfig.SingProxy) proxyInfo);
+                    continue;
+                }
+                if (singInUse) {
                     continue;
                 }
                 if (!force && proxyInfo.availableCheckTime > 0) {
@@ -909,7 +926,7 @@ public class ProxyListActivity extends BaseFragment implements NotificationCente
                         continue;
                     }
                 }
-                externalToCheck.add((SharedConfig.SingProxy) proxyInfo);
+                othersToCheck.add((SharedConfig.SingProxy) proxyInfo);
                 continue;
             }
             if (proxyInfo.checking || SystemClock.elapsedRealtime() - proxyInfo.availableCheckTime < (proxyInfo.available ? 20 : 5) * 1000 && !force) {
@@ -929,8 +946,13 @@ public class ProxyListActivity extends BaseFragment implements NotificationCente
                 NotificationCenter.getGlobalInstance().postNotificationName(NotificationCenter.proxyCheckDone, proxyInfo);
             }));
         }
-        if (!externalToCheck.isEmpty()) {
-            ProxyConnectivityHelper.testNodes(externalToCheck, force, null);
+        if (!currentToCheck.isEmpty()) {
+            // force=true: the current node is probed even when its result is
+            // still fresh, so the UI row's ping/availability stays live.
+            ProxyConnectivityHelper.testNodes(currentToCheck, true, null);
+        }
+        if (!othersToCheck.isEmpty()) {
+            ProxyConnectivityHelper.testNodes(othersToCheck, force, null);
         }
     }
 

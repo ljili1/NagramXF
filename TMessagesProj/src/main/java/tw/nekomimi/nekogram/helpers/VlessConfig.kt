@@ -114,7 +114,12 @@ object VlessConfig {
         outbound.put("alter_id", bean.alterId)
 
         if (bean.tls) {
-            outbound.put("tls", buildTls(bean.sni.ifBlank { bean.address }, bean.alpn, bean.fingerprint, false))
+            // v2rayN links usually carry the CDN vhost in `host` (the ws Host
+            // header) with no separate `sni`: TLS must be routed to that vhost,
+            // not to the raw server address, or the handshake dies before any
+            // proxy traffic. Prefer sni, then host, then the server address.
+            val sni = bean.sni.ifBlank { bean.host }.ifBlank { bean.address }
+            outbound.put("tls", buildTls(sni, bean.alpn, bean.fingerprint, false))
         }
 
         when (bean.network.lowercase()) {

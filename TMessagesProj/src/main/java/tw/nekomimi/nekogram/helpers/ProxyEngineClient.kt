@@ -133,7 +133,12 @@ object ProxyEngineClient {
             val connected = Messenger(service)
             messenger = connected
             bindingSuspect = false
-            recoveryRounds = 0
+            // recoveryRounds is deliberately NOT reset here: a service connection
+            // only proves the host process is up, not that the engine survives
+            // (a broken node can make it crash repeatedly). Resetting on every
+            // connect would defeat the MAX_RECOVERY_ROUNDS bound and restart a
+            // crashing engine forever. The counter is reset when the engine
+            // actually answers (settle: Start OK / Probe running).
             val toSend = synchronized(pendingSend) {
                 val queued = ArrayList(pendingSend)
                 pendingSend.clear()
