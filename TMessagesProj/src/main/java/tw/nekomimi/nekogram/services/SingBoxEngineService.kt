@@ -34,7 +34,7 @@ import java.net.ServerSocket
  * engine afterwards — the local proxy configuration is never cleared
  * automatically.
  */
-class SingBoxEngineService : Service() {
+open class SingBoxEngineService : Service() {
 
     companion object {
         private const val TAG = "SingBoxEngine"

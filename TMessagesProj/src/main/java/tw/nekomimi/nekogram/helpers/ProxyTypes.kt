@@ -22,6 +22,10 @@ object ProxyTypes {
         ProxyParse.TROJAN_PROTOCOL,
         ProxyParse.SS_PROTOCOL,
         ProxyParse.HYSTERIA2_PROTOCOL,
+        // `hy2://` is the common short alias for hysteria2; it is normalized to the
+        // canonical scheme before use, and accepted here so a link that reached a
+        // caller unnormalized is still imported instead of silently dropped.
+        "hy2://",
         ProxyParse.HYSTERIA_PROTOCOL,
         ProxyParse.TUIC_PROTOCOL
     )
@@ -30,7 +34,7 @@ object ProxyTypes {
     private val EXTRACT_PREFIXES = arrayOf(
         "vless://", "vmess://", "trojan://", "ss://",
         // hysteria2:// must be tested before the legacy hysteria:// prefix.
-        "hysteria2://", "hysteria://", "tuic://",
+        "hysteria2://", "hy2://", "hysteria://", "tuic://",
         "ssr://", "socks://", "ws://", "wss://"
     )
 
@@ -65,6 +69,7 @@ object ProxyTypes {
             "trojan://" -> "trojan"
             "ss://" -> "ss"
             "hysteria2://" -> "hysteria2"
+            "hy2://" -> "hysteria2"
             "hysteria://" -> "hysteria"
             "tuic://" -> "tuic"
             "ssr://" -> "ssr"

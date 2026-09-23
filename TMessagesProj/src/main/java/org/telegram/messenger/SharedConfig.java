@@ -526,6 +526,11 @@ public class SharedConfig {
             }
             obj.put("ping", ping);
             obj.put("availableCheckTime", availableCheckTime);
+            // `available` is persisted so a row keeps showing its last measured
+            // state after a reload instead of falling back to "unavailable" until
+            // the next probe. Freshness (availableCheckTime) still decides whether
+            // the value is re-measured on the next list refresh.
+            obj.put("available", available);
             return obj;
         }
 
@@ -606,6 +611,7 @@ public class SharedConfig {
             obj.put("port", port);
             obj.put("ping", ping);
             obj.put("availableCheckTime", availableCheckTime);
+            obj.put("available", available);
             return obj;
         }
     }
@@ -724,12 +730,16 @@ public class SharedConfig {
 
     public static ArrayList<ProxyInfo> proxyList = new ArrayList<>();
     public static LinkedList<ProxyInfo> getProxyList() {
-        while (true) {
+        // Bounded retries: an unbounded retry loop would spin forever on the UI
+        // thread (an ANR, i.e. an app that is force-closed without a crash log)
+        // whenever the list is mutated concurrently.
+        for (int attempt = 0; attempt < 5; attempt++) {
             try {
                 return new LinkedList<>(proxyList);
-            } catch (Exception ignored) {
+            } catch (Throwable ignored) {
             }
         }
+        return new LinkedList<>();
     }
 
     private static boolean proxyListLoaded;
@@ -1734,31 +1744,38 @@ public class SharedConfig {
     public static ProxyInfo createNodeProxy(String link) {
         // Accept alias schemes (hy2:// → hysteria2://) so every caller — editors,
         // clipboard import, QR — stores the canonical sing-box link form.
-        link = ProxyLinkParser.normalizeScheme(link);
-        String kind = ProxyTypes.kind(link);
-        ProxyInfo proxy;
-        if ("vless".equals(kind)) {
-            proxy = new VlessProxy(link);
-        } else if ("vmess".equals(kind)) {
-            proxy = new VmessProxy(link);
-        } else if ("trojan".equals(kind)) {
-            proxy = new TrojanProxy(link);
-        } else if ("ss".equals(kind)) {
-            proxy = new ShadowsocksProxy(link);
-        } else if ("hysteria2".equals(kind)) {
-            proxy = new Hysteria2Proxy(link);
-        } else if ("hysteria".equals(kind)) {
-            proxy = new HysteriaProxy(link);
-        } else if ("tuic".equals(kind)) {
-            proxy = new TuicProxy(link);
-        } else {
+        try {
+            link = ProxyLinkParser.normalizeScheme(link);
+            String kind = ProxyTypes.kind(link);
+            ProxyInfo proxy;
+            if ("vless".equals(kind)) {
+                proxy = new VlessProxy(link);
+            } else if ("vmess".equals(kind)) {
+                proxy = new VmessProxy(link);
+            } else if ("trojan".equals(kind)) {
+                proxy = new TrojanProxy(link);
+            } else if ("ss".equals(kind)) {
+                proxy = new ShadowsocksProxy(link);
+            } else if ("hysteria2".equals(kind)) {
+                proxy = new Hysteria2Proxy(link);
+            } else if ("hysteria".equals(kind)) {
+                proxy = new HysteriaProxy(link);
+            } else if ("tuic".equals(kind)) {
+                proxy = new TuicProxy(link);
+            } else {
+                return null;
+            }
+            String name = ProxyTypes.nodeName(link);
+            if (!TextUtils.isEmpty(name)) {
+                proxy.setRemarks(name);
+            }
+            return proxy;
+        } catch (Throwable e) {
+            // A malformed pasted link must never escape as a crash: the caller
+            // simply reports "no proxy found".
+            FileLog.e(e);
             return null;
         }
-        String name = ProxyTypes.nodeName(link);
-        if (!TextUtils.isEmpty(name)) {
-            proxy.setRemarks(name);
-        }
-        return proxy;
     }
 
     /** Parses [link] into a node proxy object and appends it to the saved list. Returns null when unsupported. */
@@ -1831,8 +1848,15 @@ public class SharedConfig {
                 public void onError(String error) {
                     // The engine (isolated process) refused the node. The user's
                     // saved proxy selection is deliberately kept — nothing is
-                    // cleared automatically.
+                    // cleared automatically. The node is marked unreachable though,
+                    // so the row shows "unavailable" instead of looking like it is
+                    // still connecting (and auto-select has a signal to act on).
                     FileLog.e("startProxyAsync failed: " + error);
+                    sing.checking = false;
+                    sing.available = false;
+                    sing.ping = 0;
+                    sing.availableCheckTime = SystemClock.elapsedRealtime();
+                    NotificationCenter.getGlobalInstance().postNotificationName(NotificationCenter.proxyCheckDone, sing);
                     notifyProxyChanged();
                 }
             });
@@ -1848,12 +1872,22 @@ public class SharedConfig {
      * call itself is posted to the global queue.
      */
     private static void applySingProxyEndpoint(SingProxy sing, int port) {
+        boolean portChanged = sing.port != port;
         sing.port = port;
-        // Persist the live local port so cold start can rebind the very same
-        // endpoint.
-        saveProxyList();
-        if (isProxyEnabledPref() && currentProxy == sing) {
-            MessagesController.getGlobalMainSettings().edit()
+        if (portChanged) {
+            // Persist the live local port so cold start can rebind the very same
+            // endpoint.
+            saveProxyList();
+        }
+        if (!isProxyEnabledPref() || currentProxy != sing) {
+            return;
+        }
+        SharedPreferences proxyPrefs = MessagesController.getGlobalMainSettings();
+        boolean prefMatches = "127.0.0.1".equals(proxyPrefs.getString("proxy_ip", ""))
+                && proxyPrefs.getInt("proxy_port", 0) == port
+                && proxyPrefs.getBoolean("proxy_enabled", false);
+        if (!prefMatches) {
+            proxyPrefs.edit()
                     .putString("proxy_ip", "127.0.0.1")
                     .putInt("proxy_port", port)
                     .putString("proxy_user", "")
@@ -1861,8 +1895,14 @@ public class SharedConfig {
                     .putString("proxy_secret", "")
                     .putBoolean("proxy_enabled", true)
                     .apply();
-            Utilities.globalQueue.postRunnable(() -> ConnectionsManager.setProxySettings(true, "127.0.0.1", port, "", "", ""));
         }
+        // Always handed down at least once per start: the native layer may not know
+        // this endpoint yet (the proxy may have just been enabled, or another proxy
+        // may have been applied in between). Repeating an identical endpoint is a
+        // no-op inside ConnectionsManager — its native side only restarts
+        // connections when a value actually changed — so this never causes the
+        // "proxy reconnects several times" symptom by itself.
+        Utilities.globalQueue.postRunnable(() -> ConnectionsManager.setProxySettings(true, "127.0.0.1", port, "", "", ""));
     }
 
     /**
@@ -2183,6 +2223,9 @@ public class SharedConfig {
             }
             info.ping = obj.optLong("ping", 0);
             info.availableCheckTime = obj.optLong("availableCheckTime", 0);
+            // Last measured connectivity state; the list page re-measures it once
+            // the value is no longer fresh.
+            info.available = obj.optBoolean("available", false);
             return info;
         } catch (Throwable e) {
             FileLog.e(e);

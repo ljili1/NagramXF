@@ -46,8 +46,13 @@ object ProxyEngineClient {
     /** Delay before the engine is checked/restarted after the binding was lost. */
     private const val RECOVER_DELAY_MS = 1500L
 
-    /** A status request that is not answered in time is treated as "not running". */
-    private const val PROBE_TIMEOUT_MS = 2000L
+    /**
+     * A status request that is not answered in time is treated as "not running".
+     * libbox start/stop blocks the engine thread for seconds, so a probe queued
+     * behind one would time out and trigger a pointless restart: the budget is
+     * therefore comfortably above a single command, not just above a ping.
+     */
+    private const val PROBE_TIMEOUT_MS = 3500L
 
     /** A stop request that is not confirmed in time is treated as stopped. */
     private const val STOP_TIMEOUT_MS = 2500L

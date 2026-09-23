@@ -234,6 +234,12 @@ public class ProxyListActivity extends BaseFragment implements NotificationCente
                     if (!currentInfo.checking && !currentInfo.available) {
                         currentInfo.availableCheckTime = 0;
                     }
+                } else if (!currentInfo.checking && currentInfo.availableCheckTime > 0 && !currentInfo.available) {
+                    // A probe (native ping or the node tester) proved this proxy
+                    // dead: say so instead of showing "Connecting" forever, which
+                    // is what made a broken node look like it was still trying.
+                    colorKey = Theme.key_text_RedRegular;
+                    valueTextView.setText(getString(R.string.Unavailable));
                 } else {
                     colorKey = Theme.key_windowBackgroundWhiteGrayText2;
                     valueTextView.setText(getString(R.string.Connecting));
@@ -893,47 +899,54 @@ public class ProxyListActivity extends BaseFragment implements NotificationCente
     }
 
     private void checkProxyList(boolean force) {
-        // Node proxies (sing-box) run a single engine at a time, so they are
-        // tested sequentially by ProxyConnectivityHelper instead of the parallel
-        // native checkProxy calls below.
-        //
-        // The in-use node is never batched together with other nodes: probing
-        // another node tears the current engine down (stopLocked inside the
-        // engine service) and every connection through the local inbound dies
-        // until the test queue drains. The current node is therefore probed
-        // alone (the engine answers the same link idempotently with its live
-        // port, so this never interrupts it), and while a sing-box node is
-        // actively in use every other node is skipped entirely.
-        ArrayList<SharedConfig.SingProxy> currentToCheck = new ArrayList<>();
-        ArrayList<SharedConfig.SingProxy> othersToCheck = new ArrayList<>();
-        boolean singInUse = SharedConfig.isProxyEnabled() && SharedConfig.currentProxy instanceof SharedConfig.SingProxy;
+        // Native rows (Socks5 / MTProto) are probed in parallel by
+        // ConnectionsManager. Node rows need an engine, so they are probed one
+        // after another by ProxyConnectivityHelper — but in the throwaway
+        // `:singbox_test` process, never in the engine that currently serves
+        // traffic. Probing therefore never interrupts the selected proxy, which
+        // is what makes it safe to refresh *every* row here, including while a
+        // node is in use.
+        ArrayList<SharedConfig.SingProxy> externalCandidates = new ArrayList<>();
+        final long now = SystemClock.elapsedRealtime();
         for (int a = 0, count = proxyList.size(); a < count; a++) {
             final SharedConfig.ProxyInfo proxyInfo = proxyList.get(a);
-            if (proxyInfo.isExternal()) {
-                if (proxyInfo.checking) {
-                    continue;
-                }
-                if (proxyInfo == SharedConfig.currentProxy) {
-                    currentToCheck.add((SharedConfig.SingProxy) proxyInfo);
-                    continue;
-                }
-                if (singInUse) {
-                    continue;
-                }
-                if (!force && proxyInfo.availableCheckTime > 0) {
-                    long age = SystemClock.elapsedRealtime() - proxyInfo.availableCheckTime;
-                    if (age >= 0 && age < (proxyInfo.available ? 20 : 5) * 1000L) {
-                        continue;
-                    }
-                }
-                othersToCheck.add((SharedConfig.SingProxy) proxyInfo);
+            if (proxyInfo.checking) {
                 continue;
             }
-            if (proxyInfo.checking || SystemClock.elapsedRealtime() - proxyInfo.availableCheckTime < (proxyInfo.available ? 20 : 5) * 1000 && !force) {
+            boolean fresh = false;
+            if (proxyInfo.availableCheckTime > 0) {
+                // SystemClock.elapsedRealtime() everywhere: a value written with
+                // System.currentTimeMillis() by an older build yields a negative
+                // age and is simply treated as stale (one extra check).
+                long age = now - proxyInfo.availableCheckTime;
+                fresh = age >= 0 && age < (proxyInfo.available ? 60 : 15) * 1000L;
+            }
+            if (!force && fresh) {
                 continue;
+            }
+            if (proxyInfo.isExternal()) {
+                externalCandidates.add((SharedConfig.SingProxy) proxyInfo);
+                continue;
+            }
+            // The built-in ws row is only reachable through its local tcp2ws relay;
+            // probing the sentinel domain itself would always fail (DNS NXDOMAIN),
+            // which made the row permanently "unavailable" even when the proxy
+            // works. While the relay is not running there is nothing to measure,
+            // so the row keeps its last known state.
+            String checkAddress = proxyInfo.address;
+            int checkPort = proxyInfo.port;
+            if (WebSocketHelper.proxyServer.equals(proxyInfo.address)) {
+                int relayPort = WebSocketHelper.socksPortIfRunning();
+                if (relayPort <= 0) {
+                    continue;
+                }
+                checkAddress = "127.0.0.1";
+                checkPort = relayPort;
             }
             proxyInfo.checking = true;
-            proxyInfo.proxyCheckPingId = ConnectionsManager.getInstance(currentAccount).checkProxy(proxyInfo.address, proxyInfo.port, proxyInfo.username, proxyInfo.password, proxyInfo.secret, time -> AndroidUtilities.runOnUIThread(() -> {
+            final String probeAddress = checkAddress;
+            final int probePort = checkPort;
+            proxyInfo.proxyCheckPingId = ConnectionsManager.getInstance(currentAccount).checkProxy(probeAddress, probePort, proxyInfo.username, proxyInfo.password, proxyInfo.secret, time -> AndroidUtilities.runOnUIThread(() -> {
                 proxyInfo.availableCheckTime = SystemClock.elapsedRealtime();
                 proxyInfo.checking = false;
                 if (time == -1) {
@@ -946,13 +959,8 @@ public class ProxyListActivity extends BaseFragment implements NotificationCente
                 NotificationCenter.getGlobalInstance().postNotificationName(NotificationCenter.proxyCheckDone, proxyInfo);
             }));
         }
-        if (!currentToCheck.isEmpty()) {
-            // force=true: the current node is probed even when its result is
-            // still fresh, so the UI row's ping/availability stays live.
-            ProxyConnectivityHelper.testNodes(currentToCheck, true, null);
-        }
-        if (!othersToCheck.isEmpty()) {
-            ProxyConnectivityHelper.testNodes(othersToCheck, force, null);
+        if (!externalCandidates.isEmpty()) {
+            ProxyConnectivityHelper.testNodes(externalCandidates, force, null);
         }
     }
 
@@ -1274,7 +1282,10 @@ public class ProxyListActivity extends BaseFragment implements NotificationCente
             } else if (position == rotationTimeoutInfoRow) {
                 return -11;
             } else if (position >= proxyStartRow && position < proxyEndRow) {
-                return proxyList.get(position - proxyStartRow).hashCode();
+                // Kept in a positive range: every sentinel id above is negative, so
+                // a proxy row can never share a stable id with one of them
+                // (duplicate stable ids make RecyclerView throw).
+                return 0x10000000L + (proxyList.get(position - proxyStartRow).hashCode() & 0x0FFFFFFFL);
             } else {
                 return -7;
             }

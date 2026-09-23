@@ -15,26 +15,33 @@ import org.telegram.tgnet.ConnectionsManager
  * Connectivity tester for sing-box powered node proxies (VLESS / VMess / Trojan /
  * Shadowsocks / Hysteria / Hysteria2 / TUIC).
  *
- * The isolated `:singbox` process runs a SINGLE engine at a time, so unlike the
- * native SOCKS5 / MTProto / ws rows (which ConnectionsManager probes in
- * parallel), node proxies MUST be tested one after another:
+ * The native SOCKS5 / MTProto rows can be probed in parallel by
+ * ConnectionsManager, but a node needs a running engine first, so each node is
+ * started, probed end-to-end and torn down one after another.
  *
- *   start the engine for the node on its local mixed inbound
- *     -> ConnectionsManager.checkProxy through 127.0.0.1:port (real end-to-end)
- *     -> record ping / availability
- *     -> next node
+ * The engine used for that is the **throwaway `:singbox_test` process**
+ * ([ProxyTestEngineClient]), never the live `:singbox` engine: probing another
+ * node with the live engine would stop the node Telegram is connected through
+ * and every connection would fail for the duration of the test (and the engine
+ * would be restarted right after, i.e. a reconnect storm). Because the test
+ * engine is disposable:
  *
- * When the whole queue has drained, the engine is put back where the persisted
- * state points (the currently enabled node is restarted; otherwise the engine is
- * stopped), so testing never leaves either a dead selection or an orphan engine.
+ *  * testing never touches the live node, so the current proxy keeps working and
+ *    the row can be refreshed at any time;
+ *  * every row — including nodes other than the selected one — can show a real
+ *    availability result even while a node is in use;
+ *  * a node that makes libbox abort only kills the throwaway process.
  *
  * Bookkeeping runs on the UI thread; engine and native calls are dispatched by
  * their own layers off-thread. Never throws into callers.
  */
 object ProxyConnectivityHelper {
 
-    /** Per-node guard: engine start + end-to-end check must finish in time. */
-    private const val NODE_TIMEOUT_MS = 20_000L
+    /**
+     * Per-node guard: engine start (possibly a cold process spawn) plus the
+     * end-to-end check must finish in time.
+     */
+    private const val NODE_TIMEOUT_MS = 15_000L
 
     private val handler = Handler(Looper.getMainLooper())
     private val queue = ArrayList<SharedConfig.SingProxy>()
@@ -55,8 +62,7 @@ object ProxyConnectivityHelper {
     /**
      * Enqueues node proxies for connectivity testing; still-fresh results are
      * reused unless [force] is true. [onComplete] runs on the UI thread once the
-     * whole queue (including batches enqueued meanwhile) has drained and before
-     * the engine state is restored.
+     * whole queue (including batches enqueued meanwhile) has drained.
      */
     @JvmStatic
     @JvmOverloads
@@ -71,9 +77,15 @@ object ProxyConnectivityHelper {
                 val now = SystemClock.elapsedRealtime()
                 for (node in nodes) {
                     if (queue.contains(node) || current == node) continue
+                    if (node.checking) continue
                     if (!force && node.availableCheckTime > 0) {
                         val age = now - node.availableCheckTime
-                        val freshFor = if (node.available) 20_000L else 5_000L
+                        // Kept in sync with ProxyListActivity.checkProxyList: a
+                        // reachable node is not re-probed every refresh, an
+                        // unreachable one is retried sooner.
+                        val freshFor = if (node.available) 60_000L else 15_000L
+                        // age < 0 covers values written by an older build with a
+                        // different clock base: they are simply treated as stale.
                         if (age in 0..freshFor) continue
                     }
                     // The row flips to "Checking" via the proxyCheckDone posts below.
@@ -101,7 +113,7 @@ object ProxyConnectivityHelper {
             if (queue.isEmpty()) null else queue.removeAt(0)
         }
         if (node == null) {
-            drainAndRestore()
+            drain()
             return
         }
         current = node
@@ -111,23 +123,22 @@ object ProxyConnectivityHelper {
             .postNotificationName(NotificationCenter.proxyCheckDone, node)
         handler.postDelayed(timeoutRunnable, NODE_TIMEOUT_MS)
         try {
-            ProxyEngineClient.start(
+            ProxyTestEngineClient.start(
                 ApplicationLoader.applicationContext,
                 node.link,
                 node.port,
-                object : ProxyEngineClient.StartCallback {
-                    override fun onStarted(port: Int) {
+                object : ProxyTestEngineClient.StartCallback {
+                    override fun onResult(started: Boolean, port: Int, error: String?) {
                         AndroidUtilities.runOnUIThread {
                             if (current != node || gen != generation) return@runOnUIThread
+                            if (!started || port <= 0) {
+                                if (!error.isNullOrBlank()) {
+                                    FileLog.e("proxy node engine refused (${node.link.take(64)}): $error")
+                                }
+                                finishNode(node, -1)
+                                return@runOnUIThread
+                            }
                             checkThroughInbound(node, port, gen)
-                        }
-                    }
-
-                    override fun onError(error: String) {
-                        AndroidUtilities.runOnUIThread {
-                            if (current != node || gen != generation) return@runOnUIThread
-                            FileLog.e("proxy node engine refused (${node.link.take(64)}): $error")
-                            finishNode(node, -1)
                         }
                     }
                 }
@@ -138,13 +149,21 @@ object ProxyConnectivityHelper {
         }
     }
 
-    /** End-to-end probe: connect to Telegram through the node's local inbound. */
+    /**
+     * End-to-end probe: connect to Telegram through the node's local inbound in
+     * the test engine.
+     */
     private fun checkThroughInbound(node: SharedConfig.SingProxy, port: Int, gen: Int) {
         if (port <= 0) {
             finishNode(node, -1)
             return
         }
-        node.port = port
+        // The test engine binds its own port; for the node currently in use that
+        // port is NOT the live endpoint, so it must never be written back into
+        // the saved node (doing so would re-point Telegram on the next start).
+        if (!isLiveNode(node)) {
+            node.port = port
+        }
         try {
             ConnectionsManager.getInstance(UserConfig.selectedAccount)
                 .checkProxy("127.0.0.1", port, "", "", "") { time ->
@@ -156,6 +175,15 @@ object ProxyConnectivityHelper {
         } catch (t: Throwable) {
             FileLog.e(t)
             finishNode(node, -1)
+        }
+    }
+
+    private fun isLiveNode(node: SharedConfig.SingProxy): Boolean {
+        return try {
+            SharedConfig.isProxyEnabled() && SharedConfig.currentProxy == node
+        } catch (t: Throwable) {
+            FileLog.e(t)
+            false
         }
     }
 
@@ -193,10 +221,17 @@ object ProxyConnectivityHelper {
         }
     }
 
-    private fun drainAndRestore() {
+    private fun drain() {
         busy = false
         current = null
         handler.removeCallbacks(timeoutRunnable)
+        // The throwaway engine is not needed anymore: stop its node and drop the
+        // binding so the process can be reclaimed. The live engine is untouched.
+        try {
+            ProxyTestEngineClient.release()
+        } catch (t: Throwable) {
+            FileLog.e(t)
+        }
         val callbacks = synchronized(completionCallbacks) {
             val snapshot = ArrayList(completionCallbacks)
             completionCallbacks.clear()
@@ -213,30 +248,51 @@ object ProxyConnectivityHelper {
         if (synchronized(queue) { queue.isNotEmpty() }) {
             busy = true
             processNext()
-            return
-        }
-        restoreEngineState()
-    }
-
-    /**
-     * Puts the engine back in sync with the persisted selection: restart the
-     * currently enabled node, or stop an orphan engine left by testing.
-     */
-    private fun restoreEngineState() {
-        try {
-            SharedConfig.loadProxyList()
-            val current = SharedConfig.currentProxy
-            if (SharedConfig.isProxyEnabled() && current is SharedConfig.SingProxy) {
-                SharedConfig.startProxyAsync(current)
-            } else {
-                ProxyEngineClient.stop(ApplicationLoader.applicationContext, null)
-            }
-        } catch (t: Throwable) {
-            FileLog.e(t)
         }
     }
 
     /** True while a batch is still being processed. */
     @JvmStatic
     fun isBusy(): Boolean = busy
+
+    /**
+     * Drops the queue and releases the test engine, e.g. when the user disables
+     * the proxy or the list page goes away. Rows that were mid-check are put back
+     * to "not checking" without touching their measured availability — a cancelled
+     * probe says nothing about the node. Never throws.
+     */
+    @JvmStatic
+    fun cancel() {
+        val cleared = synchronized(queue) {
+            val snapshot = ArrayList(queue)
+            queue.clear()
+            snapshot
+        }
+        val inFlight = current
+        current = null
+        generation++
+        busy = false
+        handler.removeCallbacks(timeoutRunnable)
+        synchronized(completionCallbacks) { completionCallbacks.clear() }
+        for (node in cleared) {
+            notifyNotChecking(node)
+        }
+        if (inFlight != null) {
+            notifyNotChecking(inFlight)
+        }
+        try {
+            ProxyTestEngineClient.release()
+        } catch (t: Throwable) {
+            FileLog.e(t)
+        }
+    }
+
+    private fun notifyNotChecking(node: SharedConfig.SingProxy) {
+        if (!node.checking) {
+            return
+        }
+        node.checking = false
+        NotificationCenter.getGlobalInstance()
+            .postNotificationName(NotificationCenter.proxyCheckDone, node)
+    }
 }

@@ -1,6 +1,5 @@
 package org.telegram.messenger;
 
-import android.content.SharedPreferences;
 import android.os.SystemClock;
 
 import org.telegram.tgnet.ConnectionsManager;
@@ -11,7 +10,22 @@ import java.util.Collections;
 import java.util.List;
 
 import tw.nekomimi.nekogram.helpers.ProxyConnectivityHelper;
+import tw.nekomimi.nekogram.helpers.WebSocketHelper;
 
+/**
+ * Auto-selection / failover for every proxy the app can store.
+ *
+ * When {@link SharedConfig#proxyRotationEnabled} is on and Telegram ends up
+ * stuck on "connecting to proxy", the candidates are (re)measured and the
+ * fastest reachable one becomes the current proxy. Candidates cover every kind:
+ * native Socks5 / MTProto rows are probed in parallel by ConnectionsManager,
+ * node (sing-box) rows by {@link ProxyConnectivityHelper} in the throwaway
+ * `:singbox_test` engine — so measuring candidates never interrupts the proxy
+ * that is currently in use.
+ *
+ * The built-in Cloudflare ws row is never a candidate: its upstream is dead by
+ * design, so it could only ever be a useless failover target.
+ */
 public class ProxyRotationController implements NotificationCenter.NotificationCenterDelegate {
     private final static ProxyRotationController INSTANCE = new ProxyRotationController();
 
@@ -19,6 +33,12 @@ public class ProxyRotationController implements NotificationCenter.NotificationC
     public final static List<Integer> ROTATION_TIMEOUTS = Arrays.asList(
             5, 10, 15, 30, 60
     );
+
+    /** A measurement older than this is not trusted for a switch decision. */
+    private final static long RESULT_MAX_AGE_MS = 3 * 60 * 1000L;
+
+    /** Delay before an "current proxy is dead" report triggers a selection round. */
+    private final static long DEAD_PROXY_DELAY_MS = 1500L;
 
     /** True from the first scheduled check until a switch decision was made. */
     private boolean isCurrentlyChecking;
@@ -32,41 +52,34 @@ public class ProxyRotationController implements NotificationCenter.NotificationC
         isCurrentlyChecking = true;
         outstandingChecks = 0;
 
-        int currentAccount = UserConfig.selectedAccount;
+        final int currentAccount = UserConfig.selectedAccount;
+        final long now = SystemClock.elapsedRealtime();
         ArrayList<SharedConfig.SingProxy> externalCandidates = new ArrayList<>();
 
-        for (int i = 0; i < SharedConfig.proxyList.size(); i++) {
-            SharedConfig.ProxyInfo proxyInfo = SharedConfig.proxyList.get(i);
+        // Snapshot first: callbacks post to the UI thread and may rebuild the
+        // saved list while this loop is running.
+        ArrayList<SharedConfig.ProxyInfo> candidates = new ArrayList<>(SharedConfig.proxyList);
+        for (int i = 0; i < candidates.size(); i++) {
+            final SharedConfig.ProxyInfo proxyInfo = candidates.get(i);
             if (proxyInfo == SharedConfig.currentProxy || proxyInfo.checking) {
                 continue;
             }
-            boolean resultFresh = proxyInfo.availableCheckTime > 0
-                    && SystemClock.elapsedRealtime() - proxyInfo.availableCheckTime < 2 * 60 * 1000;
-            if (proxyInfo.isExternal()) {
-                // Node proxies are tested one at a time by ProxyConnectivityHelper
-                // (the engine process runs a single node).
-                if (!resultFresh) {
-                    externalCandidates.add((SharedConfig.SingProxy) proxyInfo);
-                }
+            if (isBuiltInWsRow(proxyInfo)) {
                 continue;
             }
-            if (resultFresh) {
+            if (isResultFresh(proxyInfo, now)) {
+                continue;
+            }
+            if (proxyInfo.isExternal()) {
+                // Node proxies are tested one at a time by ProxyConnectivityHelper
+                // (in the throwaway engine, so the live node keeps working).
+                externalCandidates.add((SharedConfig.SingProxy) proxyInfo);
                 continue;
             }
             outstandingChecks++;
             proxyInfo.checking = true;
-            final SharedConfig.ProxyInfo info = proxyInfo;
-            ConnectionsManager.getInstance(currentAccount).checkProxy(info.address, info.port, info.username, info.password, info.secret, time -> AndroidUtilities.runOnUIThread(() -> {
-                info.availableCheckTime = SystemClock.elapsedRealtime();
-                info.checking = false;
-                if (time == -1) {
-                    info.available = false;
-                    info.ping = 0;
-                } else {
-                    info.ping = time;
-                    info.available = true;
-                }
-                NotificationCenter.getGlobalInstance().postNotificationName(NotificationCenter.proxyCheckDone, info);
+            ConnectionsManager.getInstance(currentAccount).checkProxy(proxyInfo.address, proxyInfo.port, proxyInfo.username, proxyInfo.password, proxyInfo.secret, time -> AndroidUtilities.runOnUIThread(() -> {
+                applyNativeResult(proxyInfo, time);
                 onOneCheckFinished();
             }));
         }
@@ -76,16 +89,43 @@ public class ProxyRotationController implements NotificationCenter.NotificationC
             // filtered as fresh inside the helper, the completion can fire within
             // the very same call.
             outstandingChecks++;
-            ProxyConnectivityHelper.testNodes(externalCandidates, false, (Runnable) () ->
-                    // Helper invokes completion on the UI thread, after all nodes
-                    // of the batch were probed.
-                    onOneCheckFinished());
+            ProxyConnectivityHelper.testNodes(externalCandidates, false, (Runnable) this::onOneCheckFinished);
         }
 
         if (outstandingChecks == 0) {
             onAllChecksFinished();
         }
     };
+
+    private void applyNativeResult(SharedConfig.ProxyInfo info, long time) {
+        info.availableCheckTime = SystemClock.elapsedRealtime();
+        info.checking = false;
+        if (time == -1) {
+            info.available = false;
+            info.ping = 0;
+        } else {
+            info.ping = time;
+            info.available = true;
+        }
+        NotificationCenter.getGlobalInstance().postNotificationName(NotificationCenter.proxyCheckDone, info);
+    }
+
+    private static boolean isBuiltInWsRow(SharedConfig.ProxyInfo info) {
+        return info != null && WebSocketHelper.proxyServer.equals(info.address);
+    }
+
+    /**
+     * True when [info] was measured recently enough to be used for a decision.
+     * Values written with a different clock base (older builds) give a negative
+     * age and are treated as stale.
+     */
+    private static boolean isResultFresh(SharedConfig.ProxyInfo info, long now) {
+        if (info.availableCheckTime <= 0) {
+            return false;
+        }
+        long age = now - info.availableCheckTime;
+        return age >= 0 && age < RESULT_MAX_AGE_MS;
+    }
 
     private void onOneCheckFinished() {
         if (!isCurrentlyChecking) {
@@ -110,44 +150,43 @@ public class ProxyRotationController implements NotificationCenter.NotificationC
             return;
         }
 
+        final long now = SystemClock.elapsedRealtime();
         List<SharedConfig.ProxyInfo> sortedList = new ArrayList<>(SharedConfig.proxyList);
         Collections.sort(sortedList, (o1, o2) -> Long.compare(o1.ping, o2.ping));
         for (SharedConfig.ProxyInfo info : sortedList) {
             if (info == SharedConfig.currentProxy || info.checking || !info.available) {
                 continue;
             }
-
-            if (info.isExternal()) {
-                // Node proxy: selection + engine start are owned by SharedConfig.
-                // setCurrentProxy starts the engine whenever the proxy is enabled
-                // (the rotation trigger only runs with proxy_enabled on).
-                MessagesController.getGlobalMainSettings().edit()
-                        .putBoolean("proxy_enabled", true)
-                        .apply();
-                SharedConfig.setCurrentProxy(info);
-                NotificationCenter.getGlobalInstance().postNotificationName(NotificationCenter.proxySettingsChanged);
-                NotificationCenter.getGlobalInstance().postNotificationName(NotificationCenter.proxyChangedByRotation);
-            } else {
-                SharedPreferences.Editor editor = MessagesController.getGlobalMainSettings().edit();
-                editor.putString("proxy_ip", info.address);
-                editor.putString("proxy_pass", info.password);
-                editor.putString("proxy_user", info.username);
-                editor.putInt("proxy_port", info.port);
-                editor.putString("proxy_secret", info.secret);
-                editor.putBoolean("proxy_enabled", true);
-
-                if (!info.secret.isEmpty()) {
-                    editor.putBoolean("proxy_enabled_calls", false);
-                }
-                editor.apply();
-
-                SharedConfig.currentProxy = info;
-                NotificationCenter.getGlobalInstance().postNotificationName(NotificationCenter.proxySettingsChanged);
-                NotificationCenter.getGlobalInstance().postNotificationName(NotificationCenter.proxyChangedByRotation);
-                ConnectionsManager.setProxySettings(true, SharedConfig.currentProxy.address, SharedConfig.currentProxy.port, SharedConfig.currentProxy.username, SharedConfig.currentProxy.password, SharedConfig.currentProxy.secret);
+            if (isBuiltInWsRow(info) || !isResultFresh(info, now)) {
+                continue;
             }
+
+            // One switch path for every proxy type: SharedConfig owns engine
+            // start/stop for node proxies and the native apply for the rest.
+            MessagesController.getGlobalMainSettings().edit()
+                    .putBoolean("proxy_enabled", true)
+                    .apply();
+            SharedConfig.setCurrentProxy(info);
+            SharedConfig.setProxyEnable(true);
+            NotificationCenter.getGlobalInstance().postNotificationName(NotificationCenter.proxySettingsChanged);
+            NotificationCenter.getGlobalInstance().postNotificationName(NotificationCenter.proxyChangedByRotation);
             break;
         }
+    }
+
+    /**
+     * Immediately looks for a working proxy: used when the active proxy was just
+     * proven dead, so the user does not have to wait for the rotation timeout.
+     */
+    private void scheduleAutoSelect(long delayMs) {
+        if (!SharedConfig.proxyRotationEnabled || SharedConfig.proxyList.size() <= 1) {
+            return;
+        }
+        if (isCurrentlyChecking) {
+            return;
+        }
+        AndroidUtilities.cancelRunOnUIThread(checkProxyAndSwitchRunnable);
+        AndroidUtilities.runOnUIThread(checkProxyAndSwitchRunnable, delayMs);
     }
 
     private void initInternal() {
@@ -155,6 +194,7 @@ public class ProxyRotationController implements NotificationCenter.NotificationC
             NotificationCenter.getInstance(i).addObserver(this, NotificationCenter.didUpdateConnectionState);
         }
         NotificationCenter.getGlobalInstance().addObserver(this, NotificationCenter.proxySettingsChanged);
+        NotificationCenter.getGlobalInstance().addObserver(this, NotificationCenter.proxyCheckDone);
     }
 
     @Override
@@ -164,6 +204,19 @@ public class ProxyRotationController implements NotificationCenter.NotificationC
             // check, but never interrupt a batch that is already probing nodes.
             if (!isCurrentlyChecking) {
                 AndroidUtilities.cancelRunOnUIThread(checkProxyAndSwitchRunnable);
+            }
+            // The active proxy may already be known to be dead (e.g. it was just
+            // re-enabled after being marked unavailable): pick a working one
+            // without waiting for the connection to time out first.
+            SharedConfig.ProxyInfo current = SharedConfig.currentProxy;
+            if (SharedConfig.isProxyEnabled() && current != null && current.availableCheckTime > 0 && !current.available) {
+                scheduleAutoSelect(DEAD_PROXY_DELAY_MS);
+            }
+        } else if (id == NotificationCenter.proxyCheckDone && args.length > 0 && args[0] == SharedConfig.currentProxy) {
+            // The active proxy was just measured as unreachable.
+            SharedConfig.ProxyInfo current = SharedConfig.currentProxy;
+            if (current != null && !current.available && SharedConfig.isProxyEnabled()) {
+                scheduleAutoSelect(DEAD_PROXY_DELAY_MS);
             }
         } else if (id == NotificationCenter.didUpdateConnectionState && account == UserConfig.selectedAccount) {
             if (!SharedConfig.isProxyEnabled() && !SharedConfig.proxyRotationEnabled || SharedConfig.proxyList.size() <= 1) {

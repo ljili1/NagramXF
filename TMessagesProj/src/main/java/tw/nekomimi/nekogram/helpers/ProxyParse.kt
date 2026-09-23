@@ -28,7 +28,14 @@ object ProxyParse {
         var port: Int = 0,
         var password: String = "",
         var sni: String = "",
-        var remarks: String = ""
+        var remarks: String = "",
+        /** tcp / ws / grpc / h2 / httpupgrade — Trojan runs over any of them. */
+        var network: String = "tcp",
+        var host: String = "",
+        var path: String = "",
+        var serviceName: String = "",
+        var alpn: String = "",
+        var insecure: Boolean = false
     )
 
     /** Shadowsocks node (SIP002, both ss-android and v2rayNG styles). */
@@ -159,17 +166,31 @@ object ProxyParse {
             val hp = parseHostPort(authority.substring(at + 1)) ?: return null
 
             // Some clients split an encoded ':' inside the password into user/pass.
-            var password = urlDecode(rawUser)
+            var password = smartDecode(rawUser)
             val colon = rawUser.indexOf(':')
             if (colon > 0) {
-                val user = urlDecode(rawUser.substring(0, colon))
-                val pass = urlDecode(rawUser.substring(colon + 1))
+                val user = smartDecode(rawUser.substring(0, colon))
+                val pass = smartDecode(rawUser.substring(colon + 1))
                 password = if (pass.isNotBlank()) "$user:$pass" else user
             }
             // Keep the sni empty when the link has none; the engine falls back
             // to the server address at build time (VlessConfig.buildTrojanOutbound).
-            val sni = params["sni"] ?: ""
-            TrojanBean(hp.first, hp.second, password, sni, fragment)
+            val insecureRaw = params["allowInsecure"] ?: params["allow_insecure"] ?: params["insecure"]
+            TrojanBean(
+                address = hp.first,
+                port = hp.second,
+                password = password,
+                sni = params["sni"] ?: params["peer"] ?: "",
+                remarks = fragment,
+                // Transport: a Trojan server that only listens on ws / grpc is
+                // unreachable with a plain TCP outbound.
+                network = params["type"] ?: params["net"] ?: "tcp",
+                host = params["host"] ?: "",
+                path = params["path"] ?: "",
+                serviceName = params["serviceName"] ?: params["service_name"] ?: "",
+                alpn = params["alpn"] ?: "",
+                insecure = insecureRaw == "1" || insecureRaw?.equals("true", ignoreCase = true) == true
+            )
         } catch (e: Throwable) {
             null
         }
@@ -208,11 +229,11 @@ object ProxyParse {
             // The whole userinfo is the authentication password; tolerate a
             // client that left an unencoded ':' inside the password (same
             // leniency as the trojan parser).
-            var password = urlDecode(rawUser)
+            var password = smartDecode(rawUser)
             val colon = rawUser.indexOf(':')
             if (colon > 0) {
-                val user = urlDecode(rawUser.substring(0, colon))
-                val pass = urlDecode(rawUser.substring(colon + 1))
+                val user = smartDecode(rawUser.substring(0, colon))
+                val pass = smartDecode(rawUser.substring(colon + 1))
                 password = if (pass.isNotBlank()) "$user:$pass" else user
             }
             val insecureRaw = params["insecure"]
@@ -375,7 +396,7 @@ object ProxyParse {
             val colon = userInfo.indexOf(':')
             if (colon >= 0) {
                 uuid = urlDecode(userInfo.substring(0, colon))
-                password = urlDecode(userInfo.substring(colon + 1))
+                password = smartDecode(userInfo.substring(colon + 1))
             } else {
                 uuid = urlDecode(userInfo)
             }
@@ -487,7 +508,7 @@ object ProxyParse {
                 if (userInfo.contains(':')) {
                     // ss-android plaintext "method:password@host:port"
                     method = urlDecode(userInfo.substringBefore(':'))
-                    password = urlDecode(userInfo.substringAfter(':'))
+                    password = smartDecode(userInfo.substringAfter(':'))
                 } else {
                     val decoded = decodeBase64ToString(userInfo)
                     if (decoded != null && decoded.contains(':')) {
@@ -680,6 +701,21 @@ object ProxyParse {
         } catch (e: Throwable) {
             s
         }
+    }
+
+    /**
+     * Decodes a userinfo / password segment only when it actually carries percent
+     * escapes.
+     *
+     * Passwords may legitimately contain a literal '+' (and many base64-ish
+     * passwords do). `URLDecoder` turns '+' into a space, so decoding those would
+     * make the node authenticate with the wrong credentials — a node that
+     * "cannot connect" while the engine reports no error. Segments without '%'
+     * are therefore returned verbatim.
+     */
+    private fun smartDecode(s: String): String {
+        if (s.indexOf('%') < 0) return s
+        return urlDecode(s)
     }
 
     /** Locale helpers kept for parity with upstream string lists (compile-time use). */

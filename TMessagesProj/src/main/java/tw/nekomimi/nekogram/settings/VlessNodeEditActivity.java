@@ -173,24 +173,40 @@ public class VlessNodeEditActivity extends BaseFragment {
      * Fills the editor from [text]. A direct node link (any sing-box scheme)
      * fills the field; a subscription URL is downloaded first and then either
      * fills the field (single node) or imports every node it carries.
+     *
+     * Parsing is exception-safe end to end: a malformed paste reports "no link
+     * found" instead of taking the app down.
      */
     private void fillLinkFromText(String text) {
         if (text == null || text.trim().isEmpty()) {
             toastInvalidLink();
             return;
         }
-        if (ProxyUtil.isSubscriptionText(text)) {
-            toast(LocaleController.getString(R.string.SubscriptionFetching));
-            final String raw = text;
-            new Thread(() -> {
-                final String expanded = ProxyUtil.expandSubscriptions(raw);
-                final List<tw.nekomimi.nekogram.helpers.ProxyLinkParser.Parsed> parsed =
-                        tw.nekomimi.nekogram.helpers.ProxyLinkParser.parse(expanded);
-                AndroidUtilities.runOnUIThread(() -> applyParsedLinks(parsed));
-            }, "proxy-subscription").start();
-            return;
+        try {
+            if (ProxyUtil.isSubscriptionText(text)) {
+                toast(LocaleController.getString(R.string.SubscriptionFetching));
+                final String raw = text;
+                new Thread(() -> {
+                    List<tw.nekomimi.nekogram.helpers.ProxyLinkParser.Parsed> parsed;
+                    try {
+                        final String expanded = ProxyUtil.expandSubscriptions(raw);
+                        parsed = ProxyUtil.parseLinks(expanded);
+                    } catch (Throwable e) {
+                        // A raw worker thread has no handler: an escaping throwable
+                        // would kill the process.
+                        FileLog.e(e);
+                        parsed = new java.util.ArrayList<>();
+                    }
+                    final List<tw.nekomimi.nekogram.helpers.ProxyLinkParser.Parsed> result = parsed;
+                    AndroidUtilities.runOnUIThread(() -> applyParsedLinks(result));
+                }, "proxy-subscription").start();
+                return;
+            }
+            applyParsedLinks(ProxyUtil.parseLinks(text));
+        } catch (Throwable e) {
+            FileLog.e(e);
+            toastInvalidLink();
         }
-        applyParsedLinks(tw.nekomimi.nekogram.helpers.ProxyLinkParser.parse(text));
     }
 
     /**
@@ -201,40 +217,47 @@ public class VlessNodeEditActivity extends BaseFragment {
         if (isFinished || getParentActivity() == null) {
             return;
         }
-        List<String> links = new java.util.ArrayList<>();
-        for (tw.nekomimi.nekogram.helpers.ProxyLinkParser.Parsed p : parsed) {
-            if (!(p instanceof tw.nekomimi.nekogram.helpers.ProxyLinkParser.Parsed.NodeLink)) {
-                continue;
+        try {
+            List<String> links = new java.util.ArrayList<>();
+            for (tw.nekomimi.nekogram.helpers.ProxyLinkParser.Parsed p : parsed) {
+                if (!(p instanceof tw.nekomimi.nekogram.helpers.ProxyLinkParser.Parsed.NodeLink)) {
+                    continue;
+                }
+                String link = tw.nekomimi.nekogram.helpers.ProxyLinkParser.normalizeScheme(
+                        ((tw.nekomimi.nekogram.helpers.ProxyLinkParser.Parsed.NodeLink) p).getLink());
+                if (!ProxyTypes.isSupported(link)) {
+                    continue;
+                }
+                if (!links.contains(link)) {
+                    links.add(link);
+                }
             }
-            String link = tw.nekomimi.nekogram.helpers.ProxyLinkParser.normalizeScheme(
-                    ((tw.nekomimi.nekogram.helpers.ProxyLinkParser.Parsed.NodeLink) p).getLink());
-            if (!ProxyTypes.isSupported(link)) {
-                continue;
+            if (links.isEmpty()) {
+                toastInvalidLink();
+                return;
             }
-            if (!links.contains(link)) {
-                links.add(link);
+            if (links.size() == 1) {
+                linkEdit.setText(links.get(0));
+                linkEdit.setSelection(links.get(0).length());
+                return;
             }
-        }
-        if (links.isEmpty()) {
+            int before = SharedConfig.proxyList.size();
+            for (String link : links) {
+                SharedConfig.addNodeProxy(link);
+            }
+            int added = SharedConfig.proxyList.size() - before;
+            if (added <= 0) {
+                toastInvalidLink();
+                return;
+            }
+            toast(LocaleController.formatString("VlessNodesAdded", R.string.VlessNodesAdded, added));
+            finishFragment();
+        } catch (Throwable e) {
+            // A pasted node list is untrusted input; importing it must report a
+            // failure, never crash the editor.
+            FileLog.e(e);
             toastInvalidLink();
-            return;
         }
-        if (links.size() == 1) {
-            linkEdit.setText(links.get(0));
-            linkEdit.setSelection(links.get(0).length());
-            return;
-        }
-        int before = SharedConfig.proxyList.size();
-        for (String link : links) {
-            SharedConfig.addNodeProxy(link);
-        }
-        int added = SharedConfig.proxyList.size() - before;
-        if (added <= 0) {
-            toastInvalidLink();
-            return;
-        }
-        toast(LocaleController.formatString("VlessNodesAdded", R.string.VlessNodesAdded, added));
-        finishFragment();
     }
 
     private void toast(String text) {

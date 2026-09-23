@@ -64,9 +64,29 @@ object ProxyLinkParser {
         }
     }
 
+    /** Upper bound on the text handed to the parser, to bound work / memory. */
+    private const val MAX_INPUT_CHARS = 2_000_000
+
     @JvmStatic
     fun parse(text: String?): List<Parsed> {
         if (text.isNullOrBlank()) return emptyList()
+        // Pasted clipboard content / subscription bodies are untrusted input: a
+        // malformed or absurdly large payload must yield "no proxy found", never
+        // an exception that escapes into the caller's thread (an uncaught
+        // exception on a worker thread kills the whole app - the "pasting a
+        // sing-box link crashes the app" report).
+        return try {
+            if (text.length > MAX_INPUT_CHARS) {
+                parseInternal(text.substring(0, MAX_INPUT_CHARS))
+            } else {
+                parseInternal(text)
+            }
+        } catch (t: Throwable) {
+            emptyList()
+        }
+    }
+
+    private fun parseInternal(text: String): List<Parsed> {
         val out = LinkedHashMap<String, Parsed>()
         val sources = mutableListOf(text)
         runCatching {
@@ -82,22 +102,24 @@ object ProxyLinkParser {
             }
         }
         for (chunk in sources) {
-            extractAll(chunk, out)
+            runCatching { extractAll(chunk, out) }
             for (line in chunk.split('\n', '\r')) {
-                val trimmedLine = line.trim(' ', '\t', ';')
-                if (trimmedLine.isEmpty()) continue
-                // Some subscriptions base64-encode every line separately.
-                if (!trimmedLine.contains("://") && trimmedLine.length >= 16 && BASE64_LINE_REGEX.matches(trimmedLine)) {
-                    val decoded = decodeBase64Body(trimmedLine)
-                    if (!decoded.isNullOrEmpty() && decoded.contains("://")) {
-                        extractAll(decoded, out)
-                        continue
+                runCatching {
+                    val trimmedLine = line.trim(' ', '\t', ';')
+                    if (trimmedLine.isEmpty()) return@runCatching
+                    // Some subscriptions base64-encode every line separately.
+                    if (!trimmedLine.contains("://") && trimmedLine.length >= 16 && BASE64_LINE_REGEX.matches(trimmedLine)) {
+                        val decoded = decodeBase64Body(trimmedLine)
+                        if (!decoded.isNullOrEmpty() && decoded.contains("://")) {
+                            extractAll(decoded, out)
+                            return@runCatching
+                        }
                     }
-                }
-                if (trimmedLine.contains("://")) continue
-                parseBareHost(trimmedLine)?.let { parsed ->
-                    if (parsed is Parsed.NativeConfig) {
-                        out.put("native:" + parsed.address + ":" + parsed.port, parsed)
+                    if (trimmedLine.contains("://")) return@runCatching
+                    parseBareHost(trimmedLine)?.let { parsed ->
+                        if (parsed is Parsed.NativeConfig) {
+                            out.put("native:" + parsed.address + ":" + parsed.port, parsed)
+                        }
                     }
                 }
             }

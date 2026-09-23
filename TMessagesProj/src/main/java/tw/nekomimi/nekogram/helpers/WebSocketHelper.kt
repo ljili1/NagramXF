@@ -66,6 +66,18 @@ object WebSocketHelper {
         return getSocksPort(6356)
     }
 
+    /**
+     * Port the local tcp2ws relay listens on, or -1 when it is not running.
+     *
+     * Unlike [getSocksPort] this never *starts* the relay: it exists for callers
+     * that only want to know whether the built-in ws proxy is reachable right now
+     * (its status check must not boot a relay the user did not ask for).
+     */
+    @JvmStatic
+    fun socksPortIfRunning(): Int {
+        return if (tcp2wsStarted && socksPort != -1) socksPort else -1
+    }
+
     @JvmStatic
     fun wsReloadConfig() {
         if (tcp2wsServer != null) {

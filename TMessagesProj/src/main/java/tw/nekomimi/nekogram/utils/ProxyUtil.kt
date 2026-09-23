@@ -319,36 +319,60 @@ object ProxyUtil {
             showToast(getString(R.string.BrokenLink))
             return
         }
-        val urls = SubscriptionHelper.extractUrls(text)
-        if (urls.isEmpty()) {
-            applyImport(ctx, ProxyLinkParser.parse(text))
-            return
-        }
-        // A subscription URL needs a network round-trip: fetch on a worker
-        // thread, then apply the parsed nodes back on the UI thread.
-        showToast(getString(R.string.SubscriptionFetching))
-        Thread {
+        // Extraction / base64 decoding / node parsing all run on a worker thread:
+        // a large clipboard payload (a whole subscription, a base64 body) would
+        // otherwise freeze the UI thread, and a throw escaping this thread would
+        // kill the process.
+        Thread { importInBackground(ctx, text) }.start()
+    }
+
+    private fun importInBackground(ctx: Activity, text: String) {
+        try {
+            val urls = SubscriptionHelper.extractUrls(text)
             val all = ArrayList<ProxyLinkParser.Parsed>()
-            all.addAll(ProxyLinkParser.parse(text))
-            var fetchedAny = false
-            for (url in urls) {
-                val body = SubscriptionHelper.fetch(url) ?: continue
-                fetchedAny = true
-                all.addAll(ProxyLinkParser.parse(body))
-            }
-            AndroidUtilities.runOnUIThread {
-                if (!fetchedAny && all.isEmpty()) {
-                    showToast(getString(R.string.VlessFetchFailed))
-                    return@runOnUIThread
+            all.addAll(parseLinks(text))
+            if (urls.isNotEmpty()) {
+                // A subscription URL needs a network round-trip: fetch on this
+                // worker thread, then apply the parsed nodes back on the UI thread.
+                AndroidUtilities.runOnUIThread { showToast(getString(R.string.SubscriptionFetching)) }
+                for (url in urls) {
+                    val body = SubscriptionHelper.fetch(url) ?: continue
+                    all.addAll(parseLinks(body))
                 }
-                applyImport(ctx, all)
             }
-        }.start()
+            val hadUrls = urls.isNotEmpty()
+            AndroidUtilities.runOnUIThread {
+                if (all.isEmpty()) {
+                    showToast(getString(if (hadUrls) R.string.VlessFetchFailed else R.string.BrokenLink))
+                } else {
+                    applyImport(ctx, all)
+                }
+            }
+        } catch (t: Throwable) {
+            FileLog.e(t)
+            AndroidUtilities.runOnUIThread { showToast(getString(R.string.BrokenLink)) }
+        }
+    }
+
+    /**
+     * Parses [text] into importable entries. Never throws: malformed / oversized
+     * pasted content simply yields an empty list, so no import path can crash the
+     * app on bad input.
+     */
+    @JvmStatic
+    fun parseLinks(text: String?): List<ProxyLinkParser.Parsed> {
+        return try {
+            ProxyLinkParser.parse(text)
+        } catch (t: Throwable) {
+            FileLog.e(t)
+            emptyList()
+        }
     }
 
     /**
      * Adds every parsed entry to [SharedConfig] and reports a summary. Must run
      * on the UI thread (it mutates the shared proxy list and shows a dialog).
+     * Never throws.
      */
     @JvmStatic
     fun applyImport(ctx: Activity, parsed: List<ProxyLinkParser.Parsed>) {
@@ -356,51 +380,56 @@ object ProxyUtil {
             showToast(getString(R.string.BrokenLink))
             return
         }
-        val nativeAdded = mutableListOf<String>()
-        val singAdded = mutableListOf<String>()
-        for (p in parsed) {
-            when (p) {
-                is ProxyLinkParser.Parsed.NodeLink -> {
-                    val link = ProxyLinkParser.normalizeScheme(p.link)
-                    if (!ProxyTypes.isSupported(link)) continue
-                    val obj = SharedConfig.createNodeProxy(link) ?: continue
-                    if (SharedConfig.proxyList.none { it == obj }) {
-                        SharedConfig.addProxy(obj)
-                        singAdded.add(obj.getAddressLine())
+        try {
+            val nativeAdded = mutableListOf<String>()
+            val singAdded = mutableListOf<String>()
+            for (p in parsed) {
+                when (p) {
+                    is ProxyLinkParser.Parsed.NodeLink -> {
+                        val link = ProxyLinkParser.normalizeScheme(p.link)
+                        if (!ProxyTypes.isSupported(link)) continue
+                        val obj = SharedConfig.createNodeProxy(link) ?: continue
+                        if (SharedConfig.proxyList.none { it == obj }) {
+                            SharedConfig.addProxy(obj)
+                            singAdded.add(obj.getAddressLine())
+                        }
                     }
-                }
-                is ProxyLinkParser.Parsed.NativeConfig -> {
-                    val existing = SharedConfig.proxyList.any {
-                        it.address == p.address && it.port == p.port &&
-                                it.username == p.username && it.password == p.password && it.secret == p.secret
+                    is ProxyLinkParser.Parsed.NativeConfig -> {
+                        val existing = SharedConfig.proxyList.any {
+                            it.address == p.address && it.port == p.port &&
+                                    it.username == p.username && it.password == p.password && it.secret == p.secret
+                        }
+                        if (existing) continue
+                        val info = SharedConfig.ProxyInfo(p.address, p.port, p.username, p.password, p.secret)
+                        SharedConfig.addProxy(info)
+                        nativeAdded.add(info.address)
                     }
-                    if (existing) continue
-                    val info = SharedConfig.ProxyInfo(p.address, p.port, p.username, p.password, p.secret)
-                    SharedConfig.addProxy(info)
-                    nativeAdded.add(info.address)
                 }
             }
-        }
-        if (nativeAdded.isEmpty() && singAdded.isEmpty()) {
+            if (nativeAdded.isEmpty() && singAdded.isEmpty()) {
+                showToast(getString(R.string.BrokenLink))
+                return
+            }
+            val summary = buildString {
+                if (nativeAdded.isNotEmpty()) {
+                    append(getString(R.string.ImportedProxies))
+                    append("\n\n")
+                    append(nativeAdded.joinToString("\n"))
+                }
+                if (singAdded.isNotEmpty()) {
+                    if (isNotEmpty()) append("\n\n")
+                    append(getString(R.string.VlessNodesAdded).replace("%1\$d", singAdded.size.toString()))
+                    append("\n\n")
+                    append(singAdded.joinToString("\n"))
+                }
+            }
+            AlertUtil.showSimpleAlert(ctx, summary)
+            AndroidUtilities.runOnUIThread {
+                NotificationCenter.getGlobalInstance().postNotificationName(NotificationCenter.proxySettingsChanged)
+            }
+        } catch (t: Throwable) {
+            FileLog.e(t)
             showToast(getString(R.string.BrokenLink))
-            return
-        }
-        val summary = buildString {
-            if (nativeAdded.isNotEmpty()) {
-                append(getString(R.string.ImportedProxies))
-                append("\n\n")
-                append(nativeAdded.joinToString("\n"))
-            }
-            if (singAdded.isNotEmpty()) {
-                if (isNotEmpty()) append("\n\n")
-                append(getString(R.string.VlessNodesAdded).replace("%1\$d", singAdded.size.toString()))
-                append("\n\n")
-                append(singAdded.joinToString("\n"))
-            }
-        }
-        AlertUtil.showSimpleAlert(ctx, summary)
-        AndroidUtilities.runOnUIThread {
-            NotificationCenter.getGlobalInstance().postNotificationName(NotificationCenter.proxySettingsChanged)
         }
     }
 

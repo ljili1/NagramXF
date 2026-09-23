@@ -110,7 +110,7 @@ object VlessConfig {
         outbound.put("server", bean.address)
         outbound.put("server_port", bean.port)
         outbound.put("uuid", bean.uuid)
-        outbound.put("security", bean.security.ifBlank { "auto" })
+        outbound.put("security", normalizeVmessSecurity(bean.security))
         outbound.put("alter_id", bean.alterId)
 
         if (bean.tls) {
@@ -174,8 +174,16 @@ object VlessConfig {
         outbound.put("server_port", bean.serverPort)
         outbound.put("uuid", bean.uuid)
         if (bean.password.isNotBlank()) outbound.put("password", bean.password)
-        if (bean.congestionControl.isNotBlank()) outbound.put("congestion_control", bean.congestionControl)
-        if (bean.udpRelayMode.isNotBlank()) outbound.put("udp_relay_mode", bean.udpRelayMode)
+        // Only values sing-box defines are forwarded; an unknown enumeration value
+        // is rejected with the whole config, so the node would never start.
+        val congestion = bean.congestionControl.trim().lowercase()
+        if (congestion == "cubic" || congestion == "new_reno" || congestion == "bbr") {
+            outbound.put("congestion_control", congestion)
+        }
+        val udpRelayMode = bean.udpRelayMode.trim().lowercase()
+        if (udpRelayMode == "native" || udpRelayMode == "quic") {
+            outbound.put("udp_relay_mode", udpRelayMode)
+        }
         outbound.put("tls", buildTls(bean.sni.ifBlank { bean.server }, bean.alpn.ifBlank { "h3" }, "", bean.allowInsecure))
         return outbound
     }
@@ -220,6 +228,23 @@ object VlessConfig {
         }
         if (insecure) tls.put("insecure", true)
         return tls
+    }
+
+    /** VMess ciphers sing-box accepts; anything else is rejected at startup. */
+    private val VMESS_SECURITY = setOf(
+        "auto", "none", "zero", "aes-128-gcm", "chacha20-poly1305"
+    )
+
+    /**
+     * Maps a link's `scy` / `security` onto a cipher sing-box knows. Link
+     * generators commonly emit `aes-256-gcm` (a Shadowsocks cipher, not a VMess
+     * one); forwarding it made the engine refuse the whole config, so the node
+     * looked dead. Unknown values fall back to `auto`, which the server-side
+     * negotiation accepts.
+     */
+    private fun normalizeVmessSecurity(raw: String): String {
+        val value = raw.trim().lowercase()
+        return if (value in VMESS_SECURITY) value else "auto"
     }
 
     /**
@@ -358,21 +383,57 @@ object VlessConfig {
     @JvmStatic
     fun buildTrojanOutbound(bean: ProxyParse.TrojanBean?): JSONObject? {
         if (bean == null) return null
-        if (bean.address.isBlank() || bean.port <= 0 || bean.password.isBlank()) return null
+        if (bean.address.isBlank() || bean.port <= 0 || bean.port > 65535 || bean.password.isBlank()) return null
         val outbound = JSONObject()
         outbound.put("type", "trojan")
         outbound.put("tag", "proxy")
         outbound.put("server", bean.address)
         outbound.put("server_port", bean.port)
         outbound.put("password", bean.password)
-        val tls = JSONObject()
-        tls.put("enabled", true)
-        tls.put("server_name", bean.sni.ifBlank { bean.address })
-        outbound.put("tls", tls)
+        // Same SNI policy as vless / vmess: providers usually carry the CDN vhost
+        // in `host` and no separate `sni`, and terminating TLS with the raw server
+        // address sends the handshake to the wrong vhost.
+        outbound.put(
+            "tls",
+            buildTls(bean.sni.ifBlank { bean.host }.ifBlank { bean.address }, bean.alpn, "", bean.insecure)
+        )
+        // Transport: a Trojan server that only listens on ws / grpc / h2 is
+        // unreachable with a plain TCP outbound.
+        when (bean.network.trim().lowercase()) {
+            "ws" -> {
+                val transport = JSONObject()
+                transport.put("type", "ws")
+                if (bean.path.isNotBlank()) transport.put("path", bean.path)
+                if (bean.host.isNotBlank()) transport.put("headers", JSONObject().put("Host", bean.host))
+                outbound.put("transport", transport)
+            }
+            "grpc" -> {
+                val transport = JSONObject()
+                transport.put("type", "grpc")
+                val serviceName = bean.serviceName.ifBlank { bean.path }
+                if (serviceName.isNotBlank()) transport.put("service_name", serviceName)
+                outbound.put("transport", transport)
+            }
+            "h2", "http" -> {
+                val transport = JSONObject()
+                transport.put("type", "http")
+                if (bean.host.isNotBlank()) transport.put("host", JSONArray().put(bean.host))
+                if (bean.path.isNotBlank()) transport.put("path", bean.path)
+                outbound.put("transport", transport)
+            }
+            "httpupgrade" -> {
+                val transport = JSONObject()
+                transport.put("type", "httpupgrade")
+                if (bean.host.isNotBlank()) transport.put("host", bean.host)
+                if (bean.path.isNotBlank()) transport.put("path", bean.path)
+                outbound.put("transport", transport)
+            }
+            else -> Unit // tcp / empty: no transport block
+        }
         return outbound
     }
 
-    /** Build a sing-box "shadowsocks" outbound. Plugin fields are not supported by sing-box. */
+    /** Build a sing-box "shadowsocks" outbound, including the SIP002 plugin. */
     @JvmStatic
     fun buildShadowsocksOutbound(bean: ProxyParse.SsBean?): JSONObject? {
         if (bean == null) return null
@@ -385,7 +446,36 @@ object VlessConfig {
         outbound.put("server_port", bean.remotePort)
         outbound.put("method", ProxyParse.normalizeMethod(bean.method))
         outbound.put("password", bean.password)
+        val plugin = parseSsPlugin(bean.plugin)
+        if (plugin != null) {
+            outbound.put("plugin", plugin.first)
+            if (plugin.second.isNotBlank()) {
+                outbound.put("plugin_opts", plugin.second)
+            }
+        }
         return outbound
+    }
+
+    /**
+     * Maps an SIP002 `plugin` value onto sing-box's shadowsocks `plugin` /
+     * `plugin_opts` pair.
+     *
+     * sing-box knows `obfs-local` (simple-obfs) and `v2ray-plugin`; everything
+     * after the plugin name is passed through as plugin options. A plugin sing-box
+     * does not know is dropped instead of forwarded — an unknown plugin makes the
+     * engine reject the whole config, which shows up as a node that "cannot
+     * connect" while a plain (plugin-less) outbound would at least start.
+     */
+    private fun parseSsPlugin(raw: String): Pair<String, String>? {
+        if (raw.isBlank()) return null
+        val parts = raw.split(';')
+        val name = parts[0].trim().lowercase()
+        val opts = parts.drop(1).joinToString(";").trim()
+        return when {
+            name.contains("obfs") -> "obfs-local" to opts
+            name.contains("v2ray") -> "v2ray-plugin" to opts
+            else -> null
+        }
     }
 
     /**
@@ -417,9 +507,13 @@ object VlessConfig {
         }
         outbound.put("tls", tls)
 
-        if (bean.obfs.isNotBlank() && !bean.obfs.equals("none", ignoreCase = true)) {
+        // Hysteria2 only defines the `salamander` obfuscator. A link carrying any
+        // other value is emitted without an obfs block instead of a block the
+        // engine rejects (which would make the node look unable to connect even
+        // though everything else about it is valid).
+        if (bean.obfs.trim().equals("salamander", ignoreCase = true)) {
             val obfs = JSONObject()
-            obfs.put("type", bean.obfs.lowercase())
+            obfs.put("type", "salamander")
             if (bean.obfsPassword.isNotBlank()) {
                 obfs.put("password", bean.obfsPassword)
             }
