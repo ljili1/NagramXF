@@ -82,7 +82,13 @@ object VlessConfig {
                 .put("server_port", 53)
             val servers = JSONArray()
             servers.put(dnsServer)
-            config.put("dns", JSONObject().put("servers", servers))
+            val dns = JSONObject()
+                .put("servers", servers)
+                // A node whose domain has a stale AAAA record would otherwise be
+                // dialled over IPv6 first, stall until the whole probe times out and
+                // be reported as unavailable although it works fine elsewhere.
+                .put("strategy", "prefer_ipv4")
+            config.put("dns", dns)
             outbound.put("domain_resolver", DNS_DIRECT_TAG)
         }
 

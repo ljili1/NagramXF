@@ -415,6 +415,15 @@ public class SharedConfig {
         public boolean available;
         public long availableCheckTime;
 
+        /**
+         * Why the last attempt failed, when it did (engine refused the configuration,
+         * engine process unavailable, ...). Transient: never persisted, only used to
+         * show the reason on the row instead of a bare "unavailable" - a
+         * connectivity failure that cannot be explained on the device is not
+         * diagnosable at all.
+         */
+        public String lastError;
+
         public ProxyInfo(String address, int port, String username, String password, String secret) {
             this.address = address;
             this.port = port;
@@ -1836,6 +1845,7 @@ public class SharedConfig {
                 @Override
                 public void onStarted(int port) {
                     try {
+                        sing.lastError = null;
                         applySingProxyEndpoint(sing, port);
                     } catch (Throwable e) {
                         FileLog.e(e);
@@ -1863,6 +1873,10 @@ public class SharedConfig {
                         sing.available = false;
                         sing.ping = 0;
                         sing.availableCheckTime = SystemClock.elapsedRealtime();
+                        // Keep the engine's message: it is the only place the reason
+                        // (rejected field, unsupported option, ...) can be read on a
+                        // device without log access.
+                        sing.lastError = error;
                         NotificationCenter.getGlobalInstance().postNotificationName(NotificationCenter.proxyCheckDone, sing);
                     } else {
                         sing.checking = false;

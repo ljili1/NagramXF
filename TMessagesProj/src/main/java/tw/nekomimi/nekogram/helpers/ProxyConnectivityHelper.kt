@@ -213,7 +213,13 @@ object ProxyConnectivityHelper {
                             FileLog.e("proxy node engine refused (${node.link.take(64)}): $error")
                             // An engine/binding failure is not a verdict about the
                             // node; a refused node configuration is.
-                            finishNode(node, -1, ProxyEngineClient.isInfrastructureError(error))
+                            val infrastructure = ProxyEngineClient.isInfrastructureError(error)
+                            if (!infrastructure) {
+                                // Keep the engine's own words: this is the only way the
+                                // reason becomes visible on the device.
+                                node.lastError = error
+                            }
+                            finishNode(node, -1, infrastructure)
                         }
                     }
                 }
@@ -236,8 +242,27 @@ object ProxyConnectivityHelper {
                 .checkProxy("127.0.0.1", port, "", "", "") { time ->
                     AndroidUtilities.runOnUIThread {
                         if (current != node || gen != generation) return@runOnUIThread
-                        // The engine is up: this verdict is about the node.
-                        finishNode(node, time, infrastructureFailure = false)
+                        if (time >= 0) {
+                            // The engine is up and Telegram is reachable through it.
+                            finishNode(node, time, infrastructureFailure = false)
+                            return@runOnUIThread
+                        }
+                        // The probe could not reach Telegram. Before blaming the node,
+                        // make sure the engine carrying it is still alive: one that
+                        // died mid-probe (libbox aborted, process reclaimed) is not a
+                        // node verdict, and marking a working node unavailable is
+                        // exactly how "the node works elsewhere but not here" happens.
+                        ProxyEngineClient.probeRunning(ApplicationLoader.applicationContext) { running, _ ->
+                            AndroidUtilities.runOnUIThread {
+                                if (current != node || gen != generation) return@runOnUIThread
+                                if (!running) {
+                                    finishNode(node, -1, infrastructureFailure = true)
+                                } else {
+                                    node.lastError = "no Telegram reachability through the node"
+                                    finishNode(node, -1, infrastructureFailure = false)
+                                }
+                            }
+                        }
                     }
                 }
         } catch (t: Throwable) {
@@ -282,6 +307,7 @@ object ProxyConnectivityHelper {
         } else {
             node.available = true
             node.ping = time
+            node.lastError = null
         }
         // Persist measured state so it survives list reloads / cold start.
         try {

@@ -243,6 +243,20 @@ public class ProxyListActivity extends BaseFragment implements NotificationCente
             currentInfo = proxyInfo;
         }
 
+        /**
+         * Status text, plus the reason the last attempt failed when there is one.
+         *
+         * Without it an in-app "unavailable" is unexplainable on a device (no log
+         * access): the engine's own message - rejected configuration field,
+         * unsupported option - is the only actionable information there is.
+         */
+        private CharSequence withReason(String status, SharedConfig.ProxyInfo info) {
+            if (info == null || TextUtils.isEmpty(info.lastError)) {
+                return status;
+            }
+            return status + " · " + info.lastError;
+        }
+
         public void updateStatus() {
             int colorKey;
             if (SharedConfig.currentProxy == currentInfo && useProxySettings) {
@@ -261,7 +275,7 @@ public class ProxyListActivity extends BaseFragment implements NotificationCente
                     // dead: say so instead of showing "Connecting" forever, which
                     // is what made a broken node look like it was still trying.
                     colorKey = Theme.key_text_RedRegular;
-                    valueTextView.setText(getString(R.string.Unavailable));
+                    valueTextView.setText(withReason(getString(R.string.Unavailable), currentInfo));
                 } else {
                     colorKey = Theme.key_windowBackgroundWhiteGrayText2;
                     valueTextView.setText(getString(R.string.Connecting));
@@ -281,10 +295,10 @@ public class ProxyListActivity extends BaseFragment implements NotificationCente
                     // Never measured, or the measurement could not run at all (the
                     // engine did not answer / the built-in ws relay is idle): report
                     // that honestly instead of claiming the proxy is unreachable.
-                    valueTextView.setText(getString(R.string.ProxyCheckUnknown));
+                    valueTextView.setText(withReason(getString(R.string.ProxyCheckUnknown), currentInfo));
                     colorKey = Theme.key_windowBackgroundWhiteGrayText2;
                 } else {
-                    valueTextView.setText(getString(R.string.Unavailable));
+                    valueTextView.setText(withReason(getString(R.string.Unavailable), currentInfo));
                     colorKey = Theme.key_text_RedRegular;
                 }
             }
