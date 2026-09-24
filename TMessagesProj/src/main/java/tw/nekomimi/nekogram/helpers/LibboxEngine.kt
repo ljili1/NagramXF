@@ -10,6 +10,7 @@ import io.nekohasekai.libbox.InterfaceUpdateListener
 import io.nekohasekai.libbox.Libbox
 import io.nekohasekai.libbox.LocalDNSTransport
 import io.nekohasekai.libbox.NeighborUpdateListener
+import io.nekohasekai.libbox.NetworkInterface
 import io.nekohasekai.libbox.NetworkInterfaceIterator
 import io.nekohasekai.libbox.Notification
 import io.nekohasekai.libbox.OverrideOptions
@@ -133,10 +134,43 @@ object LibboxEngine {
     /**
      * Minimal [PlatformInterface]. Every node exposes a local mixed
      * (SOCKS/HTTP) inbound — there is no TUN/VPN, no system proxy and no
-     * per-app routing — so every TUN / interface-monitor / Wi-Fi-state
-     * callback is never exercised and returns a neutral value.
+     * per-app routing — so every TUN / shell / bridge / Wi-Fi-state callback is
+     * never exercised and returns a neutral value.
+     *
+     * NULL-RETURN CONTRACT (this is what crashed the engine process):
+     * libbox v1.14.1 wraps this object in `platformInterfaceWrapper` and, for a
+     * handful of callbacks, dereferences the returned object **without a nil
+     * check** — e.g. experimental/libbox/service.go:226
+     *
+     *     result, err := w.iif.FindConnectionOwner(...)
+     *     if err != nil { return nil, err }
+     *     return &adapter.ConnectionOwner{UserId: result.UserId, ...}, nil
+     *
+     * A Java `null` reaches the Go runtime as a null pointer, so `result.UserId`
+     * is a nil dereference → `panic: invalid memory address or nil pointer
+     * dereference` → SIGSEGV → the Go runtime calls abort() → SIGABRT. Because
+     * sing-box asks for the owner of *every* loopback connection
+     * (`Router.matchRule` → `prepareMatchMetadata` → `searchProcessInfo`,
+     * route/route.go + route/process_cache.go), the engine process died on the
+     * first probe/post message with a native crash, which Android surfaced as
+     * "the app has stopped" and left every node unusable.
+     *
+     * Therefore: never return null from a callback whose result libbox reads.
+     * [findConnectionOwner] and [getInterfaces] both return fully populated
+     * (empty) objects instead; they mirror SagerNet/sing-box-for-android's
+     * PlatformInterfaceWrapper, which always returns a value.
+     *
+     * The remaining nullable callbacks ([localDNSTransport], [readWIFIState],
+     * [lookupUser], [openShellSession], [createBridge]) are checked at wrapper
+     * level by libbox (`if x == nil { return ... }`) or are unreachable because
+     * the corresponding `use*` flag returns false — they are left as-is.
      */
     private class PlatformStub : PlatformInterface {
+        // false: resolve the connection owner ourselves (below) instead of
+        // letting libbox scan /proc/net/tcp. Both paths avoid the crash — this
+        // one answers immediately, so no syscall is added to the connection path
+        // (route/process_cache.go caches per source/destination pair). Change it
+        // only together with findConnectionOwner().
         override fun useProcFS(): Boolean = false
         override fun usePlatformAutoDetectInterfaceControl(): Boolean = false
         override fun autoDetectInterfaceControl(fd: Int) {}
@@ -150,14 +184,38 @@ object LibboxEngine {
         override fun cancelNotification(identifier: String, typeID: Int) {}
         override fun startDefaultInterfaceMonitor(listener: InterfaceUpdateListener?) {}
         override fun closeDefaultInterfaceMonitor(listener: InterfaceUpdateListener?) {}
-        override fun getInterfaces(): NetworkInterfaceIterator? = null
+
+        // libbox iterates this unconditionally (`iteratorToArray(...)` calls
+        // HasNext() on it), so a null would panic the same way
+        // findConnectionOwner did. This node has no TUN and no `bind_interface`,
+        // so an empty list is correct and nothing depends on it.
+        override fun getInterfaces(): NetworkInterfaceIterator = EmptyInterfaceIterator()
+
+        /**
+         * Answers sing-box's per-connection "which local app owns this socket?"
+         * lookup. MUST NOT return null (see the class comment): libbox copies
+         * `UserId` / `UserName` / `ProcessPath` / `AndroidPackageNames` out of
+         * the returned object.
+         *
+         * This build does no process-based routing (no route rules with
+         * `process_name`), and on Android 10+ the uid is not readable without
+         * additional permissions, so "unknown" (`-1`, exactly what libbox treats
+         * as no-attribution in route/process_cache.go) is the honest answer.
+         * Every field is filled in so no null travels into Go.
+         */
         override fun findConnectionOwner(
             ipProtocol: Int,
             sourceAddress: String?,
             sourcePort: Int,
             destinationAddress: String?,
             destinationPort: Int
-        ): ConnectionOwner? = null
+        ): ConnectionOwner = ConnectionOwner().apply {
+            userId = -1
+            userName = ""
+            processPath = ""
+            setAndroidPackageNames(EmptyStringIterator())
+        }
+
         override fun startNeighborMonitor(listener: NeighborUpdateListener?) {}
         override fun closeNeighborMonitor(listener: NeighborUpdateListener?) {}
         override fun registerMyInterface(name: String) {}
@@ -177,5 +235,18 @@ object LibboxEngine {
         override fun tailscaleHostname(): String = ""
         override fun usePlatformBridge(): Boolean = false
         override fun createBridge(options: BridgeOptions?): BridgeSession? = null
+    }
+
+    /** Empty [StringIterator]; libbox reads the slice field of the owner above. */
+    private class EmptyStringIterator : StringIterator {
+        override fun hasNext(): Boolean = false
+        override fun len(): Int = 0
+        override fun next(): String = ""
+    }
+
+    /** Empty [NetworkInterfaceIterator] — see [PlatformStub.getInterfaces]. */
+    private class EmptyInterfaceIterator : NetworkInterfaceIterator {
+        override fun hasNext(): Boolean = false
+        override fun next(): NetworkInterface = NetworkInterface()
     }
 }
