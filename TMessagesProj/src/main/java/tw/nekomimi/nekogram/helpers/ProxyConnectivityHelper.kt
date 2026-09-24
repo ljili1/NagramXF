@@ -135,9 +135,25 @@ object ProxyConnectivityHelper {
                 completionCallbacks.add(onComplete)
             }
         }
-        for (node in added) {
-            NotificationCenter.getGlobalInstance()
-                .postNotificationName(NotificationCenter.proxyCheckDone, node)
+        if (added.isNotEmpty()) {
+            // Deferred to a later main-loop turn instead of posted inline. The caller
+            // is normally ProxyListActivity.updateRows, which reaches this method
+            // while it is still rebuilding its row list: an inline notification
+            // re-entered that page's proxyCheckDone handler in the middle of the
+            // rebuild, where the row lookup resolved to a holder of a different view
+            // type and the unchecked cast threw a main-thread ClassCastException
+            // (TextSettingsCell -> TextDetailProxyCell) that killed the app.
+            // Nothing depends on inline delivery - these posts only flip the rows to
+            // "Checking", which the next frame renders just as well.
+            handler.post {
+                for (node in added) {
+                    // A cancel() or timeout may have cleared the flag meanwhile.
+                    if (node.checking) {
+                        NotificationCenter.getGlobalInstance()
+                            .postNotificationName(NotificationCenter.proxyCheckDone, node)
+                    }
+                }
+            }
         }
         if (!busy) {
             busy = true

@@ -930,10 +930,15 @@ public class ProxyListActivity extends BaseFragment implements NotificationCente
         } else {
             deleteAllRow = -1;
         }
-        checkProxyList();
         if (notify && listAdapter != null) {
             listAdapter.notifyDataSetChanged();
         }
+        // Started only after the adapter has been told about the new row layout.
+        // checkProxyList() reaches ProxyConnectivityHelper, which announces the rows
+        // it enqueued; that announcement is handled by this page's proxyCheckDone
+        // branch, so the adapter must already describe the new layout by the time it
+        // arrives.
+        checkProxyList();
     }
 
     private void checkProxyList() {
@@ -1065,7 +1070,11 @@ public class ProxyListActivity extends BaseFragment implements NotificationCente
                     int idx = proxyList.indexOf(SharedConfig.currentProxy);
                     if (idx >= 0) {
                         RecyclerListView.Holder holder = (RecyclerListView.Holder) listView.findViewHolderForAdapterPosition(idx + proxyStartRow);
-                        if (holder != null) {
+                        // The holder is looked up by adapter position outside the
+                        // adapter's own bind flow, so it is not guaranteed to be a
+                        // proxy row: during a pending rebuild the attached views still
+                        // describe the previous row layout. Never cast unchecked here.
+                        if (holder != null && holder.itemView instanceof TextDetailProxyCell) {
                             TextDetailProxyCell cell = (TextDetailProxyCell) holder.itemView;
                             cell.updateStatus();
                         }
@@ -1079,14 +1088,26 @@ public class ProxyListActivity extends BaseFragment implements NotificationCente
         } else if (id == NotificationCenter.proxyCheckDone) {
             if (listView != null) {
                 SharedConfig.ProxyInfo proxyInfo = (SharedConfig.ProxyInfo) args[0];
-                int idx = proxyList.indexOf(proxyInfo);
-                if (idx >= 0) {
-                    RecyclerListView.Holder holder = (RecyclerListView.Holder) listView.findViewHolderForAdapterPosition(idx + proxyStartRow);
-                    if (holder != null) {
-                        TextDetailProxyCell cell = (TextDetailProxyCell) holder.itemView;
-                        cell.updateStatus();
+                // Refreshed by identity over the attached views instead of by adapter
+                // position. This notification is delivered synchronously from
+                // ProxyConnectivityHelper.testNodes, which ProxyListActivity.updateRows
+                // calls while it is still rebuilding the row list: a position-based
+                // lookup then returns whatever holder the layout still holds for that
+                // slot, and the unchecked cast to TextDetailProxyCell threw
+                // ClassCastException (TextSettingsCell -> TextDetailProxyCell) on the
+                // main thread - a hard crash of the whole app.
+                listView.forAllChild(view -> {
+                    if (view == null) {
+                        return;
                     }
-                }
+                    RecyclerView.ViewHolder holder = listView.getChildViewHolder(view);
+                    if (holder != null && holder.itemView instanceof TextDetailProxyCell) {
+                        TextDetailProxyCell cell = (TextDetailProxyCell) holder.itemView;
+                        if (cell.currentInfo == proxyInfo) {
+                            cell.updateStatus();
+                        }
+                    }
+                });
 
                 boolean checking = false;
                 if (!wasCheckedAllList) {
