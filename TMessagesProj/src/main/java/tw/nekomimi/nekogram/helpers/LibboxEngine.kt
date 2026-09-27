@@ -42,7 +42,7 @@ import android.util.Log
  *
  * and is released with `closeService()` + `close()`.
  *
- * CRITICAL constraints (verified against proother/sing-box-lib v1.14.1):
+ * CRITICAL constraints (verified against proother/sing-box-lib v1.14.2):
  *   * The native calls block for seconds — every entry point here MUST be
  *     called off the UI thread (the owning proxy object dispatches onto a
  *     background executor).
@@ -50,9 +50,13 @@ import android.util.Log
  *     in a state a later native call cannot recover from (SIGABRT bypasses the
  *     Java try/catch), so a failed start is always torn down completely and
  *     surfaced as an exception for the caller to report.
- *   * Keep the AAR pinned to v1.14.1. sing-box grows [PlatformInterface]
- *     across releases (shell / bridge / neighbor-monitor callbacks): a version
- *     bump requires re-implementing [PlatformStub] against the new interface.
+ *   * Keep the AAR on the newest release, but never bump it blindly. sing-box
+ *     grows [PlatformInterface] across releases (shell / bridge /
+ *     neighbor-monitor callbacks), so before a bump compare
+ *     experimental/libbox/platform.go and command_server.go against the
+ *     version in use. 1.14.1 -> 1.14.2 changed neither (27 and 7 methods),
+ *     which is why this bump needed no change to [PlatformStub] or
+ *     [ServerHandler].
  */
 object LibboxEngine {
 
@@ -138,7 +142,7 @@ object LibboxEngine {
      * never exercised and returns a neutral value.
      *
      * NULL-RETURN CONTRACT (this is what crashed the engine process):
-     * libbox v1.14.1 wraps this object in `platformInterfaceWrapper` and, for a
+     * libbox v1.14.2 wraps this object in `platformInterfaceWrapper` and, for a
      * handful of callbacks, dereferences the returned object **without a nil
      * check** — e.g. experimental/libbox/service.go:226
      *
