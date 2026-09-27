@@ -41,11 +41,19 @@ public interface SocksConstants {
      * Upper bound on dialling the WebSocket upstream, retries included.
      *
      * Telegram gives a SOCKS5 handshake a limited time before it gives up on the
-     * connection. Retrying beyond that only grows the queue of doomed dials, so the
-     * whole attempt (retries and their backoff included) stays well inside a
-     * typical client connect timeout.
+     * connection, and that deadline is *shorter* than this budget used to be: for a
+     * generic connection in "trying the next address/port" state it calls
+     * `setTimeout(8)` (Connection.cpp), i.e. it closes the socket 8 s after the last
+     * event if nothing came back. Holding the SOCKS request for 12 s therefore meant
+     * the client timed out first - it counted the attempt as a disconnect reason 2,
+     * added the full timeout to `disconnectTimeoutAmount`, and reconnected while the
+     * relay was still dialling. Answering *before* the client's deadline turns that
+     * dead time into an explicit refusal, which the client retries in 1 s.
+     *
+     * 6 s leaves ~2 s of headroom under the tightest deadline (8 s) for the socket
+     * setup and the SOCKS reply itself.
      */
-    long UPSTREAM_DIAL_BUDGET_MS = 12_000L;
+    long UPSTREAM_DIAL_BUDGET_MS = 6_000L;
 
     byte SOCKS5_Version = 0x05;
     byte SOCKS4_Version = 0x04;

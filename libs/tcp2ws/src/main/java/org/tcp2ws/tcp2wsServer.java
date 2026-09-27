@@ -82,6 +82,26 @@ public class tcp2wsServer {
         cdn.put("149.154.167.", "venus." + domain);
         cdn.put("149.154.175.", "pluto." + domain);
 
+        // IPv6 datacenter blocks. The host part of a datacenter's IPv6 address is not
+        // stable: the rows above pin the few hosts this app bakes in ("…::a",
+        // "…::d", "…::e"), but Telegram's own config hands out other hosts inside the
+        // same /64 - "2001:67c:4e8:f004::b" was captured live on this device. The
+        // host-level rows cannot cover those, because Socks4Impl#getCdn only strips up
+        // to 3 trailing characters: for "…f004::b" that probes "…f004::b", "…f004::",
+        // "…f004:" and "…f004", and none of them is a key. The tunnel was therefore
+        // refused outright and the client retried once per second.
+        //
+        // Keying the whole /64 closes that gap for every host Telegram may publish.
+        // The host rows still win: getCdn runs the exact/3-char lookup first, so the
+        // test variants ("…::e") and the dedicated proxy variants ("…::d") keep their
+        // own subdomain, and only hosts inside a known block that have no row of their
+        // own fall through to here.
+        cdn.put("2001:b28:f23d:f001:", "pluto." + domain);
+        cdn.put("2001:67c:4e8:f002:", "venus." + domain);
+        cdn.put("2001:b28:f23d:f003:", "aurora." + domain);
+        cdn.put("2001:67c:4e8:f004:", "vesta." + domain);
+        cdn.put("2001:b28:f23f:f005:", "flora." + domain);
+
         try {
             cdn.put(InetAddress.getByName("2001:b28:f23d:f001:0000:0000:0000:000d").getHostAddress(), "pluto." + domain);
             cdn.put(InetAddress.getByName("2001:67c:4e8:f002:0000:0000:0000:000d").getHostAddress(), "venus." + domain);

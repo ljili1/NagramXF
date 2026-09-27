@@ -311,9 +311,11 @@ public class ProxyHandler implements Runnable {
     /** Opens one WebSocket to [server]; the caller owns the result. */
     private WebSocket dialUpstream() throws IOException, WebSocketException {
         return new WebSocketFactory()
-                // Kept short on purpose: the retry loop above owns the total budget, so
-                // one stalled edge node cannot consume the whole of it.
-                .setConnectionTimeout(5000)
+                // Kept short on purpose: the retry loop above owns the total budget,
+                // so one stalled edge node cannot consume the whole of it. 3 s fits
+                // two attempts inside UPSTREAM_DIAL_BUDGET_MS, which itself stays
+                // under the client's own 8 s handshake deadline.
+                .setConnectionTimeout(3000)
                 .createSocket((tcp2wsServer.tls ? "wss://" : "ws://") + server + "/api")
                 .addListener(new WebSocketAdapter() {
                     public void onBinaryMessage(WebSocket websocket, byte[] binary) {

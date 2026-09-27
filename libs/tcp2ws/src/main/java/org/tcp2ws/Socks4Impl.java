@@ -162,6 +162,16 @@ public class Socks4Impl {
      * it. The lookup tolerates the short prefixes the table also stores
      * (`91.108.56.`), which is why trailing characters are stripped one at a time.
      *
+     * IPv6 then gets a second pass keyed on the /64 block, because a datacenter's
+     * IPv6 host part is not stable: this app bakes in `2001:67c:4e8:f004::a`, while
+     * Telegram's own config handed out `2001:67c:4e8:f004::b` for the very same
+     * datacenter. Both are in the block, and the block is what identifies the
+     * datacenter - the address family is irrelevant here, because the upstream is
+     * reached by name (`wss://vesta.<domain>/api`) and the Worker picks the
+     * datacenter itself. The stripping pass above cannot be relied on for that: it
+     * only removes up to 3 characters, so it reaches the block key for the compressed
+     * `…::b` form but not for a fully expanded address.
+     *
      * Unknown addresses are **refused** instead of being dialled as a bare IP. The
      * previous fallback built `wss://149.154.167.51/api`, which can never work: the
      * Worker routes by the Host/SNI name and no certificate matches a raw IP, so the
@@ -179,8 +189,27 @@ public class Socks4Impl {
                 return server;
             }
         }
+        final int blockEnd = indexOfNthColon(address, 4);
+        if (blockEnd > 0) {
+            final String server = (tcp2wsServer.cdn).get(address.substring(0, blockEnd + 1));
+            if (server != null) {
+                return server;
+            }
+        }
         RelayLog.d("no ws upstream mapped for " + address + " - refusing the tunnel");
         return null;
+    }
+
+    /** Index of the [n]-th colon (1-based), or -1 when the string has fewer. */
+    private static int indexOfNthColon(String value, int n) {
+        int index = -1;
+        for (int i = 0; i < n; i++) {
+            index = value.indexOf(':', index + 1);
+            if (index < 0) {
+                return -1;
+            }
+        }
+        return index;
     }
 
     public void connect() throws Exception {
