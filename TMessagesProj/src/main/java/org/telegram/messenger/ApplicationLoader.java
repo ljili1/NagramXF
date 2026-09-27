@@ -451,7 +451,8 @@ public class ApplicationLoader extends Application {
 
         LauncherIconController.tryFixLauncherIconIfNeeded();
         ProxyRotationController.init();
-        ProxyPingController.init();
+        // Event-driven proxy health: no timer, see ProxyHealthController.
+        ProxyHealthController.init();
     }
 
     private static void installPluginCrashHandler() {

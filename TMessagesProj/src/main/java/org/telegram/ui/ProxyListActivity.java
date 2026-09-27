@@ -933,12 +933,19 @@ public class ProxyListActivity extends BaseFragment implements NotificationCente
         if (notify && listAdapter != null) {
             listAdapter.notifyDataSetChanged();
         }
-        // Started only after the adapter has been told about the new row layout.
-        // checkProxyList() reaches ProxyConnectivityHelper, which announces the rows
-        // it enqueued; that announcement is handled by this page's proxyCheckDone
-        // branch, so the adapter must already describe the new layout by the time it
-        // arrives.
-        checkProxyList();
+        // NO probe is started here, deliberately.
+        //
+        // updateRows() used to end with checkProxyList(), so *every* rebuild re-tested
+        // every stale row - and a rebuild happens on proxyCheckDone, on every
+        // connection-state transition to Connected, and on proxySettingsChanged. Each
+        // round probed nodes through the engine (an engine start/stop per node) and the
+        // active proxy through a fresh MTProto connection, which competes with the
+        // traffic the user actually wants and made the proxy look unstable.
+        //
+        // Probing is now only started where it is meaningful:
+        //   * the page becomes visible (onResume, with the freshness window),
+        //   * the user asks for it (menu item "RetestPing" -> checkProxyList(true)),
+        //   * the connection is stuck (ProxyRotationController / ProxyHealthController).
     }
 
     private void checkProxyList() {
@@ -1036,6 +1043,11 @@ public class ProxyListActivity extends BaseFragment implements NotificationCente
         }
         // Delayed: see PROBE_AFTER_RESUME_DELAY_MS. The list itself was already
         // rebuilt by the notification that arrived while the page was hidden.
+        //
+        // This is the only *automatic* probe left in the app: opening the page is an
+        // explicit request to see the state of the proxies, and the freshness window
+        // inside checkProxyList() keeps it from re-testing anything measured recently.
+        // Nothing probes on a schedule any more - see updateRows().
         AndroidUtilities.cancelRunOnUIThread(probeRunnable);
         AndroidUtilities.runOnUIThread(probeRunnable, PROBE_AFTER_RESUME_DELAY_MS);
     }
