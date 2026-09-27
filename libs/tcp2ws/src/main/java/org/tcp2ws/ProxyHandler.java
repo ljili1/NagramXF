@@ -10,10 +10,16 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.InterruptedIOException;
 import java.io.OutputStream;
+import java.net.InetAddress;
+import java.net.NetworkInterface;
 import java.net.Socket;
 import java.net.SocketException;
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
+import java.util.Enumeration;
 import java.util.HashSet;
+import java.util.Locale;
 
 import javax.crypto.Cipher;
 import javax.crypto.spec.IvParameterSpec;
@@ -58,6 +64,39 @@ public class ProxyHandler implements Runnable {
     private static final long INITIAL_DIAL_BACKOFF_MS = 250L;
     private static final long MAX_DIAL_BACKOFF_MS = 2_000L;
 
+    /**
+     * Window used to recognise "several tunnels died together".
+     *
+     * A field capture of the "keeps reconnecting" complaint produced five bursts in
+     * three minutes, each one killing 5-12 tunnels within 30 ms and each one flipping
+     * the client into ConnectingToProxy for ~2 s. Diagnosing that from the log took a
+     * full replay of the raw capture, because none of the three numbers that actually
+     * separate the possible causes was ever logged:
+     *
+     *  * how long the tunnel had been up (a tunnel that dies 2 s after being dialled is
+     *    a different defect from one that dies after 60 s of service);
+     *  * how long the upstream had been silent (long silence suggests an idle timeout
+     *    somewhere on the path; near-zero silence with traffic in flight rules it out);
+     *  * how many other tunnels died in the same window (one tunnel dying alone is a
+     *    per-tunnel problem, five DCs dying together is the path).
+     *
+     * These are aggregated into one line per death ([reportUpstreamDeath]) instead of
+     * the stack traces that used to be the only trace of a failure.
+     */
+    private static final long DEATH_WINDOW_MS = 500L;
+
+    private static final Object s_deathLock = new Object();
+
+    /** Handlers currently holding a live upstream. An estimate, for runaway detection. */
+    private static int s_liveUpstreams = 0;
+
+    private static long s_windowStart = 0L;
+    private static int s_windowDeaths = 0;
+    private static int s_windowLiveBefore = 0;
+
+    private static final Object s_signatureLock = new Object();
+    private static String s_lastAddressSignature = null;
+
     private InputStream m_ClientInput = null;
     private OutputStream m_ClientOutput = null;
 
@@ -99,6 +138,15 @@ public class ProxyHandler implements Runnable {
      */
     private volatile long lastInboundAtMillis = 0L;
 
+    /** Wall clock of the successful dial of the current upstream, or -1. */
+    private volatile long upstreamOpenedAt = -1L;
+
+    /** Whether this handler is currently counted in [s_liveUpstreams]. */
+    private volatile boolean upstreamCounted = false;
+
+    /** The death of an upstream is reported once, however many callbacks fire. */
+    private boolean deathReported = false;
+
     public ProxyHandler(Socket clientSocket) {
         m_lock = this;
         m_ClientSocket = clientSocket;
@@ -131,6 +179,10 @@ public class ProxyHandler implements Runnable {
         }
         closed = true;
 
+        // Whatever ends this handler (its own loop, the upstream listener, the
+        // watchdog) the tunnel is gone from here on, so the live count must follow.
+        markUpstreamClosed();
+
         // Stop keep-alive first
         stopKeepAlive();
 
@@ -161,6 +213,130 @@ public class ProxyHandler implements Runnable {
         }
 
         m_ClientSocket = null;
+    }
+
+    /** Records a freshly dialled upstream. Called once per successful [prepareServer]. */
+    private void markUpstreamOpen() {
+        upstreamOpenedAt = System.currentTimeMillis();
+        if (!upstreamCounted) {
+            upstreamCounted = true;
+            synchronized (s_deathLock) {
+                s_liveUpstreams++;
+            }
+        }
+        logAddressSignatureIfChanged("dial");
+    }
+
+    /** Drops this handler from the live count. Idempotent, and safe to call twice. */
+    private void markUpstreamClosed() {
+        if (upstreamCounted) {
+            upstreamCounted = false;
+            synchronized (s_deathLock) {
+                if (s_liveUpstreams > 0) {
+                    s_liveUpstreams--;
+                }
+            }
+        }
+    }
+
+    /**
+     * One line per dead upstream, carrying the three numbers that identify the cause.
+     *
+     * [initiatedByUs] is true when this handler had already started its own teardown -
+     * i.e. the *client* socket died first and the upstream is collateral damage. That
+     * is the ordinary end of a tunnel and is reported for completeness; the interesting
+     * case is false, where the upstream failed on its own while this side was healthy.
+     */
+    private void reportUpstreamDeath(String kind, boolean initiatedByUs) {
+        synchronized (this) {
+            if (deathReported) {
+                return;
+            }
+            deathReported = true;
+        }
+
+        final long now = System.currentTimeMillis();
+        final long ageMs = upstreamOpenedAt > 0 ? now - upstreamOpenedAt : -1L;
+        final long idleMs = lastInboundAtMillis > 0 ? now - lastInboundAtMillis : -1L;
+
+        final int sameWindow;
+        final int liveBefore;
+        synchronized (s_deathLock) {
+            if (now - s_windowStart > DEATH_WINDOW_MS) {
+                s_windowStart = now;
+                s_windowDeaths = 0;
+                s_windowLiveBefore = s_liveUpstreams;
+            }
+            s_windowDeaths++;
+            sameWindow = s_windowDeaths;
+            liveBefore = s_windowLiveBefore;
+        }
+
+        markUpstreamClosed();
+
+        RelayLog.d("ws upstream died: " + server + " (" + kind
+                + ", byUs=" + initiatedByUs
+                + ", ageMs=" + ageMs
+                + ", idleMs=" + idleMs
+                + ", sameWindow=" + sameWindow
+                + ", live=" + liveBefore + ")");
+
+        logAddressSignatureIfChanged("death");
+    }
+
+    /**
+     * Logs the set of local addresses this process could source from, but only when it
+     * changes.
+     *
+     * Why this matters for the "everything reconnects at once" symptom: a Linux socket
+     * that no longer has a route for its source address is aborted by the kernel
+     * (`ECONNABORTED` on read, `EPIPE` on write) - which is exactly what the WebSocket
+     * threads report when several tunnels die together. That happens when an interface
+     * loses its address, not when the default network merely moves. A captured device
+     * held `wlan0=192.168.1.106` *and* `wlan1=192.168.1.107` on the same /24, plus
+     * three cellular interfaces, so a ROM-side dual-Wi-Fi link teardown is a concrete
+     * candidate.
+     *
+     * The signature is printed on change only, so a capture shows in one line whether
+     * the address set moved at the same moment the tunnels died. Without it the two
+     * events cannot be correlated from the log at all.
+     */
+    private static void logAddressSignatureIfChanged(String reason) {
+        final StringBuilder builder = new StringBuilder();
+        try {
+            final Enumeration<NetworkInterface> interfaces = NetworkInterface.getNetworkInterfaces();
+            final ArrayList<String> entries = new ArrayList<>();
+            while (interfaces != null && interfaces.hasMoreElements()) {
+                final NetworkInterface ni = interfaces.nextElement();
+                if (!ni.isUp() || ni.isLoopback()) {
+                    continue;
+                }
+                final Enumeration<InetAddress> inetAddresses = ni.getInetAddresses();
+                while (inetAddresses.hasMoreElements()) {
+                    final InetAddress address = inetAddresses.nextElement();
+                    if (address.isLoopbackAddress() || address.isLinkLocalAddress() || address.isMulticastAddress()) {
+                        continue;
+                    }
+                    entries.add(ni.getName() + "=" + address.getHostAddress());
+                }
+            }
+            Collections.sort(entries);
+            builder.append(entries);
+        } catch (Throwable e) {
+            builder.setLength(0);
+            builder.append("unavailable");
+        }
+        final String signature = builder.toString();
+
+        synchronized (s_signatureLock) {
+            if (signature.equals(s_lastAddressSignature)) {
+                return;
+            }
+            final String previous = s_lastAddressSignature;
+            s_lastAddressSignature = signature;
+            RelayLog.d("local address set " + (previous == null ? "initial" : "changed")
+                    + " (" + reason + "): " + signature);
+        }
     }
 
     public void sendToClient(byte[] buffer) {
@@ -279,6 +455,7 @@ public class ProxyHandler implements Runnable {
             while (true) {
                 try {
                     m_ServerSocket = dialUpstream();
+                    markUpstreamOpen();
                     RelayLog.d("ws upstream connected: " + server);
                     return;
                 } catch (IOException | WebSocketException e) {
@@ -329,6 +506,7 @@ public class ProxyHandler implements Runnable {
 
                     public void onDisconnected(WebSocket websocket, WebSocketFrame serverCloseFrame, WebSocketFrame clientCloseFrame, boolean closedByServer) {
                         // Handle ALL disconnect cases, not just server-initiated ones
+                        reportUpstreamDeath("disconnected", closed);
                         RelayLog.d("ws disconnected: server=" + server + ", closedByServer=" + closedByServer
                                 + (serverCloseFrame != null ? ", closeCode=" + serverCloseFrame.getCloseCode() : ""));
                         stopKeepAlive();
@@ -339,6 +517,10 @@ public class ProxyHandler implements Runnable {
                     }
 
                     public void onError(WebSocket websocket, WebSocketException cause) {
+                        // Reported before close() runs, so `closed` still tells us whether
+                        // this side had already given up (byUs=true) or the upstream broke
+                        // on its own (byUs=false) - the case that matters.
+                        reportUpstreamDeath("error", closed);
                         RelayLog.e("ws error: server=" + server, cause);
                         stopKeepAlive();
                         if (m_ServerSocket != null && m_ServerSocket.isOpen()) {
@@ -519,9 +701,15 @@ public class ProxyHandler implements Runnable {
                 final String message = e.getMessage();
                 // Null-safe: an IOException without a message used to make this check
                 // itself throw an NPE, which skipped close() and leaked the handler.
-                final boolean expectedClose = message != null
-                        && (message.contains("Socket Closed") || message.contains("socket closed")
-                        || message.contains("Connection reset"));
+                //
+                // Compared in lower case because the real message is "Socket closed"
+                // (capital S, lower-case c) and matched neither of the two literals
+                // below it: every ordinary teardown therefore wrote a full stack trace
+                // at ERROR level. A field capture of the reconnect storm had 7-11 of
+                // those per burst, which is what buried the actual signal.
+                final String lower = message == null ? "" : message.toLowerCase(Locale.US);
+                final boolean expectedClose = lower.contains("socket closed")
+                        || lower.contains("connection reset");
                 if (!expectedClose) {
                     RelayLog.e("client read failed", e);
                 }
