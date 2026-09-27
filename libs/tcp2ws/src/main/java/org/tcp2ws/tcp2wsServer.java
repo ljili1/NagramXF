@@ -73,14 +73,21 @@ public class tcp2wsServer {
         cdn.put("149.154.167.9", "vesta." + domain);
         cdn.put("91.108.56.", "flora." + domain);
         cdn.put("111.62.91.", "venus." + domain);
-        // Whole-subnet catch-alls for the two ranges Telegram keeps a single
-        // datacenter in. Keys above are looked up first (i == 0 in getCdn), so every
-        // host that already has an exact entry keeps its own mapping - including the
-        // exceptions living inside these /24s: .40 (test dc2), .51, .91, .8, .9 and
-        // .100 (dc3). These rows only decide hosts that are otherwise unmapped and
-        // therefore refused outright, which is a guaranteed failure either way.
-        cdn.put("149.154.167.", "venus." + domain);
-        cdn.put("149.154.175.", "pluto." + domain);
+
+        // No catch-all for 149.154.167. or 149.154.175.: those two /24s each hold
+        // *two* datacenters - .167 serves dc2 (.51, .41) and dc4 (.8, .9, .91);
+        // .175 serves dc1 (.50, .54) and dc3 (.100) - so a prefix key there has to
+        // guess, and a wrong guess returns a tunnel to the wrong datacenter. The
+        // client cannot tell: MTProto carries no datacenter id in the handshake, so
+        // it would keep a live session against the wrong servers instead of falling
+        // back. Refusing an unmapped host is the better failure - it is logged, and
+        // the client moves on to its next address, which is exactly what the field
+        // logs show it doing when the IPv6 target was refused. Replaying every
+        // address those logs contain through this table confirms the /24 keys were
+        // never needed: all 15 of them already resolve through the exact rows and
+        // the three-character strip. Prefix keys are kept only for the ranges a
+        // single datacenter owns (.164/.165/.166 and 91.108.4. are dc4, 91.108.56.
+        // is dc5, 111.62.91. is dc2), matching the reference deployment.
 
         // IPv6 datacenter blocks. The host part of a datacenter's IPv6 address is not
         // stable: the rows above pin the few hosts this app bakes in ("…::a",
