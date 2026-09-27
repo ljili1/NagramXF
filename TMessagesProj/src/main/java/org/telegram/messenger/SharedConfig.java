@@ -1939,9 +1939,8 @@ public class SharedConfig {
      * restart the node when it does not; otherwise every connection to the local
      * port keeps failing until the app is restarted.
      *
-     * No-op when the current proxy is not a sing-box node, when the proxy is
-     * disabled, or when the engine confirms that it is running on the persisted
-     * port. Never throws.
+     * No-op when the proxy is disabled, or when the engine confirms that it is
+     * running on the persisted port. Never throws.
      */
     public static void recoverExternalProxyIfNeeded() {
         try {
@@ -1950,7 +1949,22 @@ public class SharedConfig {
                 return;
             }
             ProxyInfo info = currentProxy;
+            if (info == null) {
+                // Switch on, but no row behind it: the same incoherent state the
+                // cold-start hook repairs. Leave the process without a proxy and the
+                // symptom is "the proxy is on and nothing connects".
+                reconcilePersistedProxy();
+                return;
+            }
             if (!(info instanceof SingProxy)) {
+                // The built-in ws relay lives in this process: its listen socket is
+                // gone whenever the process was reclaimed, while Telegram keeps
+                // dialing 127.0.0.1:<relay port>. Re-applying the selected row boots
+                // the relay again (ConnectionsManager translates the sentinel address
+                // and calls WebSocketHelper.getSocksPort()). Without this, returning
+                // to the foreground left the app pointed at a dead local port until
+                // the user toggled the proxy by hand.
+                applyNativeProxy(info);
                 return;
             }
             final SingProxy sing = (SingProxy) info;
@@ -1996,10 +2010,21 @@ public class SharedConfig {
     }
 
     /**
-     * Cold-start hook: when the persisted proxy is a sing-box node, brings its
-     * engine (isolated `:singbox` process) back up so Telegram's restored
-     * connection to the local inbound has a listener. Never throws; a bad node
-     * simply fails in the engine process and the saved state is kept.
+     * One-shot guard for {@link #reconcilePersistedProxy()}. The cold-start hook is
+     * called once per account (see {@code ConnectionsManager.init}), but the
+     * reconciliation is process-wide.
+     */
+    private static boolean persistedProxyReconciled;
+
+    /**
+     * Cold-start hook: brings the persisted proxy back up before Telegram dials it.
+     *
+     * For a sing-box node that means starting its engine (isolated `:singbox`
+     * process) so the restored local inbound has a listener; for the built-in ws row
+     * it means making sure the persisted endpoint really describes the selected row
+     * and handing it to the connection layer, which is what boots the in-process
+     * relay. Never throws; a bad node simply fails in the engine process and the
+     * saved state is kept.
      */
     public static void ensureCurrentExternalStarted() {
         try {
@@ -2012,10 +2037,95 @@ public class SharedConfig {
                 // Idempotent on the engine side: if the same node is already
                 // running it simply reports its live port back.
                 startProxyAsync(info);
+                return;
+            }
+            if (!persistedProxyReconciled) {
+                persistedProxyReconciled = true;
+                reconcilePersistedProxy();
             }
         } catch (Throwable e) {
             FileLog.e(e);
         }
+    }
+
+    /**
+     * Makes the persisted proxy endpoint agree with the row the app has selected.
+     *
+     * Cold start applies the proxy from three independent preferences
+     * (`proxy_enabled`, `proxy_ip`, `proxy_port`), while every other part of the app
+     * works off {@link #currentProxy} - the row the proxy page shows as selected.
+     * When the two disagree the proxy is on in the UI but was never handed to the
+     * connection layer at all: Telegram then dials the datacenters directly, which on
+     * a filtered network looks exactly like "the proxy is enabled and nothing
+     * connects". Toggling the row in the proxy page is the only thing that fixes it,
+     * and it does so only because that path re-applies the proxy from the *row*
+     * instead of from the endpoint preferences - the "I have to switch it off and on
+     * again" symptom.
+     *
+     * Reconciliation is deliberately one-way: it never enables a proxy the user
+     * disabled, and never invents an endpoint for a row that is not there. It only
+     * (a) re-selects the built-in ws row when the switch is on but nothing was
+     * selected, and (b) rewrites the endpoint from the selected row when it does not
+     * describe it - then hands the row down, which starts the built-in ws relay on
+     * the way. Never throws.
+     */
+    public static void reconcilePersistedProxy() {
+        try {
+            if (!isProxyEnabledPref()) {
+                return;
+            }
+            loadProxyList();
+            ProxyInfo info = currentProxy;
+            if (info == null) {
+                // The switch is on but no row describes the persisted endpoint any
+                // more (loadProxyList drops a stale local snapshot). Select the
+                // built-in ws row, which is always present and is this build's
+                // default, so the state becomes coherent again instead of leaving
+                // Telegram with no proxy while the UI says otherwise.
+                info = findBuiltInWsRow();
+                if (info == null) {
+                    return;
+                }
+                FileLog.e("proxy: the switch is on but no row matches the persisted endpoint, selecting " + info.address);
+                currentProxy = info;
+            }
+            SharedPreferences prefs = MessagesController.getGlobalMainSettings();
+            boolean endpointMatches = info.address.equals(prefs.getString("proxy_ip", ""))
+                    && prefs.getInt("proxy_port", 0) == info.port
+                    && info.username.equals(prefs.getString("proxy_user", ""))
+                    && info.password.equals(prefs.getString("proxy_pass", ""))
+                    && info.secret.equals(prefs.getString("proxy_secret", ""));
+            if (!endpointMatches) {
+                FileLog.d("proxy: persisted endpoint " + prefs.getString("proxy_ip", "") + ":" + prefs.getInt("proxy_port", 0)
+                        + " does not describe the selected proxy, re-applying " + info.address + ":" + info.port);
+                prefs.edit()
+                        .putString("proxy_ip", info.address)
+                        .putString("proxy_user", info.username)
+                        .putString("proxy_pass", info.password)
+                        .putString("proxy_secret", info.secret)
+                        .putInt("proxy_port", info.port)
+                        .apply();
+            }
+            // Handing the row down is the point of this method: it is what makes the
+            // connection layer use it. For the built-in ws row ConnectionsManager
+            // translates the sentinel address into 127.0.0.1:<relay port> and boots
+            // the relay while doing so; a repeated identical endpoint is a no-op
+            // inside ConnectionsManager.
+            applyNativeProxy(info);
+        } catch (Throwable e) {
+            FileLog.e(e);
+        }
+    }
+
+    /** The built-in Cloudflare WebSocket row, or null when the list has none. */
+    @Nullable
+    private static ProxyInfo findBuiltInWsRow() {
+        for (ProxyInfo info : proxyList) {
+            if (WebSocketHelper.proxyServer.equals(info.address)) {
+                return info;
+            }
+        }
+        return null;
     }
 
     public static void setProxyEnable(boolean enable) {
@@ -2195,13 +2305,21 @@ public class SharedConfig {
                     }
                 }
                 if (currentProxy == null) {
+                    // The endpoint is a leftover of a node that is not in the list any
+                    // more. Dropping the endpoint is right; switching the proxy off
+                    // here is not. It made the saved state disagree with what the user
+                    // had set, and it did so silently, so "the proxy turned itself
+                    // off" was unexplainable on a device. `proxy_enabled` is left
+                    // alone and reconcilePersistedProxy() re-selects a row on the next
+                    // start / foreground.
+                    FileLog.e("proxy: dropping stale local endpoint " + proxyAddress + ":" + proxyPort
+                            + " (no saved node matches it); proxy_enabled is left untouched");
                     preferences.edit()
                             .remove("proxy_ip")
                             .remove("proxy_port")
                             .remove("proxy_user")
                             .remove("proxy_pass")
                             .remove("proxy_secret")
-                            .remove("proxy_enabled")
                             .apply();
                 }
             } else {

@@ -694,7 +694,13 @@ FileLog.e(finalRequestObject + " got error " + error.code + " " + error.text);
 
         if (preferences.getBoolean("proxy_enabled", false) && !TextUtils.isEmpty(proxyAddress)) {
             if (WebSocketHelper.proxyServer.equals(proxyAddress)) {
-                native_setProxySettings(currentAccount, "127.0.0.1", WebSocketHelper.getSocksPort(), "", "", "");
+                int relayPort = WebSocketHelper.getSocksPort();
+                if (BuildVars.LOGS_ENABLED) {
+                    // Recorded so a cold start that ends up with no proxy at all is
+                    // distinguishable from one that applied the built-in ws relay.
+                    FileLog.d("proxy: cold start applies the built-in ws relay on 127.0.0.1:" + relayPort);
+                }
+                native_setProxySettings(currentAccount, "127.0.0.1", relayPort, "", "", "");
             } else {
                 native_setProxySettings(currentAccount, proxyAddress, proxyPort, proxyUsername, proxyPassword, proxySecret);
             }
@@ -1042,6 +1048,12 @@ FileLog.e(finalRequestObject + " got error " + error.code + " " + error.text);
             address = "127.0.0.1";
             port = WebSocketHelper.getSocksPort();
             secret = "";
+            if (BuildVars.LOGS_ENABLED) {
+                // "The proxy is enabled but nothing connects" is indistinguishable
+                // from "the proxy was never applied at all" in a log without this
+                // line - and that distinction is the whole diagnosis.
+                FileLog.d("proxy: built-in ws relay handed to the connection layer on 127.0.0.1:" + port + " (enabled=" + enabled + ")");
+            }
         }
 
         for (int a = 0; a < UserConfig.MAX_ACCOUNT_COUNT; a++) {

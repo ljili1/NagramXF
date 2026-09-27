@@ -12,8 +12,25 @@ import java.net.ServerSocket
 object WebSocketHelper {
     const val proxyServer = "ws.nagramxf"
 
+    /**
+     * The relay is started lazily from whichever thread first needs it: cold start
+     * reaches [getSocksPort] once per account (Telegram initialises every account in
+     * turn), the proxy page reaches it from the UI thread, and the health path can
+     * reach it from a notification. Two callers racing on these fields used to be
+     * able to lose the relay that was already listening - the loser's `start()` would
+     * throw "address already in use", the catch block reset `tcp2wsStarted` /
+     * `socksPort` / `tcp2wsServer`, and Telegram was left dialing a dead local port
+     * with no way back except toggling the proxy by hand. The whole lifecycle is
+     * therefore serialised on this object's monitor, and the fields are volatile so
+     * the cheap read-only path sees the values the writer published.
+     */
+    @Volatile
     private var socksPort = -1
+
+    @Volatile
     private var tcp2wsStarted = false
+
+    @Volatile
     private var tcp2wsServer: tcp2wsServer? = null
 
     /**
@@ -135,6 +152,7 @@ object WebSocketHelper {
         }
     }
 
+    @Synchronized
     fun getSocksPort(port: Int): Int {
         return if (tcp2wsStarted && socksPort != -1) {
             socksPort
