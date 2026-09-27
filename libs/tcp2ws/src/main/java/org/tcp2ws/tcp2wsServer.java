@@ -123,13 +123,27 @@ public class tcp2wsServer {
         return this;
     }
 
-    public synchronized void start(int listenPort) {
+    /**
+     * Binds the listen socket on the calling thread, then serves it on a
+     * background thread.
+     *
+     * The bind MUST happen here instead of inside the background thread. A port
+     * that is already taken has to surface as an exception out of start():
+     * otherwise the caller records the relay as "started" while nothing is
+     * listening, Telegram is pointed at a dead local port, and there is no way
+     * back for the rest of the process - the cached port is returned forever and
+     * the accept loop's IOException is swallowed by a thread nobody observes.
+     */
+    public synchronized void start(int listenPort) throws IOException {
         if (cdn.isEmpty()) {
             throw new RuntimeException("cdn domain not set");
         }
+        final ServerSocket listenSocket = new ServerSocket(listenPort);
+        listenSocket.setSoTimeout(SocksConstants.LISTEN_TIMEOUT);
         this.stopping = false;
-        this.port = listenPort;
-        new Thread(new ServerProcess()).start();
+        // Bound already: the effective port is known before the thread starts.
+        this.port = listenSocket.getLocalPort();
+        new Thread(new ServerProcess(listenSocket)).start();
     }
 
     public synchronized void stop() {
@@ -138,20 +152,26 @@ public class tcp2wsServer {
 
     private class ServerProcess implements Runnable {
 
+        private final ServerSocket listenSocket;
+
+        ServerProcess(ServerSocket listenSocket) {
+            this.listenSocket = listenSocket;
+        }
+
         @Override
         public void run() {
             try {
-                handleClients(port);
+                handleClients(listenSocket);
             } catch (IOException e) {
-                Thread.currentThread().interrupt();
+                // Not expected anymore (the bind is done in start()), but it must
+                // not be swallowed silently: this is the relay the whole built-in
+                // ws proxy depends on, and if the accept loop ever ends every
+                // subsequent client connection is refused with no other trace.
+                RelayLog.e("relay accept loop ended on port " + port, e);
             }
         }
 
-        protected void handleClients(int port) throws IOException {
-            final ServerSocket listenSocket = new ServerSocket(port);
-            listenSocket.setSoTimeout(SocksConstants.LISTEN_TIMEOUT);
-            tcp2wsServer.this.port = listenSocket.getLocalPort();
-
+        protected void handleClients(ServerSocket listenSocket) throws IOException {
             while (true) {
                 synchronized (tcp2wsServer.this) {
                     if (stopping) {
@@ -171,12 +191,15 @@ public class tcp2wsServer {
         private void handleNextClient(ServerSocket listenSocket) {
             try {
                 final Socket clientSocket = listenSocket.accept();
-                // Don't override timeout here - ProxyHandler constructor sets DEFAULT_PROXY_TIMEOUT
+                // Don't override the read timeout here - the ProxyHandler constructor
+                // sets it (see RELAY_READ_TIMEOUT_MS).
                 new Thread(new ProxyHandler(clientSocket)).start();
             } catch (InterruptedIOException e) {
                 //	This exception is thrown when accept timeout is expired
             } catch (Exception e) {
-                e.printStackTrace();
+                // A transient accept failure must not be invisible: a relay that keeps
+                // failing to accept looks exactly like "the ws proxy cannot connect".
+                RelayLog.e("accept failed on port " + port, e);
             }
         }
     }

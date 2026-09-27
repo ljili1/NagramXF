@@ -5,6 +5,7 @@ import static org.tcp2ws.Utils.getSocketInfo;
 import com.neovisionaries.ws.client.WebSocketException;
 
 import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 
 import java.io.IOException;
 import java.net.InetAddress;
@@ -154,23 +155,51 @@ public class Socks4Impl {
         replyCommand(errorCode);
     }
 
+    /**
+     * ws upstream host that serves [m_ServerIP], or null when none is known.
+     *
+     * The table maps a Telegram datacenter address to the CDN subdomain that fronts
+     * it. The lookup tolerates the short prefixes the table also stores
+     * (`91.108.56.`), which is why trailing characters are stripped one at a time.
+     *
+     * Unknown addresses are **refused** instead of being dialled as a bare IP. The
+     * previous fallback built `wss://149.154.167.51/api`, which can never work: the
+     * Worker routes by the Host/SNI name and no certificate matches a raw IP, so the
+     * dial failed - but only *after* the SOCKS success reply had been written, so the
+     * client saw a connection that was established and immediately dropped and
+     * retried in a loop. Refusing turns an unexplainable reconnect storm into an
+     * explicit, logged failure.
+     */
+    @Nullable
     private String getCdn() {
-        String _server = m_ServerIP.getHostAddress();
-        String server = null;
-        for (int i = 0; server == null && i <= 3; i++)
-            server = (tcp2wsServer.cdn).get(_server.substring(0, _server.length() - i));
-        return server != null ? server : _server;
+        final String address = m_ServerIP.getHostAddress();
+        for (int i = 0; i <= 3 && i < address.length(); i++) {
+            final String server = (tcp2wsServer.cdn).get(address.substring(0, address.length() - i));
+            if (server != null) {
+                return server;
+            }
+        }
+        RelayLog.d("no ws upstream mapped for " + address + " - refusing the tunnel");
+        return null;
     }
 
     public void connect() throws Exception {
         //	Connect to the Remote Host
+        final String upstream = getCdn();
+        if (upstream == null) {
+            refuseCommand(getFailCode());
+            // Returning normally would let processRelay() continue into
+            // processHandshake() with no upstream at all.
+            throw new IOException("no ws upstream for " + m_ServerIP.getHostAddress());
+        }
         try {
-            m_Parent.connectToServer(getCdn());
-            //m_Parent.connectToServer(m_ServerIP.getHostAddress());
+            m_Parent.connectToServer(upstream);
         } catch (IOException e) {
             refuseCommand(getFailCode()); // Connection Refused
-            throw new Exception("Socks 4 - Can't connect to " +
-                getSocketInfo(m_Parent.m_ServerSocket.getSocket()));
+            // The old message dereferenced m_Parent.m_ServerSocket, which is exactly
+            // null on this path - the reporting of the failure threw an NPE of its
+            // own. Report the *upstream* that could not be reached instead.
+            throw new IOException("cannot reach ws upstream " + upstream, e);
         }
         replyCommand(getSuccessCode());
     }
