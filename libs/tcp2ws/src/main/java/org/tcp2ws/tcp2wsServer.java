@@ -59,6 +59,12 @@ public class tcp2wsServer {
         cdn.put("149.154.167.6", "venus." + domain);
         cdn.put("149.154.167.7", "venus." + domain);
         cdn.put("149.154.167.2", "venus." + domain);
+        // DC2 also answers on .41, which is the address Telegram's own config hands
+        // out for dc2. It was absent while .51 (dc2) and .40 (test dc2) were listed,
+        // so every dc2 connection to .41 was refused. The lookup in Socks4Impl#getCdn
+        // only ever strips up to 3 trailing characters, so ".41" cannot fall back
+        // onto ".4" - the gap has to be closed by an explicit entry.
+        cdn.put("149.154.167.41", "venus." + domain);
         cdn.put("91.108.4.", "vesta." + domain);
         cdn.put("149.154.164.", "vesta." + domain);
         cdn.put("149.154.165.", "vesta." + domain);
@@ -67,6 +73,14 @@ public class tcp2wsServer {
         cdn.put("149.154.167.9", "vesta." + domain);
         cdn.put("91.108.56.", "flora." + domain);
         cdn.put("111.62.91.", "venus." + domain);
+        // Whole-subnet catch-alls for the two ranges Telegram keeps a single
+        // datacenter in. Keys above are looked up first (i == 0 in getCdn), so every
+        // host that already has an exact entry keeps its own mapping - including the
+        // exceptions living inside these /24s: .40 (test dc2), .51, .91, .8, .9 and
+        // .100 (dc3). These rows only decide hosts that are otherwise unmapped and
+        // therefore refused outright, which is a guaranteed failure either way.
+        cdn.put("149.154.167.", "venus." + domain);
+        cdn.put("149.154.175.", "pluto." + domain);
 
         try {
             cdn.put(InetAddress.getByName("2001:b28:f23d:f001:0000:0000:0000:000d").getHostAddress(), "pluto." + domain);
