@@ -2060,7 +2060,17 @@ public class SharedConfig {
                 .putInt("current_proxy", info == null ? 0 : info.hashCode())
                 .apply();
         boolean enabled = isProxyEnabledPref();
-        if (previous instanceof SingProxy && previous != info) {
+        // A node that is being *left* has to be stopped - except when it is
+        // immediately replaced by another node that is about to be started anyway.
+        // Node -> node with the proxy on is handed to the engine as a single
+        // replacement (the service stops the running node and starts the new one
+        // inside one command, under its own lock), so Telegram's local inbound is
+        // re-pointed without ever being left with no listener. Sending an explicit
+        // stop first opened exactly that window - one round trip plus the engine
+        // teardown - which is the "every node switch drops the connection"
+        // symptom. Every other transition still stops the old node, otherwise a
+        // disabled proxy would leave its engine running unattended.
+        if (previous instanceof SingProxy && previous != info && !(enabled && info instanceof SingProxy)) {
             stopProxyAsync(previous);
         }
         if (enabled) {

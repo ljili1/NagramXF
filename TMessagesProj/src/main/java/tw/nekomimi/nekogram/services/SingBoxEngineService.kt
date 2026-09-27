@@ -42,6 +42,13 @@ class SingBoxEngineService : Service() {
         private var currentServer: CommandServer? = null
         private var currentLink: String? = null
         private var currentPort = 0
+
+        /**
+         * Grace period for reusing the previous live port after a node switch. Bounded
+         * so an engine start is never delayed by a port that is genuinely gone.
+         */
+        private const val PORT_RELEASE_ATTEMPTS = 5
+        private const val PORT_RELEASE_RETRY_MS = 60L
     }
 
     private var handlerThread: HandlerThread? = null
@@ -97,15 +104,29 @@ class SingBoxEngineService : Service() {
         }
         val portHint = msg.data.getInt(EngineProtocol.KEY_PORT_HINT, 0)
         val replyTo = msg.replyTo
+        val previousPort: Int
         synchronized(stateLock) {
             if (currentServer != null && currentLink == link) {
                 // Already running the very same node — answer with the live port.
                 reply(replyTo, EngineProtocol.REPLY_OK, EngineProtocol.KEY_ID to id, EngineProtocol.KEY_PORT to currentPort)
                 return
             }
+            previousPort = currentPort
             stopLocked()
         }
-        val port = choosePort(link, portHint)
+        // Prefer the port Telegram is already pointed at over the target node's own
+        // remembered one.
+        //
+        // Telegram's endpoint for a node is `127.0.0.1:<port>`. Reusing the live port
+        // means switching nodes swaps the *upstream* while the local endpoint stays
+        // exactly the same, so the client's connections come back as soon as the new
+        // listener is up. Handing out a different port forced a re-apply of the proxy
+        // settings first, and until that landed every connection was refused - the
+        // "switching nodes drops everything for a moment / reconnects repeatedly"
+        // symptom. On a cold start there is no previous port and the node's own
+        // persisted one is used, exactly as before.
+        val preferred = if (previousPort > 0) previousPort else portHint
+        val port = choosePort(link, preferred, previousPort)
         val config = VlessConfig.buildConfig(link, port)
         if (config == null) {
             Log.e(TAG, "refusing invalid node: $link")
@@ -156,7 +177,18 @@ class SingBoxEngineService : Service() {
         LibboxEngine.stop(server)
     }
 
-    private fun choosePort(link: String, hint: Int): Int {
+    /**
+     * Local inbound port for [link].
+     *
+     * [requireReuse] is the port the engine was listening on until a moment ago. It is
+     * tried first (with a short grace period, because the kernel may not have released
+     * it yet) so the endpoint Telegram is pointed at survives a node switch; only when
+     * it cannot be taken does the search fall through to the hashed/remembered base.
+     */
+    private fun choosePort(link: String, hint: Int, requireReuse: Int): Int {
+        if (requireReuse > 0 && waitForLocalPort(requireReuse)) {
+            return requireReuse
+        }
         var base = if (hint > 0) hint else 31000 + Math.abs(link.hashCode() % 18000)
         if (base > 65535) {
             base = 1024 + (base - 65535)
@@ -169,6 +201,24 @@ class SingBoxEngineService : Service() {
             }
         }
         return base
+    }
+
+    /** Waits briefly for [port] to become bindable again after the previous engine. */
+    private fun waitForLocalPort(port: Int): Boolean {
+        for (attempt in 0 until PORT_RELEASE_ATTEMPTS) {
+            if (isLocalPortFree(port)) {
+                return true
+            }
+            if (attempt < PORT_RELEASE_ATTEMPTS - 1) {
+                try {
+                    Thread.sleep(PORT_RELEASE_RETRY_MS)
+                } catch (t: InterruptedException) {
+                    Thread.currentThread().interrupt()
+                    return false
+                }
+            }
+        }
+        return false
     }
 
     private fun isLocalPortFree(candidate: Int): Boolean {

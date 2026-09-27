@@ -79,6 +79,21 @@ object ProxyConnectivityHelper {
     private var current: SharedConfig.SingProxy? = null
     private var generation = 0
 
+    /**
+     * True once this batch really started an engine.
+     *
+     * Only a batch that started an engine may restore the engine state at the end
+     * of the batch. [testNodes] is called on every list refresh (and by the
+     * rotation controller), most of the time with every candidate already covered
+     * by its freshness window - i.e. with an empty queue. Driving the engine
+     * teardown from such a batch did nothing useful except send a `stop` for an
+     * engine that was either idle or *still starting*: the client drops
+     * `lastLink` on stop, which is the anchor the recovery path restarts from, so
+     * an empty refresh could both kill a node that had just been brought up and
+     * leave nothing to recover it with.
+     */
+    private var engineTouched = false
+
     /** When the last engine-level (infrastructure) failure happened. */
     private var lastInfrastructureFailureAt = 0L
 
@@ -207,6 +222,9 @@ object ProxyConnectivityHelper {
         current = node
         val gen = ++generation
         node.checking = true
+        // From here on the engine is (or is about to be) touched: the batch must
+        // restore the engine state when it drains (see [engineTouched]).
+        engineTouched = true
         NotificationCenter.getGlobalInstance()
             .postNotificationName(NotificationCenter.proxyCheckDone, node)
         handler.postDelayed(timeoutRunnable, NODE_TIMEOUT_MS)
@@ -337,7 +355,13 @@ object ProxyConnectivityHelper {
         busy = false
         current = null
         handler.removeCallbacks(timeoutRunnable)
-        restoreEngineState()
+        // Only an engine that this batch actually started is restored: a batch
+        // that found every candidate fresh never touched it and must leave it
+        // alone (see [engineTouched]).
+        if (engineTouched) {
+            engineTouched = false
+            restoreEngineState()
+        }
         val callbacks = synchronized(completionCallbacks) {
             val snapshot = ArrayList(completionCallbacks)
             completionCallbacks.clear()
@@ -365,6 +389,8 @@ object ProxyConnectivityHelper {
      * must be stopped so no orphan engine keeps running. When the active proxy is
      * a node, the engine was only ever asked for that same node (idempotent) and is
      * deliberately left alone.
+     *
+     * Called only when this batch actually started an engine - see [engineTouched].
      */
     private fun restoreEngineState() {
         try {
@@ -397,6 +423,10 @@ object ProxyConnectivityHelper {
         current = null
         generation++
         busy = false
+        // A batch that had already started an engine still owns the cleanup; one
+        // that never touched it must not stop anything later either.
+        val touched = engineTouched
+        engineTouched = false
         handler.removeCallbacks(timeoutRunnable)
         handler.removeCallbacks(processNextRunnable)
         synchronized(completionCallbacks) { completionCallbacks.clear() }
@@ -405,6 +435,12 @@ object ProxyConnectivityHelper {
         }
         if (inFlight != null) {
             notifyNotChecking(inFlight)
+        }
+        // The engine this (now dropped) batch had started is not wanted by the
+        // disappeared page either: hand it back to the persisted state instead of
+        // leaving an orphan node engine listening on a local port.
+        if (touched) {
+            restoreEngineState()
         }
     }
 

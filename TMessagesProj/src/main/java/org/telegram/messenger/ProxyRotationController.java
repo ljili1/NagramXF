@@ -19,9 +19,18 @@ import tw.nekomimi.nekogram.helpers.WebSocketHelper;
  * stuck on "connecting to proxy", the candidates are (re)measured and the
  * fastest reachable one becomes the current proxy. Candidates cover every kind:
  * native Socks5 / MTProto rows are probed in parallel by ConnectionsManager,
- * node (sing-box) rows by {@link ProxyConnectivityHelper} in the throwaway
- * `:singbox_test` engine — so measuring candidates never interrupts the proxy
- * that is currently in use.
+ * node (sing-box) rows one after another by {@link ProxyConnectivityHelper}.
+ *
+ * There is only ONE engine process, so a node candidate cannot be measured
+ * without stopping whatever it is running. That is why the helper refuses to
+ * probe any node other than the active one: measuring a candidate would take the
+ * node serving traffic down for the duration. The consequence is a known gap -
+ * while the active proxy IS a node, this controller can neither measure nor fail
+ * over to another node. Lifting it requires restoring the active node at the end
+ * of the batch (otherwise the engine is left on the last candidate while Telegram
+ * still points at the active node's port); the earlier attempt at a second,
+ * throwaway `:singbox_test` engine was withdrawn because an unvalidated second
+ * native engine process is far riskier than the gap it closes.
  *
  * The built-in Cloudflare ws row is never a candidate: its upstream is dead by
  * design, so it could only ever be a useless failover target.

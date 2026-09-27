@@ -83,8 +83,19 @@ object ProxyEngineClient {
     fun isInfrastructureError(error: String?): Boolean =
         error != null && error.startsWith(INFRA_ERROR_PREFIX)
 
-    /** Upper bound on consecutive recovery rounds (reset once the engine answers). */
-    private const val MAX_RECOVERY_ROUNDS = 5
+    /**
+     * Ceiling for the recovery backoff.
+     *
+     * Recovery used to stop for good after five rounds, which left the proxy dead for
+     * the rest of the process lifetime: Telegram kept its persisted proxy pointed at a
+     * local inbound nobody was listening on, so every connection failed and the only
+     * cure was restarting the app. Retrying with a capped exponential backoff is both
+     * cheaper than that failure and safe against the problem the cap was meant to
+     * prevent - a node that makes the engine crash on every start is retried about
+     * once a minute instead of in a loop, and the counter resets as soon as the engine
+     * answers.
+     */
+    private const val MAX_RECOVERY_DELAY_MS = 60_000L
 
     interface StartCallback {
         fun onStarted(port: Int)
@@ -167,9 +178,10 @@ object ProxyEngineClient {
             // recoveryRounds is deliberately NOT reset here: a service connection
             // only proves the host process is up, not that the engine survives
             // (a broken node can make it crash repeatedly). Resetting on every
-            // connect would defeat the MAX_RECOVERY_ROUNDS bound and restart a
-            // crashing engine forever. The counter is reset when the engine
-            // actually answers (settle: Start OK / Probe running).
+            // connect would keep the backoff at its shortest step, so a crashing
+            // engine would be restarted every couple of seconds forever. The counter
+            // is reset when the engine actually answers (settle: Start OK / Probe
+            // running).
             val toSend = synchronized(pendingSend) {
                 val queued = ArrayList(pendingSend)
                 pendingSend.clear()
@@ -466,21 +478,29 @@ object ProxyEngineClient {
         }
     }
 
-    /** Schedules a verification round; bounded so a permanent failure cannot loop. */
+    /**
+     * Schedules a verification round.
+     *
+     * Bounded in *rate*, not in number: the delay grows exponentially up to
+     * [MAX_RECOVERY_DELAY_MS] so a permanently failing node cannot be restarted in a
+     * tight loop, while a recoverable one is still picked up later (network came
+     * back, the system stopped freezing the engine process, the user changed the
+     * node). The round counter is reset in [settle] as soon as the engine answers.
+     */
     private fun scheduleRecovery(delayMs: Long) {
         if (recoveryScheduled) {
             return
         }
-        if (recoveryRounds >= MAX_RECOVERY_ROUNDS) {
-            Log.w(TAG, "engine recovery gave up after $recoveryRounds rounds")
-            return
-        }
         recoveryRounds++
+        // The shift is clamped: `shl` uses the shift count modulo 64, so an unclamped
+        // shift would wrap around and produce a *tiny* delay instead of a growing one.
+        val shift = minOf(recoveryRounds - 2, 6).coerceAtLeast(0)
+        val delay = if (recoveryRounds <= 1) delayMs else minOf(delayMs shl shift, MAX_RECOVERY_DELAY_MS)
         recoveryScheduled = true
         mainHandler.postDelayed({
             recoveryScheduled = false
             recoverEngine()
-        }, delayMs)
+        }, delay)
     }
 
     private fun requestRestart() {
